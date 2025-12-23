@@ -1,0 +1,7 @@
+[package]
+name = "kernel"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+libc = { version = "0.2", default-features = false }
