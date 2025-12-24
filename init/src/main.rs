@@ -1,11 +1,15 @@
 //! # Init System
 
-use kernel::{proc::Process, raw::exit};
+use kernel::{c_str::NULL_CSTR, mount::{MountError, mount}, proc::Process, raw::{exit, setsid, umask}};
 
 
 
 fn main() {
     if Process::current() != 1 {
+        exit(-1)
+    }
+
+    if let Err(_mount_error) = setup_mount_points() {
         exit(-1)
     }
 
@@ -32,4 +36,17 @@ fn update() -> Result<AfterUpdate, i32> {
 
 enum AfterUpdate {
     Exit,
+}
+
+
+
+fn setup_mount_points() -> Result<(), MountError> {
+    use kernel::mount::{NODEV, NOEXEC, NOSUID};
+
+    mount(c"proc",  c"/proc",    c"proc",     NOSUID | NOEXEC | NODEV, NULL_CSTR)?;
+    mount(c"sys",   c"/sys",     c"sysfs",    NOSUID | NOEXEC | NODEV, NULL_CSTR)?;
+    mount(c"dev",   c"/dev",     c"devtmpfs", NOSUID,                  Some(c"mode=755"))?;
+    mount(c"tmpfs", c"/dev/shm", c"tmpfs",    NOSUID | NOEXEC | NODEV, Some(c"mode=1777"))?;
+
+    Ok(())
 }

@@ -5,6 +5,8 @@ use alloc::ffi::CString;
 
 
 
+pub const NULL_CSTR: Option<&CStr> = None;
+
 pub trait AsCStr {
     fn is_empty(&self) -> bool;
     fn len(&self) -> usize;
