@@ -41,6 +41,14 @@ pub fn _exit(status: i32) -> ! {
     unsafe { libc::_exit(status) }
 }
 
+pub fn fchmod(fd: i32, mode: u32) -> i32 {
+    unsafe { libc::fchmod(fd, mode) }
+}
+
+pub fn fchown(fd: i32, owner: u32, group: u32) -> i32 {
+    unsafe { libc::fchown(fd, owner, group) }
+}
+
 pub fn fork() -> i32 {
     unsafe { libc::fork() }
 }

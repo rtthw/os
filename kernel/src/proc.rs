@@ -3,9 +3,10 @@ use crate::{raw, traits};
 
 
 
+#[derive(Eq, PartialEq)]
 #[repr(transparent)]
 pub struct Process {
-    id: i32,
+    pub(crate) id: i32,
 }
 
 impl Process {
@@ -56,9 +57,10 @@ impl PartialEq<i32> for Process {
 
 
 
+#[derive(Eq, PartialEq)]
 #[repr(transparent)]
 pub struct Session {
-    id: i32,
+    pub(crate) id: i32,
 }
 
 impl traits::AsProcess for Session {
@@ -78,9 +80,10 @@ impl Session {
 
 
 
+#[derive(Eq, PartialEq)]
 #[repr(transparent)]
 pub struct ProcessGroup {
-    id: i32,
+    pub(crate) id: i32,
 }
 
 impl traits::AsProcess for ProcessGroup {
@@ -102,9 +105,10 @@ impl ProcessGroup {
 
 
 
+#[derive(Eq, PartialEq)]
 #[repr(transparent)]
 pub struct Thread {
-    id: i32,
+    pub(crate) id: i32,
 }
 
 impl Thread {
