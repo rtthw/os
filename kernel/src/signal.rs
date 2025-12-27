@@ -40,6 +40,49 @@ pub enum Signal {
     SYS = libc::SIGSYS, // UNUSED
 }
 
+impl TryFrom<i32> for Signal {
+    type Error = ();
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        use Signal::*;
+
+        Ok(match value {
+            libc::SIGHUP => HUP,
+            libc::SIGINT => INT,
+            libc::SIGQUIT => QUIT,
+            libc::SIGILL => ILL,
+            libc::SIGTRAP => TRAP,
+            libc::SIGABRT => ABRT,
+            libc::SIGBUS => BUS,
+            libc::SIGFPE => FPE,
+            libc::SIGKILL => KILL,
+            libc::SIGUSR1 => USR1,
+            libc::SIGSEGV => SEGV,
+            libc::SIGUSR2 => USR2,
+            libc::SIGPIPE => PIPE,
+            libc::SIGALRM => ALRM,
+            libc::SIGTERM => TERM,
+            libc::SIGSTKFLT => STKFLT,
+            libc::SIGCHLD => CHLD,
+            libc::SIGCONT => CONT,
+            libc::SIGSTOP => STOP,
+            libc::SIGTSTP => TSTP,
+            libc::SIGTTIN => TTIN,
+            libc::SIGTTOU => TTOU,
+            libc::SIGURG => URG,
+            libc::SIGXCPU => XCPU,
+            libc::SIGXFSZ => XFSZ,
+            libc::SIGVTALRM => VTALRM,
+            libc::SIGPROF => PROF,
+            libc::SIGWINCH => WINCH,
+            libc::SIGIO => IO,
+            libc::SIGPWR => PWR,
+            libc::SIGSYS => SYS,
+            _ => Err(())?,
+        })
+    }
+}
+
 
 
 pub struct SignalMask {
@@ -76,6 +119,34 @@ impl SignalMask {
     // https://www.man7.org/linux/man-pages/man3/sigemptyset.3.html
     pub fn clear(&mut self) {
         unsafe { libc::sigemptyset(&mut self.raw as *mut libc::sigset_t) };
+    }
+
+    // https://www.man7.org/linux/man-pages/man2/sigprocmask.2.html
+    pub fn block(&self) -> Result<(), (/* TODO */)> {
+        let res = unsafe {
+            libc::sigprocmask(
+                libc::SIG_BLOCK,
+                &self.raw,
+                core::ptr::null_mut(),
+            )
+        };
+        if res == -1 {
+            todo!("error handling")
+        } else {
+            Ok(())
+        }
+    }
+
+    // https://www.man7.org/linux/man-pages/man3/sigwait.3.html
+    pub fn wait(&self) -> Result<Signal, (/* TODO */)> {
+        let mut sig_ptr = core::mem::MaybeUninit::uninit();
+        let res = unsafe { libc::sigwait(&self.raw, sig_ptr.as_mut_ptr()) };
+        if res == 0 {
+            let num = unsafe { sig_ptr.assume_init() };
+            Signal::try_from(num)
+        } else {
+            todo!("error handling")
+        }
     }
 }
 
