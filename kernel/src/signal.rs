@@ -1,9 +1,10 @@
 //! # Signal Handling
 
-use crate::{file::File, traits};
+use crate::{Error, Result, file::File, traits};
 
 
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(i32)]
 #[non_exhaustive]
 pub enum Signal {
@@ -41,9 +42,9 @@ pub enum Signal {
 }
 
 impl TryFrom<i32> for Signal {
-    type Error = ();
+    type Error = Error;
 
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
+    fn try_from(value: i32) -> core::result::Result<Self, Self::Error> {
         use Signal::*;
 
         Ok(match value {
@@ -78,7 +79,7 @@ impl TryFrom<i32> for Signal {
             libc::SIGIO => IO,
             libc::SIGPWR => PWR,
             libc::SIGSYS => SYS,
-            _ => Err(())?,
+            _ => Err(Error::INVAL)?,
         })
     }
 }
@@ -122,7 +123,7 @@ impl SignalMask {
     }
 
     // https://www.man7.org/linux/man-pages/man2/sigprocmask.2.html
-    pub fn block(&self) -> Result<(), (/* TODO */)> {
+    pub fn block(&self) -> Result<()> {
         let res = unsafe {
             libc::sigprocmask(
                 libc::SIG_BLOCK,
@@ -131,28 +132,28 @@ impl SignalMask {
             )
         };
         if res == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(())
         }
     }
 
     // https://www.man7.org/linux/man-pages/man3/sigwait.3.html
-    pub fn wait(&self) -> Result<Signal, (/* TODO */)> {
+    pub fn wait(&self) -> Result<Signal> {
         let mut sig_ptr = core::mem::MaybeUninit::uninit();
         let res = unsafe { libc::sigwait(&self.raw, sig_ptr.as_mut_ptr()) };
         if res == 0 {
             let num = unsafe { sig_ptr.assume_init() };
             Signal::try_from(num)
         } else {
-            todo!("error handling")
+            Err(Error::latest())
         }
     }
 }
 
 // https://www.man7.org/linux/man-pages/man3/pthread_sigmask.3.html
 impl SignalMask {
-    pub fn thread_set_mask(&self) -> Result<(), (/* TODO */)> {
+    pub fn thread_set_mask(&self) -> Result<()> {
         let res = unsafe {
             libc::pthread_sigmask(
                 libc::SIG_SETMASK,
@@ -162,13 +163,13 @@ impl SignalMask {
         };
 
         if res == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(())
         }
     }
 
-    pub fn thread_block(&self) -> Result<(), (/* TODO */)> {
+    pub fn thread_block(&self) -> Result<()> {
         let res = unsafe {
             libc::pthread_sigmask(
                 libc::SIG_BLOCK,
@@ -178,13 +179,13 @@ impl SignalMask {
         };
 
         if res == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(())
         }
     }
 
-    pub fn thread_unblock(&self) -> Result<(), (/* TODO */)> {
+    pub fn thread_unblock(&self) -> Result<()> {
         let res = unsafe {
             libc::pthread_sigmask(
                 libc::SIG_UNBLOCK,
@@ -194,7 +195,7 @@ impl SignalMask {
         };
 
         if res == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(())
         }
@@ -217,7 +218,7 @@ impl traits::AsFile for SignalFile {
 }
 
 impl SignalFile {
-    pub fn open(mask: &SignalMask) -> Result<Self, (/* TODO */)> {
+    pub fn open(mask: &SignalMask) -> Result<Self> {
         let res = unsafe {
             libc::signalfd(
                 -1, // Create a new file descriptor.
@@ -226,13 +227,13 @@ impl SignalFile {
             )
         };
         if res == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(Self { fd: res })
         }
     }
 
-    pub fn open_non_blocking(mask: &SignalMask) -> Result<Self, (/* TODO */)> {
+    pub fn open_non_blocking(mask: &SignalMask) -> Result<Self> {
         let res = unsafe {
             libc::signalfd(
                 -1, // Create a new file descriptor.
@@ -241,7 +242,7 @@ impl SignalFile {
             )
         };
         if res == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(Self { fd: res })
         }
