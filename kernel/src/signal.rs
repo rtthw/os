@@ -4,83 +4,142 @@ use crate::{Error, Result, file::File, traits};
 
 
 
+/// A software interrupt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(i32)]
 #[non_exhaustive]
 pub enum Signal {
-    HUP = libc::SIGHUP,
-    INT = libc::SIGINT,
-    QUIT = libc::SIGQUIT,
-    ILL = libc::SIGILL,
-    TRAP = libc::SIGTRAP,
-    ABRT = libc::SIGABRT, // IOT
-    BUS = libc::SIGBUS,
-    FPE = libc::SIGFPE,
-    KILL = libc::SIGKILL,
-    USR1 = libc::SIGUSR1,
-    SEGV = libc::SIGSEGV,
-    USR2 = libc::SIGUSR2,
-    PIPE = libc::SIGPIPE,
-    ALRM = libc::SIGALRM,
-    TERM = libc::SIGTERM,
-    STKFLT = libc::SIGSTKFLT,
-    CHLD = libc::SIGCHLD, // CLD
-    CONT = libc::SIGCONT,
-    STOP = libc::SIGSTOP,
-    TSTP = libc::SIGTSTP,
-    TTIN = libc::SIGTTIN,
-    TTOU = libc::SIGTTOU,
-    URG = libc::SIGURG,
-    XCPU = libc::SIGXCPU,
-    XFSZ = libc::SIGXFSZ,
-    VTALRM = libc::SIGVTALRM,
-    PROF = libc::SIGPROF,
-    WINCH = libc::SIGWINCH,
-    IO = libc::SIGIO, // POLL
-    PWR = libc::SIGPWR, // INFO
-    SYS = libc::SIGSYS, // UNUSED
+    HUP = 1,
+    INT = 2,
+    QUIT = 3,
+    ILL = 4,
+    TRAP = 5,
+    ABRT = 6, // IOT
+    BUS = 7,
+    FPE = 8,
+    KILL = 9,
+    USR1 = 10,
+    SEGV = 11,
+    USR2 = 12,
+    PIPE = 13,
+    ALRM = 14,
+    TERM = 15,
+    STKFLT = 16,
+    CHLD = 17, // CLD
+    CONT = 18,
+    STOP = 19,
+    TSTP = 20,
+    TTIN = 21,
+    TTOU = 22,
+    URG = 23,
+    XCPU = 24,
+    XFSZ = 25,
+    VTALRM = 26,
+    PROF = 27,
+    WINCH = 28,
+    IO = 29, // POLL
+    PWR = 30, // INFO
+    SYS = 31, // UNUSED
+}
+
+impl Signal {
+    /// Create a [`Signal`] from its raw `i32` equivalent.
+    ///
+    /// Returns [`Error::INVAL`] if `num` does not correspond to a known signal.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use kernel::Signal;
+    /// assert_eq!(Signal::from_raw(11), Ok(Signal::SEGV));
+    /// ```
+    pub const fn from_raw(num: i32) -> Result<Self> {
+        use Signal::*;
+
+        Ok(match num {
+            1 => HUP,
+            2 => INT,
+            3 => QUIT,
+            4 => ILL,
+            5 => TRAP,
+            6 => ABRT,
+            7 => BUS,
+            8 => FPE,
+            9 => KILL,
+            10 => USR1,
+            11 => SEGV,
+            12 => USR2,
+            13 => PIPE,
+            14 => ALRM,
+            15 => TERM,
+            16 => STKFLT,
+            17 => CHLD,
+            18 => CONT,
+            19 => STOP,
+            20 => TSTP,
+            21 => TTIN,
+            22 => TTOU,
+            23 => URG,
+            24 => XCPU,
+            25 => XFSZ,
+            26 => VTALRM,
+            27 => PROF,
+            28 => WINCH,
+            29 => IO,
+            30 => PWR,
+            31 => SYS,
+            _ => return Err(Error::INVAL),
+        })
+    }
+
+    /// Returns a string representation of the signal.
+    ///
+    /// ## Example
+    /// ```rust
+    /// use kernel::Signal;
+    /// assert_eq!(Signal::STOP.as_str(), "SIGSTOP");
+    /// ```
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Signal::HUP => "SIGHUP",
+            Signal::INT => "SIGINT",
+            Signal::QUIT => "SIGQUIT",
+            Signal::ILL => "SIGILL",
+            Signal::TRAP => "SIGTRAP",
+            Signal::ABRT => "SIGABRT",
+            Signal::BUS => "SIGBUS",
+            Signal::FPE => "SIGFPE",
+            Signal::KILL => "SIGKILL",
+            Signal::USR1 => "SIGUSR1",
+            Signal::SEGV => "SIGSEGV",
+            Signal::USR2 => "SIGUSR2",
+            Signal::PIPE => "SIGPIPE",
+            Signal::ALRM => "SIGALRM",
+            Signal::TERM => "SIGTERM",
+            Signal::STKFLT => "SIGSTKFLT",
+            Signal::CHLD => "SIGCHLD",
+            Signal::CONT => "SIGCONT",
+            Signal::STOP => "SIGSTOP",
+            Signal::TSTP => "SIGTSTP",
+            Signal::TTIN => "SIGTTIN",
+            Signal::TTOU => "SIGTTOU",
+            Signal::URG => "SIGURG",
+            Signal::XCPU => "SIGXCPU",
+            Signal::XFSZ => "SIGXFSZ",
+            Signal::VTALRM => "SIGVTALRM",
+            Signal::PROF => "SIGPROF",
+            Signal::WINCH => "SIGWINCH",
+            Signal::IO => "SIGIO",
+            Signal::PWR => "SIGPWR",
+            Signal::SYS => "SIGSYS",
+        }
+    }
 }
 
 impl TryFrom<i32> for Signal {
     type Error = Error;
 
     fn try_from(value: i32) -> core::result::Result<Self, Self::Error> {
-        use Signal::*;
-
-        Ok(match value {
-            libc::SIGHUP => HUP,
-            libc::SIGINT => INT,
-            libc::SIGQUIT => QUIT,
-            libc::SIGILL => ILL,
-            libc::SIGTRAP => TRAP,
-            libc::SIGABRT => ABRT,
-            libc::SIGBUS => BUS,
-            libc::SIGFPE => FPE,
-            libc::SIGKILL => KILL,
-            libc::SIGUSR1 => USR1,
-            libc::SIGSEGV => SEGV,
-            libc::SIGUSR2 => USR2,
-            libc::SIGPIPE => PIPE,
-            libc::SIGALRM => ALRM,
-            libc::SIGTERM => TERM,
-            libc::SIGSTKFLT => STKFLT,
-            libc::SIGCHLD => CHLD,
-            libc::SIGCONT => CONT,
-            libc::SIGSTOP => STOP,
-            libc::SIGTSTP => TSTP,
-            libc::SIGTTIN => TTIN,
-            libc::SIGTTOU => TTOU,
-            libc::SIGURG => URG,
-            libc::SIGXCPU => XCPU,
-            libc::SIGXFSZ => XFSZ,
-            libc::SIGVTALRM => VTALRM,
-            libc::SIGPROF => PROF,
-            libc::SIGWINCH => WINCH,
-            libc::SIGIO => IO,
-            libc::SIGPWR => PWR,
-            libc::SIGSYS => SYS,
-            _ => Err(Error::INVAL)?,
-        })
+        Self::from_raw(value)
     }
 }
 
