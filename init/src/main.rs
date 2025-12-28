@@ -1,8 +1,9 @@
 //! # Init System
 
 use kernel::{
+    Result,
     c_str::NULL_CSTR,
-    mount::{MountError, mount},
+    mount::mount,
     proc::Process,
     raw::{exit, setsid},
     signal::{Signal, SignalMask},
@@ -18,8 +19,8 @@ fn main() {
 
     println!("init: Mounting filesystems...");
 
-    if let Err(_mount_error) = setup_mount_points() {
-        println!("ERROR (init): Failed to mount filesystems");
+    if let Err(error) = setup_mount_points() {
+        println!("ERROR (init): Failed to mount filesystems: {error}");
         exit(-1)
     }
 
@@ -54,7 +55,7 @@ fn main() {
 
 
 
-fn setup_mount_points() -> Result<(), MountError> {
+fn setup_mount_points() -> Result<()> {
     use kernel::mount::{NODEV, NOEXEC, NOSUID};
 
     mount(c"proc",  c"/proc",    c"proc",     NOSUID | NOEXEC | NODEV, NULL_CSTR)?;

@@ -1,7 +1,9 @@
 
-use core::{error::Error, ffi::CStr, fmt::Display};
+use core::ffi::CStr;
 
 use alloc::ffi::CString;
+
+use crate::{Error, Result};
 
 
 
@@ -10,23 +12,10 @@ pub const NULL_CSTR: Option<&CStr> = None;
 pub trait AsCStr {
     fn is_empty(&self) -> bool;
     fn len(&self) -> usize;
-    fn map_cstr<F, R>(&self, op: F) -> Result<R, InvalidCStr>
+    fn map_cstr<F, R>(&self, op: F) -> Result<R>
     where
         F: FnOnce(&CStr) -> R;
 }
-
-
-
-#[derive(Debug)]
-pub struct InvalidCStr;
-
-impl Display for InvalidCStr {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str("string passed without single nul-terminator")
-    }
-}
-
-impl Error for InvalidCStr {}
 
 
 
@@ -39,7 +28,7 @@ impl AsCStr for str {
         self.len()
     }
 
-    fn map_cstr<F, R>(&self, op: F) -> Result<R, InvalidCStr>
+    fn map_cstr<F, R>(&self, op: F) -> Result<R>
     where
         F: FnOnce(&CStr) -> R
     {
@@ -56,7 +45,7 @@ impl AsCStr for CStr {
         self.count_bytes()
     }
 
-    fn map_cstr<F, R>(&self, op: F) -> Result<R, InvalidCStr>
+    fn map_cstr<F, R>(&self, op: F) -> Result<R>
     where
         F: FnOnce(&CStr) -> R
     {
@@ -73,7 +62,7 @@ impl AsCStr for [u8] {
         self.len()
     }
 
-    fn map_cstr<F, R>(&self, op: F) -> Result<R, InvalidCStr>
+    fn map_cstr<F, R>(&self, op: F) -> Result<R>
     where
         F: FnOnce(&CStr) -> R,
     {
@@ -101,7 +90,7 @@ impl AsCStr for [u8] {
             core::slice::from_raw_parts(buf_ptr, self.len() + 1)
         }) {
             Ok(s) => Ok(op(s)),
-            Err(_) => Err(InvalidCStr),
+            Err(_) => Err(Error::INVAL),
         }
     }
 }
@@ -110,17 +99,17 @@ impl AsCStr for [u8] {
 
 #[cold]
 #[inline(never)]
-fn map_cstr_alloc<F, R>(from: &[u8], op: F) -> Result<R, InvalidCStr>
+fn map_cstr_alloc<F, R>(from: &[u8], op: F) -> Result<R>
 where
     F: FnOnce(&CStr) -> R,
 {
     match CString::new(from) {
         Ok(s) => Ok(op(&s)),
-        Err(_) => Err(InvalidCStr),
+        Err(_) => Err(Error::INVAL),
     }
 }
 
-pub(crate) fn map_cstr_opt<S, F, R>(from: Option<&S>, op: F) -> Result<R, InvalidCStr>
+pub(crate) fn map_cstr_opt<S, F, R>(from: Option<&S>, op: F) -> Result<R>
 where
     S: AsCStr + ?Sized,
     F: FnOnce(Option<&CStr>) -> R,

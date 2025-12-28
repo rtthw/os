@@ -1,5 +1,5 @@
 
-use crate::{c_str::{AsCStr, InvalidCStr}, proc::{ProcessGroup, Session}, raw};
+use crate::{Error, Result, c_str::AsCStr, proc::{ProcessGroup, Session}, raw};
 
 
 
@@ -17,70 +17,70 @@ impl File {
 
 impl File {
     // https://www.man7.org/linux/man-pages/man2/open.2.html
-    pub fn open<P: AsCStr + ?Sized>(path: &P, flags: OpenFlags) -> Result<Self, OpenError> {
+    pub fn open<P: AsCStr + ?Sized>(path: &P, flags: OpenFlags) -> Result<Self> {
         let ret = path.map_cstr(|path| raw::open(path, flags.0))?;
         if ret == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(Self { fd: ret })
         }
     }
 
     // https://www.man7.org/linux/man-pages/man2/close.2.html
-    pub fn close(self) -> Result<(), (/* TODO */)> {
+    pub fn close(self) -> Result<()> {
         let ret = raw::close(self.fd);
         if ret == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(())
         }
     }
 
     // https://www.man7.org/linux/man-pages/man2/read.2.html
-    pub fn read(&self, buf: &mut [u8]) -> Result<usize, (/* TODO */)> {
+    pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
         let ret = raw::read(self.fd, buf, buf.len().min(isize::MAX as usize));
         if ret == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(ret as usize)
         }
     }
 
     // https://www.man7.org/linux/man-pages/man2/write.2.html
-    pub fn write(&self, buf: &[u8]) -> Result<usize, (/* TODO */)> {
+    pub fn write(&self, buf: &[u8]) -> Result<usize> {
         let ret = raw::write(self.fd, buf, buf.len().min(isize::MAX as usize));
         if ret == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(ret as usize)
         }
     }
 
     // https://www.man7.org/linux/man-pages/man2/fchmod.2.html
-    pub fn change_mode(&self, new_mode: u32) -> Result<(), (/* TODO */)> {
+    pub fn change_mode(&self, new_mode: u32) -> Result<()> {
         let ret = raw::fchmod(self.fd, new_mode);
         if ret == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(())
         }
     }
 
     // https://www.man7.org/linux/man-pages/man2/fchown.2.html
-    pub fn change_owner(&self, new_owner: u32, new_group: u32) -> Result<(), (/* TODO */)> {
+    pub fn change_owner(&self, new_owner: u32, new_group: u32) -> Result<()> {
         let ret = raw::fchown(self.fd, new_owner, new_group);
         if ret == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(())
         }
     }
 
     // https://www.man7.org/linux/man-pages/man2/dup.2.html
-    pub fn duplicate(&self) -> Result<Self, (/* TODO */)> {
+    pub fn duplicate(&self) -> Result<Self> {
         let ret = raw::dup(self.fd);
         if ret == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(Self { fd: ret })
         }
@@ -94,40 +94,40 @@ impl File {
         unsafe { libc::isatty(self.fd) == 1 }
     }
 
-    pub fn terminal_session(&self) -> Result<Session, (/* TODO */)> {
+    pub fn terminal_session(&self) -> Result<Session> {
         let ret = unsafe { libc::tcgetsid(self.fd) };
         if ret == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(Session { id: ret })
         }
     }
 
     // https://www.man7.org/linux/man-pages/man2/TIOCNOTTY.2const.html
-    pub fn release_terminal_control(&self) -> Result<(), (/* TODO */)> {
+    pub fn release_terminal_control(&self) -> Result<()> {
         let ret = unsafe { libc::ioctl(self.fd, libc::TIOCNOTTY) };
         if ret == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(())
         }
     }
 
     // https://www.man7.org/linux/man-pages/man2/TIOCSCTTY.2const.html
-    pub fn take_terminal_control(&self) -> Result<(), (/* TODO */)> {
+    pub fn take_terminal_control(&self) -> Result<()> {
         let ret = unsafe { libc::ioctl(self.fd, libc::TIOCSCTTY, 1) };
         if ret == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(())
         }
     }
 
     // https://www.man7.org/linux/man-pages/man3/tcsetpgrp.3.html
-    pub fn set_foreground_process_group(&self, group: ProcessGroup) -> Result<(), (/* TODO */)> {
+    pub fn set_foreground_process_group(&self, group: ProcessGroup) -> Result<()> {
         let ret = unsafe { libc::tcsetpgrp(self.fd, group.id) };
         if ret == -1 {
-            todo!("error handling")
+            Err(Error::latest())
         } else {
             Ok(())
         }
@@ -165,18 +165,5 @@ impl core::ops::BitOr for OpenFlags {
 
     fn bitor(self, rhs: Self) -> Self::Output {
         Self(self.0 | rhs.0)
-    }
-}
-
-
-
-#[derive(Debug)]
-pub enum OpenError {
-    InvalidPath,
-}
-
-impl From<InvalidCStr> for OpenError {
-    fn from(_value: InvalidCStr) -> Self {
-        Self::InvalidPath
     }
 }

@@ -1,5 +1,5 @@
 
-use crate::{c_str::{AsCStr, InvalidCStr, map_cstr_opt}, raw};
+use crate::{Error, Result, c_str::{AsCStr, map_cstr_opt}, raw};
 
 
 
@@ -14,7 +14,7 @@ pub fn mount<
     fs: &S3,
     flags: MountFlags,
     options: Option<&S4>,
-) -> Result<(), MountError> {
+) -> Result<()> {
     let errno = source.map_cstr(|source| {
         target.map_cstr(|target| {
             fs.map_cstr(|fs| {
@@ -32,20 +32,9 @@ pub fn mount<
     })????;
 
     if errno < 0 {
-        todo!()
+        Err(Error::latest())
     } else {
         Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub enum MountError {
-    InvalidInput,
-}
-
-impl From<InvalidCStr> for MountError {
-    fn from(_value: InvalidCStr) -> Self {
-        Self::InvalidInput
     }
 }
 
