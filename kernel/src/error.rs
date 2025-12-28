@@ -1,9 +1,12 @@
 
+use crate::raw;
+
 
 
 /// Generic error type.
 #[repr(i32)]
 pub enum Error {
+    NULL = 0,
     /// Operation not permitted.
     PERM = 1,
     /// No such file or directory.
@@ -119,8 +122,32 @@ pub enum Error {
     BADRQC = 56,
     /// Invalid slot.
     BADSLT = 57,
+    BFONT = 59,
+    /// Not a stream.
+    NOSTR = 60,
+    /// The named attribute does not exist, or the process has no access to this attribute.
+    NODATA = 61,
+    /// Timer expired.
+    TIME = 62,
+    /// No stream resources.
+    NOSR = 63,
+    /// Machine is not on the network.
+    NONET = 64,
+    /// Package not installed.
+    NOPKG = 65,
+    /// Object is remote.
+    REMOTE = 66,
+    /// Link has been severed.
+    NOLINK = 67,
+    ADV = 68,
+    SRMNT = 69,
+    /// Communication error on send.
+    COMM = 70,
+    /// Protocol error.
+    PROTO = 71,
     /// Multihop attempted.
     MULTIHOP = 72,
+    DOTDOT = 73,
     /// Value too large to be stored in data type.
     OVERFLOW = 75,
     /// Name not unique on network.
@@ -207,6 +234,14 @@ pub enum Error {
     INPROGRESS = 115,
     /// Stale file handle.
     STALE = 116,
+    /// Structure needs cleaning.
+    UCLEAN = 117,
+    NOTNAM = 118,
+    NAVAIL = 119,
+    /// Is a named type file.
+    ISNAM = 120,
+    /// Remote I/O error.
+    REMOTEIO = 121,
     /// Disk quota exceeded.
     DQUOT = 122,
     /// No medium found.
@@ -231,4 +266,151 @@ pub enum Error {
     HWPOISON = 133,
     /// Operation not possible due to RF-kill.
     RFKILL = 132,
+}
+
+impl Error {
+    /// Create an [`Error`] from its raw `i32` equivalent.
+    pub const fn from_raw(num: i32) -> Error {
+        use Error::*;
+
+        match num {
+            libc::EPERM => PERM,
+            libc::ENOENT => NOENT,
+            libc::ESRCH => SRCH,
+            libc::EINTR => INTR,
+            libc::EIO => IO,
+            libc::ENXIO => NXIO,
+            libc::E2BIG => E2BIG,
+            libc::ENOEXEC => NOEXEC,
+            libc::EBADF => BADF,
+            libc::ECHILD => CHILD,
+            libc::EAGAIN => AGAIN,
+            libc::ENOMEM => NOMEM,
+            libc::EACCES => ACCES,
+            libc::EFAULT => FAULT,
+            libc::ENOTBLK => NOTBLK,
+            libc::EBUSY => BUSY,
+            libc::EEXIST => EXIST,
+            libc::EXDEV => XDEV,
+            libc::ENODEV => NODEV,
+            libc::ENOTDIR => NOTDIR,
+            libc::EISDIR => ISDIR,
+            libc::EINVAL => INVAL,
+            libc::ENFILE => NFILE,
+            libc::EMFILE => MFILE,
+            libc::ENOTTY => NOTTY,
+            libc::ETXTBSY => TXTBSY,
+            libc::EFBIG => FBIG,
+            libc::ENOSPC => NOSPC,
+            libc::ESPIPE => SPIPE,
+            libc::EROFS => ROFS,
+            libc::EMLINK => MLINK,
+            libc::EPIPE => PIPE,
+            libc::EDOM => DOM,
+            libc::ERANGE => RANGE,
+            libc::EDEADLK => DEADLK,
+            libc::ENAMETOOLONG => NAMETOOLONG,
+            libc::ENOLCK => NOLCK,
+            libc::ENOSYS => NOSYS,
+            libc::ENOTEMPTY => NOTEMPTY,
+            libc::ELOOP => LOOP,
+            libc::ENOMSG => NOMSG,
+            libc::EIDRM => IDRM,
+            libc::ECHRNG => CHRNG,
+            libc::EL2NSYNC => L2NSYNC,
+            libc::EL3HLT => L3HLT,
+            libc::EL3RST => L3RST,
+            libc::ELNRNG => LNRNG,
+            libc::EUNATCH => UNATCH,
+            libc::ENOCSI => NOCSI,
+            libc::EL2HLT => L2HLT,
+            libc::EBADE => BADE,
+            libc::EBADR => BADR,
+            libc::EXFULL => XFULL,
+            libc::ENOANO => NOANO,
+            libc::EBADRQC => BADRQC,
+            libc::EBADSLT => BADSLT,
+            libc::EBFONT => BFONT,
+            libc::ENOSTR => NOSTR,
+            libc::ENODATA => NODATA,
+            libc::ETIME => TIME,
+            libc::ENOSR => NOSR,
+            libc::ENONET => NONET,
+            libc::ENOPKG => NOPKG,
+            libc::EREMOTE => REMOTE,
+            libc::ENOLINK => NOLINK,
+            libc::EADV => ADV,
+            libc::ESRMNT => SRMNT,
+            libc::ECOMM => COMM,
+            libc::EPROTO => PROTO,
+            libc::EMULTIHOP => MULTIHOP,
+            libc::EDOTDOT => DOTDOT,
+            libc::EBADMSG => BADMSG,
+            libc::EOVERFLOW => OVERFLOW,
+            libc::ENOTUNIQ => NOTUNIQ,
+            libc::EBADFD => BADFD,
+            libc::EREMCHG => REMCHG,
+            libc::ELIBACC => LIBACC,
+            libc::ELIBBAD => LIBBAD,
+            libc::ELIBSCN => LIBSCN,
+            libc::ELIBMAX => LIBMAX,
+            libc::ELIBEXEC => LIBEXEC,
+            libc::EILSEQ => ILSEQ,
+            libc::ERESTART => RESTART,
+            libc::ESTRPIPE => STRPIPE,
+            libc::EUSERS => USERS,
+            libc::ENOTSOCK => NOTSOCK,
+            libc::EDESTADDRREQ => DESTADDRREQ,
+            libc::EMSGSIZE => MSGSIZE,
+            libc::EPROTOTYPE => PROTOTYPE,
+            libc::ENOPROTOOPT => NOPROTOOPT,
+            libc::EPROTONOSUPPORT => PROTONOSUPPORT,
+            libc::ESOCKTNOSUPPORT => SOCKTNOSUPPORT,
+            libc::EOPNOTSUPP => OPNOTSUPP,
+            libc::EPFNOSUPPORT => PFNOSUPPORT,
+            libc::EAFNOSUPPORT => AFNOSUPPORT,
+            libc::EADDRINUSE => ADDRINUSE,
+            libc::EADDRNOTAVAIL => ADDRNOTAVAIL,
+            libc::ENETDOWN => NETDOWN,
+            libc::ENETUNREACH => NETUNREACH,
+            libc::ENETRESET => NETRESET,
+            libc::ECONNABORTED => CONNABORTED,
+            libc::ECONNRESET => CONNRESET,
+            libc::ENOBUFS => NOBUFS,
+            libc::EISCONN => ISCONN,
+            libc::ENOTCONN => NOTCONN,
+            libc::ESHUTDOWN => SHUTDOWN,
+            libc::ETOOMANYREFS => TOOMANYREFS,
+            libc::ETIMEDOUT => TIMEDOUT,
+            libc::ECONNREFUSED => CONNREFUSED,
+            libc::EHOSTDOWN => HOSTDOWN,
+            libc::EHOSTUNREACH => HOSTUNREACH,
+            libc::EALREADY => ALREADY,
+            libc::EINPROGRESS => INPROGRESS,
+            libc::ESTALE => STALE,
+            libc::EUCLEAN => UCLEAN,
+            libc::ENOTNAM => NOTNAM,
+            libc::ENAVAIL => NAVAIL,
+            libc::EISNAM => ISNAM,
+            libc::EREMOTEIO => REMOTEIO,
+            libc::EDQUOT => DQUOT,
+            libc::ENOMEDIUM => NOMEDIUM,
+            libc::EMEDIUMTYPE => MEDIUMTYPE,
+            libc::ECANCELED => CANCELED,
+            libc::ENOKEY => NOKEY,
+            libc::EKEYEXPIRED => KEYEXPIRED,
+            libc::EKEYREVOKED => KEYREVOKED,
+            libc::EKEYREJECTED => KEYREJECTED,
+            libc::EOWNERDEAD => OWNERDEAD,
+            libc::ENOTRECOVERABLE => NOTRECOVERABLE,
+            libc::ERFKILL => RFKILL,
+            libc::EHWPOISON => HWPOISON,
+            _ => NULL,
+        }
+    }
+
+    /// Get the most recent kernel error.
+    pub fn latest() -> Self {
+        Self::from_raw(raw::errno())
+    }
 }
