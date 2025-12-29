@@ -1,12 +1,18 @@
 
-use crate::{raw, traits};
+use crate::{Error, Result, Signal, raw, traits};
 
 
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, Hash, PartialEq)]
 #[repr(transparent)]
 pub struct Process {
     pub(crate) id: i32,
+}
+
+impl PartialEq<i32> for Process {
+    fn eq(&self, other: &i32) -> bool {
+        self.id == *other
+    }
 }
 
 impl Process {
@@ -49,9 +55,66 @@ impl Process {
     }
 }
 
-impl PartialEq<i32> for Process {
-    fn eq(&self, other: &i32) -> bool {
-        self.id == *other
+
+
+pub fn wait_for_children_once() -> Result<WaitStatus> {
+    let mut status: i32 = 0;
+    let result = unsafe {
+        libc::waitpid(-1, &mut status, libc::WNOHANG)
+    };
+    WaitStatus::from_raw(status, result)
+}
+
+pub enum WaitStatus {
+    Running,
+    Exited {
+        proc: Process,
+        code: i32,
+    },
+    Signaled {
+        proc: Process,
+        sig: Signal,
+        core_dumped: bool,
+    },
+    Stopped {
+        proc: Process,
+        sig: Signal,
+    },
+    Continued {
+        proc: Process,
+    },
+}
+
+impl WaitStatus {
+    pub fn from_raw(status: i32, result: i32) -> Result<Self> {
+        match result {
+            0 => Ok(Self::Running),
+            -1 => Err(Error::latest()),
+            pid => Ok(
+                if libc::WIFEXITED(status) {
+                    Self::Exited {
+                        proc: Process { id: pid },
+                        code: libc::WEXITSTATUS(status),
+                    }
+                } else if libc::WIFSIGNALED(status) {
+                    Self::Signaled {
+                        proc: Process { id: pid },
+                        sig: Signal::from_raw(libc::WTERMSIG(status))?,
+                        core_dumped: libc::WCOREDUMP(status),
+                    }
+                } else if libc::WIFSTOPPED(status) {
+                    // TODO: Handle `ptrace` stops.
+                    Self::Stopped {
+                        proc: Process { id: pid },
+                        sig: Signal::from_raw(libc::WSTOPSIG(status))?,
+                    }
+                } else {
+                    Self::Continued {
+                        proc: Process { id: pid },
+                    }
+                }
+            ),
+        }
     }
 }
 

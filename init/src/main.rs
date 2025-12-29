@@ -1,5 +1,7 @@
 //! # Init System
 
+use std::collections::HashMap;
+
 use kernel::{
     Result,
     c_str::NULL_CSTR,
@@ -37,16 +39,7 @@ fn main() {
     loop {
         if let Ok(sig) = mask.wait() {
             match sig {
-                Signal::CHLD => {
-                    // use WaitStatus::{Exited, Signaled};
-                    // 'reap_terminated_children: loop {
-                    //     if let Ok(Exited(pid, _)) | Ok(Signaled(pid, _, _)) = pid.wait(status) {
-                    //         todo!()
-                    //     } else {
-                    //         break 'reap_terminated_children;
-                    //     }
-                    // }
-                }
+                Signal::CHLD => handle_sigchld(),
                 _ => {}
             }
         }
@@ -64,4 +57,16 @@ fn setup_mount_points() -> Result<()> {
     // mount(c"tmpfs", c"/dev/shm", c"tmpfs",    NOSUID | NOEXEC | NODEV, Some(c"mode=1777"))?;
 
     Ok(())
+}
+
+fn handle_sigchld() {
+    use kernel::proc::{WaitStatus::{Exited, Signaled}, wait_for_children_once};
+
+    'reap_terminated_children: loop {
+        if let Ok(Exited { proc, .. }) | Ok(Signaled { proc, .. }) = wait_for_children_once() {
+            let _ = proc;
+        } else {
+            break 'reap_terminated_children;
+        }
+    }
 }
