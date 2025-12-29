@@ -50,9 +50,11 @@ fn main() {
                     println!("{}", names.join("  "));
                 }
                 _ => {
-                    match std::process::Command::new(&args_os[0]).args(&args_os[1..]).output() {
+                    let bin_path = format!("/bin/{}", args[0]);
+                    match std::process::Command::new(bin_path).args(&args_os[1..]).output() {
                         Ok(output) => {
                             println!("{}", String::from_utf8(output.stdout).unwrap());
+                            println!("{}", String::from_utf8(output.stderr).unwrap());
                         }
                         Err(error) => {
                             println!("{}", error.to_string());
