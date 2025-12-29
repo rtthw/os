@@ -3,6 +3,7 @@
 
 # Build the init program.
 cargo build --release --target x86_64-unknown-linux-musl --bin init || exit
+cargo build --release --target x86_64-unknown-linux-musl --bin shell || exit
 
 cd build
 
@@ -16,7 +17,9 @@ cd initrd
     # Put the init program where the kernel can find it.
     rm sbin/init
     cp ../../target/x86_64-unknown-linux-musl/release/init sbin/
+    cp ../../target/x86_64-unknown-linux-musl/release/shell sbin/
     chmod +x sbin/init
+    chmod +x sbin/shell
     ln -s sbin/init init 2>/dev/null
 
     # Populate the image.

@@ -20,7 +20,7 @@ fn main() {
     println!("\x1b[2minit\x1b[0m: Mounting filesystems...");
 
     if let Err(error) = setup_mount_points() {
-        println!("\x1b[33mERROR\x1b[0m \x1b[2m(init)\x1b[0m: Failed to mount filesystems: {error}");
+        println!("\x1b[31mERROR\x1b[0m \x1b[2m(init)\x1b[0m: Failed to mount filesystems: {error}");
         exit(-1)
     }
 
@@ -36,7 +36,7 @@ fn main() {
 
     if let Err(error) = print_filesystem() {
         println!(
-            "\n\x1b[33mERROR\x1b[0m \x1b[2m(init)\x1b[0m: Failed to read filesystem: {error}\n",
+            "\n\x1b[33mWARN\x1b[0m \x1b[2m(init)\x1b[0m: Failed to read filesystem: {error}\n",
         );
     } else {
         println!();
@@ -44,10 +44,18 @@ fn main() {
 
     println!("\x1b[2minit\x1b[0m: Starting main loop...");
 
+    let mut shell = match std::process::Command::new("/sbin/shell").spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            println!("\x1b[31mERROR\x1b[0m \x1b[2m(init)\x1b[0m: Failed to start shell: {error}");
+            exit(-1)
+        }
+    };
+
     loop {
         if let Ok(sig) = mask.wait() {
             match sig {
-                Signal::CHLD => handle_sigchld(),
+                Signal::CHLD => handle_sigchld(&mut shell),
                 _ => {}
             }
         }
@@ -101,12 +109,26 @@ fn print_filesystem() -> Result<()> {
     inner("/", 1)
 }
 
-fn handle_sigchld() {
+fn handle_sigchld(shell: &mut std::process::Child) {
     use kernel::proc::{WaitStatus::{Exited, Signaled}, wait_for_children_once};
 
     'reap_terminated_children: loop {
         if let Ok(Exited { proc, .. }) | Ok(Signaled { proc, .. }) = wait_for_children_once() {
-            let _ = proc;
+            if proc == shell.id() as i32 {
+                println!(
+                    "\n\x1b[33mWARN\x1b[0m \x1b[2m(init)\x1b[0m: Shell exited, restarting\n",
+                );
+                *shell = match std::process::Command::new("/sbin/shell").spawn() {
+                    Ok(child) => child,
+                    Err(error) => {
+                        println!(
+                            "\x1b[31mERROR\x1b[0m \x1b[2m(init)\x1b[0m: \
+                            Failed to restart shell: {error}",
+                        );
+                        exit(-1)
+                    }
+                };
+            }
         } else {
             break 'reap_terminated_children;
         }

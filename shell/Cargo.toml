@@ -1,0 +1,6 @@
+[package]
+name = "shell"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
