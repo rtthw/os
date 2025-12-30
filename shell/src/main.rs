@@ -30,7 +30,23 @@ fn main() {
             match args[0] {
                 "cd" => {
                     if let Err(error) = std::env::set_current_dir(args[1]) {
-                        println!("{}", error.to_string());
+                        println!("{error}");
+                    }
+                }
+                "env" => {
+                    if args.len() == 1 {
+                        for (name, value) in std::env::vars() {
+                            println!("{name} = {value}");
+                        }
+                    } else {
+                        match std::env::var(args[1]) {
+                            Ok(value) => {
+                                println!("{value}")
+                            }
+                            Err(error) => {
+                                println!("{error}");
+                            }
+                        }
                     }
                 }
                 "exit" => {
@@ -57,7 +73,7 @@ fn main() {
                             println!("{}", String::from_utf8(output.stderr).unwrap());
                         }
                         Err(error) => {
-                            println!("{}", error.to_string());
+                            println!("{error}");
                         }
                     }
                 }
