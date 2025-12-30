@@ -110,24 +110,35 @@ fn print_filesystem() -> Result<()> {
 }
 
 fn handle_sigchld(shell: &mut std::process::Child) {
-    use kernel::proc::{WaitStatus::{Exited, Signaled}, wait_for_children_once};
+    use kernel::proc::{WaitStatus, wait_for_children_once};
 
     'reap_terminated_children: loop {
-        if let Ok(Exited { proc, .. }) | Ok(Signaled { proc, .. }) = wait_for_children_once() {
-            if proc == shell.id() as i32 {
-                println!(
-                    "\n\x1b[33mWARN\x1b[0m \x1b[2m(init)\x1b[0m: Shell exited, restarting\n",
-                );
-                *shell = match std::process::Command::new("/sbin/shell").spawn() {
-                    Ok(child) => child,
-                    Err(error) => {
-                        println!(
-                            "\x1b[31mERROR\x1b[0m \x1b[2m(init)\x1b[0m: \
-                            Failed to restart shell: {error}",
-                        );
-                        exit(-1)
-                    }
-                };
+        if let Ok(status) = wait_for_children_once() {
+            let termination: Option<(Process, i32)> = match status {
+                WaitStatus::Exited { proc, code } => Some((proc, code)),
+                WaitStatus::Signaled { proc, sig, core_dumped: _ } => Some((
+                    proc,
+                    sig as i32 + 128, // Signal to exit code conversion.
+                )),
+                _ => None,
+            };
+            if let Some((proc, exit_code)) = termination {
+                if proc == shell.id() as i32 {
+                    println!(
+                        "\n\x1b[33mWARN\x1b[0m \x1b[2m(init)\x1b[0m: \
+                        Shell exited with code {exit_code}, restarting\n",
+                    );
+                    *shell = match std::process::Command::new("/sbin/shell").spawn() {
+                        Ok(child) => child,
+                        Err(error) => {
+                            println!(
+                                "\x1b[31mERROR\x1b[0m \x1b[2m(init)\x1b[0m: \
+                                Failed to restart shell: {error}",
+                            );
+                            exit(-1)
+                        }
+                    };
+                }
             }
         } else {
             break 'reap_terminated_children;
