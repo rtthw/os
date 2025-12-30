@@ -1,11 +1,15 @@
 
 use std::{ffi::OsString, io::{BufRead as _, Read as _, Write as _}, str::FromStr as _};
 
+use drm::{Device, control::Device as ControlDevice};
+
 
 
 fn main() {
     println!("\x1b[2mshell\x1b[0m: Starting...");
     std::thread::sleep(std::time::Duration::from_secs(1));
+
+    print_gpu_info("/dev/dri/card0");
 
     let stdin = std::io::stdin();
     loop {
@@ -81,5 +85,107 @@ fn main() {
 
             std::io::stdout().flush().unwrap();
         }
+    }
+}
+
+
+
+fn print_gpu_info(path: &str) {
+    let gpu = GraphicsCard::open(path);
+    let name = path.rsplit_once('/').map_or(path, |(_, name)| name).to_string();
+
+    let driver = match gpu.get_driver() {
+        Ok(driver) => driver,
+        Err(error) => {
+            println!(
+                "\x1b[31mERROR\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
+                Failed to get driver: {error}",
+            );
+            return;
+        }
+    };
+
+    println!("\x1b[2mshell.gpu_info.{name}\x1b[0m: DRIVER:");
+
+    println!("\t.name = {}", driver.name().display());
+    println!("\t.date = {}", driver.date().display());
+    println!("\t.description = {}", driver.description().display());
+
+    let resources = match gpu.resource_handles() {
+        Ok(resources) => resources,
+        Err(error) => {
+            println!(
+                "\x1b[31mERROR\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
+                Failed to get resources: {error}",
+            );
+            return;
+        }
+    };
+
+    'crtc_iter: for crtc in resources.crtcs() {
+        let Ok(info) = gpu.get_crtc(*crtc) else {
+            println!(
+                "\x1b[33mWARN\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
+                Failed to get CRTC info at {:?}",
+                crtc,
+            );
+            continue 'crtc_iter;
+        };
+
+        println!("\x1b[2mshell.gpu_info.{name}\x1b[0m: CRTC:");
+
+        println!("\t.position = {},{}", info.position().0, info.position().1);
+
+        if let Some(mode) = info.mode() {
+            println!("\t.size = {},{}", mode.size().0, mode.size().1);
+            println!("\t.clock_speed = {} kHz", mode.clock());
+        } else {
+            println!("\t.mode = NONE");
+            return;
+        };
+
+        if let Ok(properties) = gpu.get_properties(*crtc) {
+            'prop_iter: for (prop, raw_value) in properties {
+                let Ok(info) = gpu.get_property(prop) else {
+                    println!(
+                        "\x1b[33mWARN\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
+                        Failed to get property info at {:?}",
+                        prop,
+                    );
+                    continue 'prop_iter;
+                };
+
+                println!(
+                    "\t...: {} = {:?}",
+                    info.name().to_string_lossy(),
+                    info.value_type().convert_value(raw_value),
+                );
+            }
+        }
+    }
+}
+
+
+
+#[derive(Debug)]
+struct GraphicsCard(std::fs::File);
+
+impl std::os::unix::io::AsFd for GraphicsCard {
+    fn as_fd(&self) -> std::os::unix::io::BorrowedFd<'_> {
+        self.0.as_fd()
+    }
+}
+
+impl Device for GraphicsCard {}
+
+impl ControlDevice for GraphicsCard {}
+
+impl GraphicsCard {
+    fn open(path: &str) -> Self {
+        GraphicsCard(std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(path)
+            .unwrap())
     }
 }
