@@ -77,7 +77,7 @@ fn main() {
                 }
                 "sym" => {
                     // The type doesn't matter in this case (we're just printing debug info).
-                    match this_obj.get::<_, ()>(args[1]) {
+                    match this_obj.get_untyped(args[1]) {
                         Some(ptr) => {
                             println!("{ptr:?}")
                         }

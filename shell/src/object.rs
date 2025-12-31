@@ -54,6 +54,29 @@ impl Object {
     where
         N: AsCStr + ?Sized,
     {
+        if size_of::<*mut core::ffi::c_void>() != size_of::<T>() {
+            return None;
+        }
+
+        name
+            .map_cstr(|name| {
+                let value = unsafe { libc::dlsym(self.handle, name.as_ptr()) };
+                if value.is_null() {
+                    None
+                } else {
+                    Some(Ptr {
+                        ptr: value,
+                        _type: core::marker::PhantomData,
+                    })
+                }
+            })
+            .ok()?
+    }
+
+    pub fn get_untyped<N>(&self, name: &N) -> Option<Ptr<()>>
+    where
+        N: AsCStr + ?Sized,
+    {
         name
             .map_cstr(|name| {
                 let value = unsafe { libc::dlsym(self.handle, name.as_ptr()) };
