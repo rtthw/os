@@ -1,7 +1,11 @@
 
+pub mod object;
+
 use std::{ffi::OsString, io::{BufRead as _, Read as _, Write as _}, str::FromStr as _};
 
 use drm::{Device, control::Device as ControlDevice};
+
+use crate::object::Object;
 
 
 
@@ -10,6 +14,8 @@ fn main() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     print_gpu_info("/dev/dri/card0");
+
+    let this_obj = unsafe { Object::open_this().expect("should be able to open shell binary") };
 
     let stdin = std::io::stdin();
     loop {
@@ -68,6 +74,17 @@ fn main() {
                         }
                     }
                     println!("{}", names.join("  "));
+                }
+                "sym" => {
+                    // The type doesn't matter in this case (we're just printing debug info).
+                    match this_obj.get::<_, ()>(args[1]) {
+                        Some(ptr) => {
+                            println!("{ptr:?}")
+                        }
+                        None => {
+                            println!("Symbol '{}' not found", args[1]);
+                        }
+                    }
                 }
                 _ => {
                     let bin_path = format!("/bin/{}", args[0]);

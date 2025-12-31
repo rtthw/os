@@ -146,6 +146,8 @@ name = "shell"
 version = "0.1.0"
 dependencies = [
  "drm",
+ "kernel",
+ "libc",
 ]
 
 [[package]]

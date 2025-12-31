@@ -5,3 +5,5 @@ edition.workspace = true
 
 [dependencies]
 drm = "0.14.1"
+kernel.workspace = true
+libc = "0.2"
