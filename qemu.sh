@@ -23,9 +23,15 @@ cd initrd
     ln -s sbin/init init 2>/dev/null
 
     # Populate the image.
-    find | cpio -o -H newc > ../initrd.cpio
+    find | cpio -o -H newc | gzip -1 -n > ../initrd.cpio
 
 cd ..
 
 # Run QEMU.
-qemu-system-x86_64 -kernel bzImage -initrd initrd.cpio -append 'console=ttyS0'
+qemu-system-x86_64 \
+    -m 2G \
+    -smp 4 \
+    -vga virtio \
+    -kernel bzImage \
+    -initrd initrd.cpio \
+    -append 'console=ttyS0'
