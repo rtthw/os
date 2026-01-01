@@ -13,12 +13,49 @@ fn main() {
     println!("\x1b[2mshell\x1b[0m: Starting...");
     std::thread::sleep(std::time::Duration::from_secs(1));
 
-    print_gpu_info("/dev/dri/card0");
+    let gpu = GraphicsCard::open("/dev/dri/card0");
+    gpu.print_info("/dev/dri/card0");
+
+    let outputs = match gpu.prepare_outputs() {
+        Ok(outputs) => outputs,
+        Err(error) => {
+            println!(
+                "\x1b[31mERROR\x1b[0m \x1b[2m(shell)\x1b[0m: \
+                Failed to prepare outputs: {error}",
+            );
+            return;
+        }
+    };
+
+    for output in &outputs {
+        println!("OUTPUT: {:?}", output.mode);
+
+        gpu.set_crtc(
+            output.crtc,
+            Some(output.fb),
+            (0, 0),
+            &[output.conn],
+            Some(output.mode),
+        ).unwrap();
+    }
 
     let this_obj = unsafe { Object::open_this().expect("should be able to open shell binary") };
 
     let stdin = std::io::stdin();
     loop {
+        // if let Ok(events) = gpu.receive_events() {
+        //     for event in events {
+        //         match event {
+        //             drm::control::Event::Vblank(event) => {
+        //                 println!("VBLANK: {}@{:?}", event.frame, event.crtc);
+        //             }
+        //             drm::control::Event::PageFlip(event) => {
+        //                 println!("PAGE_FLIP: {}@{:?}", event.frame, event.crtc);
+        //             }
+        //             drm::control::Event::Unknown(_event) => todo!(),
+        //         }
+        //     }
+        // }
         let current_dir = std::env::current_dir().unwrap();
         print!("\x1b[2m {} }} \x1b[0m", current_dir.display());
 
@@ -107,83 +144,6 @@ fn main() {
 
 
 
-fn print_gpu_info(path: &str) {
-    let gpu = GraphicsCard::open(path);
-    let name = path.rsplit_once('/').map_or(path, |(_, name)| name).to_string();
-
-    let driver = match gpu.get_driver() {
-        Ok(driver) => driver,
-        Err(error) => {
-            println!(
-                "\x1b[31mERROR\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
-                Failed to get driver: {error}",
-            );
-            return;
-        }
-    };
-
-    println!("\x1b[2mshell.gpu_info.{name}\x1b[0m: DRIVER:");
-
-    println!("\t.name = {}", driver.name().display());
-    println!("\t.date = {}", driver.date().display());
-    println!("\t.description = {}", driver.description().display());
-
-    let resources = match gpu.resource_handles() {
-        Ok(resources) => resources,
-        Err(error) => {
-            println!(
-                "\x1b[31mERROR\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
-                Failed to get resources: {error}",
-            );
-            return;
-        }
-    };
-
-    'crtc_iter: for crtc in resources.crtcs() {
-        let Ok(info) = gpu.get_crtc(*crtc) else {
-            println!(
-                "\x1b[33mWARN\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
-                Failed to get CRTC info at {:?}",
-                crtc,
-            );
-            continue 'crtc_iter;
-        };
-
-        println!("\x1b[2mshell.gpu_info.{name}\x1b[0m: CRTC:");
-
-        println!("\t.position = {},{}", info.position().0, info.position().1);
-
-        if let Some(mode) = info.mode() {
-            println!("\t.size = {},{}", mode.size().0, mode.size().1);
-            println!("\t.clock_speed = {} kHz", mode.clock());
-        } else {
-            println!("\t.mode = NONE");
-            return;
-        };
-
-        if let Ok(properties) = gpu.get_properties(*crtc) {
-            'prop_iter: for (prop, raw_value) in properties {
-                let Ok(info) = gpu.get_property(prop) else {
-                    println!(
-                        "\x1b[33mWARN\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
-                        Failed to get property info at {:?}",
-                        prop,
-                    );
-                    continue 'prop_iter;
-                };
-
-                println!(
-                    "\t...: {} = {:?}",
-                    info.name().to_string_lossy(),
-                    info.value_type().convert_value(raw_value),
-                );
-            }
-        }
-    }
-}
-
-
-
 #[derive(Debug)]
 struct GraphicsCard(std::fs::File);
 
@@ -205,4 +165,122 @@ impl GraphicsCard {
             .open(path)
             .unwrap())
     }
+
+    fn print_info(&self, path: &str) {
+        let name = path.rsplit_once('/').map_or(path, |(_, name)| name).to_string();
+
+        let driver = match self.get_driver() {
+            Ok(driver) => driver,
+            Err(error) => {
+                println!(
+                    "\x1b[31mERROR\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
+                    Failed to get driver: {error}",
+                );
+                return;
+            }
+        };
+
+        println!("\x1b[2mshell.gpu_info.{name}\x1b[0m: DRIVER:");
+
+        println!("\t.name = {}", driver.name().display());
+        println!("\t.date = {}", driver.date().display());
+        println!("\t.description = {}", driver.description().display());
+
+        let resources = match self.resource_handles() {
+            Ok(resources) => resources,
+            Err(error) => {
+                println!(
+                    "\x1b[31mERROR\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
+                    Failed to get resources: {error}",
+                );
+                return;
+            }
+        };
+
+        'crtc_iter: for crtc in resources.crtcs() {
+            let Ok(info) = self.get_crtc(*crtc) else {
+                println!(
+                    "\x1b[33mWARN\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
+                    Failed to get CRTC info at {:?}",
+                    crtc,
+                );
+                continue 'crtc_iter;
+            };
+
+            println!("\x1b[2mshell.gpu_info.{name}\x1b[0m: CRTC:");
+
+            println!("\t.position = {},{}", info.position().0, info.position().1);
+
+            if let Some(mode) = info.mode() {
+                println!("\t.size = {},{}", mode.size().0, mode.size().1);
+                println!("\t.clock_speed = {} kHz", mode.clock());
+            } else {
+                println!("\t.mode = NONE");
+                return;
+            };
+
+            if let Ok(properties) = self.get_properties(*crtc) {
+                'prop_iter: for (prop, raw_value) in properties {
+                    let Ok(info) = self.get_property(prop) else {
+                        println!(
+                            "\x1b[33mWARN\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
+                            Failed to get property info at {:?}",
+                            prop,
+                        );
+                        continue 'prop_iter;
+                    };
+
+                    println!(
+                        "\t...: {} = {:?}",
+                        info.name().to_string_lossy(),
+                        info.value_type().convert_value(raw_value),
+                    );
+                }
+            }
+        }
+    }
+
+    fn prepare_outputs(&self) -> std::io::Result<Vec<Output>> {
+        let mut outputs = Vec::with_capacity(1);
+
+        let resources = self.resource_handles()?;
+        for conn in resources.connectors().iter().copied() {
+            let conn_info = self.get_connector(conn, true)?;
+            let Some(enc) = conn_info.current_encoder() else { continue; };
+            let enc_info = self.get_encoder(enc)?;
+            let Some(crtc) = enc_info.crtc() else { continue; };
+            let crtc_info = self.get_crtc(crtc)?;
+            let Some(mode) = crtc_info.mode() else { continue; };
+
+            let mut db = self.create_dumb_buffer(
+                (mode.size().0 as _, mode.size().1 as _),
+                drm::buffer::DrmFourcc::Xrgb8888,
+                32,
+            )?;
+
+            {
+                let mut map = self.map_dumb_buffer(&mut db)?;
+                for pixel in map.chunks_exact_mut(4) {
+                    pixel[0] = 51;
+                    pixel[1] = 43;
+                    pixel[2] = 43;
+                    pixel[3] = 255;
+                }
+            }
+
+            let fb = self.add_framebuffer(&db, 24, 32)?;
+
+            outputs.push(Output { db, fb, conn, crtc, mode });
+        }
+
+        Ok(outputs)
+    }
+}
+
+struct Output {
+    db: drm::control::dumbbuffer::DumbBuffer,
+    fb: drm::control::framebuffer::Handle,
+    conn: drm::control::connector::Handle,
+    crtc: drm::control::crtc::Handle,
+    mode: drm::control::Mode,
 }
