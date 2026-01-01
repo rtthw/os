@@ -5,7 +5,7 @@ use kernel::{
     c_str::NULL_CSTR,
     mount::mount,
     proc::Process,
-    raw::{exit, setsid},
+    raw::{exit, mkdir, setsid},
     signal::{Signal, SignalMask},
 };
 
@@ -67,8 +67,11 @@ fn main() {
 fn setup_mount_points() -> Result<()> {
     use kernel::mount::{NODEV, NOEXEC, NOSUID};
 
+    _ = mkdir(c"/proc", 0);
     mount(c"proc",  c"/proc",    c"proc",     NOSUID | NOEXEC | NODEV, NULL_CSTR)?;
+    _ = mkdir(c"/sys", 0);
     mount(c"sys",   c"/sys",     c"sysfs",    NOSUID | NOEXEC | NODEV, NULL_CSTR)?;
+    _ = mkdir(c"/dev", 0);
     mount(c"dev",   c"/dev",     c"devtmpfs", NOSUID,                  Some(c"mode=755"))?;
     // mount(c"tmpfs", c"/dev/shm", c"tmpfs",    NOSUID | NOEXEC | NODEV, Some(c"mode=1777"))?;
 
