@@ -14,9 +14,18 @@ fn main() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     let gpu = GraphicsCard::open("/dev/dri/card0");
+
+    gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
+        .expect("unable to request gpu.UniversalPlanes capability");
+    gpu.set_client_capability(drm::ClientCapability::Atomic, true)
+        .expect("unable to request gpu.Atomic capability");
+
     gpu.print_info("/dev/dri/card0");
 
-    let outputs = match gpu.prepare_outputs() {
+    println!("\x1b[2mshell.gpu\x1b[0m: Preparing outputs...");
+
+    let mut clear_color: [u8; 4] = [51, 43, 43, 255];
+    let mut outputs = match gpu.prepare_outputs(clear_color) {
         Ok(outputs) => outputs,
         Err(error) => {
             println!(
@@ -28,8 +37,6 @@ fn main() {
     };
 
     for output in &outputs {
-        println!("OUTPUT: {:?}", output.mode);
-
         gpu.set_crtc(
             output.crtc,
             Some(output.fb),
@@ -42,7 +49,7 @@ fn main() {
     let this_obj = unsafe { Object::open_this().expect("should be able to open shell binary") };
 
     let stdin = std::io::stdin();
-    loop {
+    'main_loop: loop {
         // if let Ok(events) = gpu.receive_events() {
         //     for event in events {
         //         match event {
@@ -65,7 +72,7 @@ fn main() {
         if let Ok(_bytes_read) = stdin.lock().take(256).read_line(&mut line) {
             let line = line.trim().to_string();
             if line.is_empty() {
-                continue;
+                continue 'main_loop;
             }
 
             let args = line.split(' ').collect::<Vec<_>>();
@@ -121,6 +128,65 @@ fn main() {
                         None => {
                             println!("Symbol '{}' not found", args[1]);
                         }
+                    }
+                }
+                "clear" => 'handle_clear: {
+                    if args.len() >= 4 {
+                        let Ok(r) = u8::from_str_radix(args[1], 10) else {
+                            println!("Invalid red channel: {}", args[1]);
+                            break 'handle_clear;
+                        };
+                        let Ok(g) = u8::from_str_radix(args[2], 10) else {
+                            println!("Invalid green channel: {}", args[2]);
+                            break 'handle_clear;
+                        };
+                        let Ok(b) = u8::from_str_radix(args[3], 10) else {
+                            println!("Invalid blue channel: {}", args[3]);
+                            break 'handle_clear;
+                        };
+                        let a = {
+                            if args.len() == 5 {
+                                let Ok(a) = u8::from_str_radix(args[4], 10) else {
+                                    println!("Invalid alpha channel: {}", args[4]);
+                                    break 'handle_clear;
+                                };
+                                a
+                            } else {
+                                255
+                            }
+                        };
+
+                        clear_color = [b, g, r, a];
+
+                        'map_outputs: for output in &mut outputs {
+                            let Ok(mut map) = gpu.map_dumb_buffer(&mut output.db) else {
+                                println!(
+                                    "\x1b[31mERROR\x1b[0m \x1b[2m(shell.clear)\x1b[0m: \
+                                    Failed to map output buffer",
+                                );
+                                continue 'map_outputs;
+                            };
+                            for pixel in map.chunks_exact_mut(4) {
+                                pixel[0] = clear_color[0];
+                                pixel[1] = clear_color[1];
+                                pixel[2] = clear_color[2];
+                                pixel[3] = clear_color[3];
+                            }
+                            if let Err(error) = gpu.set_crtc(
+                                output.crtc,
+                                Some(output.fb),
+                                (0, 0),
+                                &[output.conn],
+                                Some(output.mode),
+                            ) {
+                                println!(
+                                    "\x1b[31mERROR\x1b[0m \x1b[2m(shell.clear)\x1b[0m: \
+                                    Failed to set CRTC: {error}",
+                                );
+                            }
+                        }
+                    } else {
+                        println!("Invalid arguments");
                     }
                 }
                 _ => {
@@ -240,7 +306,7 @@ impl GraphicsCard {
         }
     }
 
-    fn prepare_outputs(&self) -> std::io::Result<Vec<Output>> {
+    fn prepare_outputs(&self, clear_color: [u8; 4]) -> std::io::Result<Vec<Output>> {
         let mut outputs = Vec::with_capacity(1);
 
         let resources = self.resource_handles()?;
@@ -261,10 +327,10 @@ impl GraphicsCard {
             {
                 let mut map = self.map_dumb_buffer(&mut db)?;
                 for pixel in map.chunks_exact_mut(4) {
-                    pixel[0] = 51;
-                    pixel[1] = 43;
-                    pixel[2] = 43;
-                    pixel[3] = 255;
+                    pixel[0] = clear_color[0];
+                    pixel[1] = clear_color[1];
+                    pixel[2] = clear_color[2];
+                    pixel[3] = clear_color[3];
                 }
             }
 
