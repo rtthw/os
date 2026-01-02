@@ -20,8 +20,6 @@ fn main() {
     gpu.set_client_capability(drm::ClientCapability::Atomic, true)
         .expect("unable to request gpu.Atomic capability");
 
-    gpu.print_info("/dev/dri/card0");
-
     println!("\x1b[2mshell.gpu\x1b[0m: Preparing outputs...");
 
     let mut clear_color: [u8; 4] = [51, 43, 43, 255];
@@ -35,6 +33,8 @@ fn main() {
             return;
         }
     };
+
+    gpu.print_info("/dev/dri/card0");
 
     for output in &outputs {
         gpu.set_crtc(
@@ -262,7 +262,18 @@ impl GraphicsCard {
                 return;
             }
         };
+        let planes = match self.plane_handles() {
+            Ok(planes) => planes,
+            Err(error) => {
+                println!(
+                    "\x1b[31mERROR\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
+                    Failed to get planes: {error}",
+                );
+                return;
+            }
+        };
 
+        let mut found_planes = Vec::new();
         'crtc_iter: for crtc in resources.crtcs() {
             let Ok(info) = self.get_crtc(*crtc) else {
                 println!(
@@ -285,6 +296,24 @@ impl GraphicsCard {
                 return;
             };
 
+            for plane in &planes {
+                let Ok(plane_info) = self.get_plane(*plane) else {
+                    println!(
+                        "\x1b[33mWARN\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
+                        Failed to get plane info at {:?}",
+                        plane,
+                    );
+                    continue;
+                };
+                if plane_info.crtc() != Some(*crtc) {
+                    continue;
+                }
+                found_planes.push(*plane);
+                println!("\tPLANE @{:?}:", plane);
+                println!("\t\t.fb = {:?}", plane_info.framebuffer());
+                println!("\t\t.formats = {:?}", plane_info.formats());
+            }
+
             if let Ok(properties) = self.get_properties(*crtc) {
                 'prop_iter: for (prop, raw_value) in properties {
                     let Ok(info) = self.get_property(prop) else {
@@ -302,6 +331,21 @@ impl GraphicsCard {
                         info.value_type().convert_value(raw_value),
                     );
                 }
+            }
+        }
+
+        for plane in planes {
+            if !found_planes.contains(&plane) {
+                println!(
+                    "\x1b[2mshell.gpu_info.{name}\x1b[0m: PLANE @{:?} (DISCONNECTED):",
+                    plane,
+                );
+                let Ok(plane_info) = self.get_plane(plane) else {
+                    println!("\tINFO UNAVAILABLE");
+                    continue;
+                };
+                println!("\t.fb = {:?}", plane_info.framebuffer());
+                println!("\t.formats = {:?}", plane_info.formats());
             }
         }
     }
