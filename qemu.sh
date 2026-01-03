@@ -32,6 +32,7 @@ qemu-system-x86_64 \
     -m 2G \
     -smp 4 \
     -vga virtio \
+    -display gtk,gl=on,show-tabs=on \
     -kernel bzImage \
     -initrd initrd.cpio \
     -append 'console=ttyS0'
