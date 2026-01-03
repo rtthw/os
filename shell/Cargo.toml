@@ -7,3 +7,7 @@ edition.workspace = true
 drm = "0.14.1"
 kernel.workspace = true
 libc = "0.2"
+thiserror = "2"
+
+[build-dependencies]
+gl_generator = "0.14"

@@ -1,0 +1,199 @@
+//! # EGL Rendering Abstractions
+
+
+
+mod ffi {
+    #![allow(non_camel_case_types)]
+    #![allow(unsafe_op_in_unsafe_fn)]
+    #![allow(unused)]
+
+    use std::sync::LazyLock;
+
+    use crate::object::Object;
+
+    pub type khronos_utime_nanoseconds_t = khronos_uint64_t;
+    pub type khronos_uint64_t = u64;
+    pub type khronos_ssize_t = core::ffi::c_long;
+
+    pub type EGLint = i32;
+    pub type EGLchar = char;
+    pub type EGLLabelKHR = *const core::ffi::c_void;
+
+    pub type EGLNativeDisplayType = NativeDisplayType;
+    pub type EGLNativePixmapType = NativePixmapType;
+    pub type EGLNativeWindowType = NativeWindowType;
+
+    pub type NativeDisplayType = *const core::ffi::c_void;
+    pub type NativePixmapType = *const core::ffi::c_void;
+    pub type NativeWindowType = *const core::ffi::c_void;
+
+    include!(concat!(env!("OUT_DIR"), "/egl_bindings.rs"));
+
+    pub static LIB: LazyLock<Object> =
+        LazyLock::new(|| unsafe { Object::open("/lib/libEGL.so.1") }
+            .expect("Failed to load libEGL"));
+
+    pub const RESOURCE_BUSY_EXT: u32 = 0x3353;
+    pub const DRM_RENDER_NODE_FILE_EXT: u32 = 0x3377;
+
+    /// Raw EGL error
+    #[derive(thiserror::Error, Debug)]
+    pub enum EGLError {
+        /// EGL is not initialized, or could not be initialized, for the specified EGL display
+        /// connection.
+        #[error(
+            "EGL is not initialized, or could not be initialized, for the specified EGL display \
+            connection."
+        )]
+        NotInitialized,
+        /// EGL cannot access a requested resource (for example a context is bound in another
+        /// thread).
+        #[error(
+            "EGL cannot access a requested resource (for example a context is bound in another \
+            thread)."
+        )]
+        BadAccess,
+        /// EGL failed to allocate resources for the requested operation.
+        #[error("EGL failed to allocate resources for the requested operation.")]
+        BadAlloc,
+        /// An unrecognized attribute or attribute value was passed in the attribute list.
+        #[error("An unrecognized attribute or attribute value was passed in the attribute list.")]
+        BadAttribute,
+        /// An EGLContext argument does not name a valid EGL rendering context.
+        #[error("An EGLContext argument does not name a valid EGL rendering context.")]
+        BadContext,
+        /// An EGLConfig argument does not name a valid EGL frame buffer configuration.
+        #[error("An EGLConfig argument does not name a valid EGL frame buffer configuration.")]
+        BadConfig,
+        /// The current surface of the calling thread is a window, pixel buffer or pixmap that is no longer valid.
+        #[error(
+            "The current surface of the calling thread is a window, pixel buffer or pixmap that \
+            is no longer valid."
+        )]
+        BadCurrentSurface,
+        /// An EGLDevice argument is not valid for this display.
+        #[error("An EGLDevice argument is not valid for this display.")]
+        BadDevice,
+        /// An EGLDisplay argument does not name a valid EGL display connection.
+        #[error("An EGLDisplay argument does not name a valid EGL display connection.")]
+        BadDisplay,
+        /// An EGLSurface argument does not name a valid surface (window, pixel buffer or pixmap) configured for GL rendering.
+        #[error("An EGLSurface argument does not name a valid surface (window, pixel buffer or pixmap) configured for GL rendering.")]
+        BadSurface,
+        /// Arguments are inconsistent (for example, a valid context requires buffers not supplied by a valid surface).
+        #[error("Arguments are inconsistent (for example, a valid context requires buffers not supplied by a valid surface).")]
+        BadMatch,
+        /// One or more argument values are invalid.
+        #[error("One or more argument values are invalid.")]
+        BadParameter,
+        /// A NativePixmapType argument does not refer to a valid native pixmap.
+        #[error("A NativePixmapType argument does not refer to a valid native pixmap.")]
+        BadNativePixmap,
+        /// A NativeWindowType argument does not refer to a valid native window.
+        #[error("A NativeWindowType argument does not refer to a valid native window.")]
+        BadNativeWindow,
+        /// The EGL operation failed due to temporary unavailability of a requested resource, but
+        /// the arguments were otherwise valid, and a subsequent attempt may succeed.
+        #[error(
+            "The EGL operation failed due to temporary unavailability of a requested resource, \
+            but the arguments were otherwise valid, and a subsequent attempt may succeed."
+        )]
+        ResourceBusy,
+        /// A power management event has occurred. The application must destroy all contexts and
+        /// reinitialize OpenGL ES state and objects to continue rendering.
+        #[error(
+            "A power management event has occurred. The application must destroy all contexts and \
+            reinitialize OpenGL ES state and objects to continue rendering."
+        )]
+        ContextLost,
+        /// An unknown error
+        #[error("An unknown error ({0:x})")]
+        Unknown(u32),
+    }
+
+    impl From<u32> for EGLError {
+        #[inline]
+        fn from(value: u32) -> Self {
+            match value {
+                NOT_INITIALIZED => EGLError::NotInitialized,
+                BAD_ACCESS => EGLError::BadAccess,
+                BAD_ALLOC => EGLError::BadAlloc,
+                BAD_ATTRIBUTE => EGLError::BadAttribute,
+                BAD_CONTEXT => EGLError::BadContext,
+                BAD_CURRENT_SURFACE => EGLError::BadCurrentSurface,
+                BAD_DEVICE_EXT => EGLError::BadDevice,
+                BAD_DISPLAY => EGLError::BadDisplay,
+                BAD_SURFACE => EGLError::BadSurface,
+                BAD_MATCH => EGLError::BadMatch,
+                BAD_PARAMETER => EGLError::BadParameter,
+                BAD_NATIVE_PIXMAP => EGLError::BadNativePixmap,
+                BAD_NATIVE_WINDOW => EGLError::BadNativeWindow,
+                RESOURCE_BUSY_EXT => EGLError::ResourceBusy,
+                CONTEXT_LOST => EGLError::ContextLost,
+                other => EGLError::Unknown(other),
+            }
+        }
+    }
+
+    impl EGLError {
+        #[inline]
+        pub(super) fn from_last_call() -> Option<EGLError> {
+            match unsafe { GetError() as u32 } {
+                SUCCESS => None,
+                x => Some(EGLError::from(x)),
+            }
+        }
+    }
+
+    #[inline]
+    pub fn wrap_egl_call_ptr<R, F: FnOnce() -> *const R>(call: F) -> Result<*const R, EGLError> {
+        let res = call();
+        if !res.is_null() {
+            Ok(res)
+        } else {
+            Err(EGLError::from_last_call().unwrap_or_else(|| {
+                println!(
+                    "\x1b[33mWARN\x1b[0m \x1b[2m(shell)\x1b[0m: \
+                    Erroneous EGL call didn't set EGLError",
+                );
+                EGLError::Unknown(0)
+            }))
+        }
+    }
+}
+
+pub fn init() -> Result<(), String> {
+    ffi::load_with(|sym| {
+        let symbol = ffi::LIB.get::<_, *mut std::ffi::c_void>(sym);
+        match symbol {
+            Some(x) => *x as *const _,
+            None => std::ptr::null(),
+        }
+    });
+    ffi::load_with(|sym| unsafe {
+        let addr = std::ffi::CString::new(sym.as_bytes()).unwrap();
+        let addr = addr.as_ptr();
+        ffi::GetProcAddress(addr) as *const _
+    });
+
+    Ok(())
+}
+
+pub fn extensions() -> Result<Vec<String>, String> {
+    unsafe {
+        let ptr = ffi::wrap_egl_call_ptr(|| {
+            ffi::QueryString(ffi::NO_DISPLAY, ffi::EXTENSIONS as i32)
+        }).map_err(|_| "`EGL_EXT_client_extensions` not supported".to_string())?;
+
+        // NOTE: This is only possible with EGL 1.5 or `EGL_EXT_platform_base`, otherwise
+        //       `eglQueryString` would have returned an error.
+        if ptr.is_null() {
+            Err("Extension not supported: `EGL_EXT_platform_base`".to_string())
+        } else {
+            let p = std::ffi::CStr::from_ptr(ptr);
+            let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
+
+            Ok(list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>())
+        }
+    }
+}

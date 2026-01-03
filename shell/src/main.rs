@@ -1,4 +1,5 @@
 
+pub mod egl;
 pub mod object;
 
 use std::{ffi::OsString, io::{BufRead as _, Read as _, Write as _}, str::FromStr as _};
@@ -14,6 +15,11 @@ fn main() {
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     let gpu = GraphicsCard::open("/dev/dri/card0");
+
+    egl::init().expect("failed to initialize EGL");
+
+    let egl_extensions = egl::extensions().expect("failed to get EGL extensions");
+    println!("\x1b[2mshell.gpu\x1b[0m: Supported EGL client extensions: {:?}", egl_extensions);
 
     gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
         .expect("unable to request gpu.UniversalPlanes capability");
