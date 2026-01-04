@@ -363,3 +363,44 @@ impl Device {
             .collect::<Vec<_>>())
     }
 }
+
+pub struct Context {
+    inner: ffi::types::EGLContext,
+    display: Arc<DisplayHandle>,
+}
+
+impl Context {
+    pub fn new(display: &Display) -> Result<Self, String> {
+        let attributes = vec![
+            ffi::NONE as i32,
+        ];
+        let context = ffi::wrap_egl_call_ptr(|| unsafe {
+            ffi::CreateContext(
+                display.inner.ptr,
+                ffi::NO_CONFIG_KHR,
+                ffi::NO_CONTEXT,
+                attributes.as_ptr(),
+            )
+        })
+        .map_err(|e| format!("Failed to create context: {e}"))?;
+
+        Ok(Self {
+            inner: context,
+            display: display.inner.clone(),
+        })
+    }
+
+    pub unsafe fn make_current(&self) -> Result<(), String> {
+        ffi::wrap_egl_call_bool(|| unsafe {
+            ffi::MakeCurrent(
+                self.display.ptr,
+                ffi::NO_SURFACE,
+                ffi::NO_SURFACE,
+                self.inner,
+            )
+        })
+        .map_err(|e| format!("Failed to make EGL context current: {e}"))?;
+
+        Ok(())
+    }
+}

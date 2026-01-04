@@ -37,6 +37,12 @@ fn main() {
         panic!("No render node available");
     }
 
+    let context = egl::Context::new(&display).expect("failed to initialize EGL context");
+
+    unsafe {
+        context.make_current().unwrap();
+    }
+
     gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
         .expect("unable to request gpu.UniversalPlanes capability");
     gpu.set_client_capability(drm::ClientCapability::Atomic, true)
