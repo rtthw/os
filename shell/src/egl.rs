@@ -1,5 +1,9 @@
 //! # EGL Rendering Abstractions
 
+use std::{ffi::c_void, mem::MaybeUninit, os::fd::AsFd, sync::Arc};
+
+use gbm::AsRaw as _;
+
 
 
 mod ffi {
@@ -30,7 +34,7 @@ mod ffi {
     include!(concat!(env!("OUT_DIR"), "/egl_bindings.rs"));
 
     pub static LIB: LazyLock<Object> =
-        LazyLock::new(|| unsafe { Object::open("/lib/libEGL.so.1") }
+        LazyLock::new(|| unsafe { Object::open("/usr/lib/x86_64-linux-gnu/libEGL.so.1") }
             .expect("Failed to load libEGL"));
 
     pub const RESOURCE_BUSY_EXT: u32 = 0x3353;
@@ -160,6 +164,34 @@ mod ffi {
             }))
         }
     }
+
+    #[inline]
+    pub fn wrap_egl_call<R, F>(call: F, err: R) -> Result<R, EGLError>
+    where
+        R: PartialEq,
+        F: FnOnce() -> R,
+    {
+        let res = call();
+        if res != err {
+            Ok(res)
+        } else {
+            Err(EGLError::from_last_call().unwrap_or_else(|| {
+                println!(
+                    "\x1b[33mWARN\x1b[0m \x1b[2m(shell)\x1b[0m: \
+                    Erroneous EGL call didn't set EGLError",
+                );
+                EGLError::Unknown(0)
+            }))
+        }
+    }
+
+    #[inline]
+    pub fn wrap_egl_call_bool<F>(call: F) -> Result<types::EGLBoolean, EGLError>
+    where
+        F: FnOnce() -> types::EGLBoolean,
+    {
+        wrap_egl_call(call, FALSE)
+    }
 }
 
 pub fn init() -> Result<(), String> {
@@ -196,4 +228,73 @@ pub fn extensions() -> Result<Vec<String>, String> {
             Ok(list.split(' ').map(|e| e.to_string()).collect::<Vec<_>>())
         }
     }
+}
+
+
+
+pub struct Display {
+    inner: Arc<DisplayHandle>,
+}
+
+impl Display {
+    pub fn new<D: AsFd>(device: &gbm::Device<D>) -> Result<Self, String> {
+        let extensions = extensions()?;
+        let gbm_ptr = device.as_raw();
+        let display = {
+            if extensions.iter().any(|e| e == "EGL_KHR_platform_gbm") {
+                ffi::wrap_egl_call_ptr(|| unsafe {
+                    ffi::GetPlatformDisplayEXT(
+                        ffi::PLATFORM_GBM_KHR,
+                        gbm_ptr as _,
+                        core::ptr::null(),
+                    )
+                }).map_err(|e| format!("Failed to get KHR display: {e}"))?
+            } else if extensions.iter().any(|e| e == "EGL_MESA_platform_gbm") {
+                ffi::wrap_egl_call_ptr(|| unsafe {
+                    ffi::GetPlatformDisplayEXT(
+                        ffi::PLATFORM_GBM_MESA,
+                        gbm_ptr as _,
+                        core::ptr::null(),
+                    )
+                }).map_err(|e| format!("Failed to get MESA display: {e}"))?
+            } else {
+                return Err("Failed to select a valid EGL platform for device".to_string());
+            }
+        };
+        if display == ffi::NO_DISPLAY {
+            return Err("Unsupported platform display".to_string());
+        }
+
+        let egl_version = unsafe {
+            let mut major: MaybeUninit<ffi::types::EGLint> = MaybeUninit::uninit();
+            let mut minor: MaybeUninit<ffi::types::EGLint> = MaybeUninit::uninit();
+
+            ffi::wrap_egl_call_bool(|| {
+                ffi::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr())
+            })
+            .map_err(|_| "Failed to initialize EGL display".to_string())?;
+
+            let major = major.assume_init();
+            let minor = minor.assume_init();
+
+            (major, minor)
+        };
+
+        println!("\x1b[2mshell.gpu\x1b[0m: Initialized EGL v{}.{}", egl_version.0, egl_version.1);
+
+        ffi::wrap_egl_call_bool(|| unsafe { ffi::BindAPI(ffi::OPENGL_ES_API) })
+            .map_err(|source| format!("OpenGL ES not supported: {source}"))?;
+
+        Ok(Self {
+            inner: Arc::new(DisplayHandle {
+                ptr: display,
+                _gbm: gbm_ptr as _,
+            }),
+        })
+    }
+}
+
+struct DisplayHandle {
+    ptr: *const c_void,
+    _gbm: *const c_void,
 }

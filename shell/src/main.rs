@@ -2,7 +2,7 @@
 pub mod egl;
 pub mod object;
 
-use std::{ffi::OsString, io::{BufRead as _, Read as _, Write as _}, str::FromStr as _};
+use std::{ffi::OsString, io::{BufRead as _, Read as _, Write as _}, str::FromStr as _, sync::Arc};
 
 use drm::{Device, control::Device as ControlDevice};
 
@@ -20,6 +20,11 @@ fn main() {
 
     let egl_extensions = egl::extensions().expect("failed to get EGL extensions");
     println!("\x1b[2mshell.gpu\x1b[0m: Supported EGL client extensions: {:?}", egl_extensions);
+
+    println!("\x1b[2mshell.gpu\x1b[0m: Initializing EGL...");
+
+    let gbm = gbm::Device::new(gpu.clone()).expect("failed to create GBM device");
+    let display = egl::Display::new(&gbm).expect("failed to initialize EGL display");
 
     gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
         .expect("unable to request gpu.UniversalPlanes capability");
@@ -216,8 +221,8 @@ fn main() {
 
 
 
-#[derive(Debug)]
-struct GraphicsCard(std::fs::File);
+#[derive(Clone, Debug)]
+struct GraphicsCard(Arc<std::fs::File>);
 
 impl std::os::unix::io::AsFd for GraphicsCard {
     fn as_fd(&self) -> std::os::unix::io::BorrowedFd<'_> {
@@ -231,11 +236,11 @@ impl ControlDevice for GraphicsCard {}
 
 impl GraphicsCard {
     fn open(path: &str) -> Self {
-        GraphicsCard(std::fs::OpenOptions::new()
+        GraphicsCard(Arc::new(std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .open(path)
-            .unwrap())
+            .unwrap()))
     }
 
     fn print_info(&self, path: &str) {

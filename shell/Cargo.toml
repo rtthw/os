@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 drm = "0.14.1"
+gbm = "0.18.0"
 kernel.workspace = true
 libc = "0.2"
 thiserror = "2"
