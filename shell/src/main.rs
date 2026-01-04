@@ -25,6 +25,17 @@ fn main() {
 
     let gbm = gbm::Device::new(gpu.clone()).expect("failed to create GBM device");
     let display = egl::Display::new(&gbm).expect("failed to initialize EGL display");
+    let device = egl::Device::for_display(&display).expect("failed to get EGL device");
+
+    let egl_dpy_extensions = device.extensions().expect("failed to get EGL display extensions");
+    println!("\x1b[2mshell.gpu\x1b[0m: Supported EGL display extensions: {:?}", egl_dpy_extensions);
+
+    let egl_dev_extensions = device.extensions().expect("failed to get EGL device extensions");
+    println!("\x1b[2mshell.gpu\x1b[0m: Supported EGL device extensions: {:?}", egl_dev_extensions);
+
+    if egl_dev_extensions.iter().any(|e| e == "EGL_MESA_device_software") {
+        panic!("No render node available");
+    }
 
     gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
         .expect("unable to request gpu.UniversalPlanes capability");

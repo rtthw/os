@@ -234,6 +234,7 @@ pub fn extensions() -> Result<Vec<String>, String> {
 
 pub struct Display {
     inner: Arc<DisplayHandle>,
+    egl_version: (i32, i32),
 }
 
 impl Display {
@@ -290,11 +291,75 @@ impl Display {
                 ptr: display,
                 _gbm: gbm_ptr as _,
             }),
+            egl_version,
         })
+    }
+
+    pub fn extensions(&self) -> Result<Vec<String>, String> {
+        if self.egl_version < (1, 2) {
+            return Ok(Vec::new());
+        }
+
+        let ptr = ffi::wrap_egl_call_ptr(|| unsafe {
+            ffi::QueryDeviceStringEXT(self.inner.ptr, ffi::EXTENSIONS as ffi::types::EGLint)
+        }).map_err(|e| format!("Failed to query display extensions: {e}"))?;
+
+        let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+
+        Ok(c_str
+            // NOTE: EGL ensures the string is valid UTF-8.
+            .to_str().expect("found non-UTF8 display extension name")
+            .split_whitespace()
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>())
     }
 }
 
 struct DisplayHandle {
     ptr: *const c_void,
     _gbm: *const c_void,
+}
+
+pub struct Device {
+    inner: ffi::types::EGLDeviceEXT,
+}
+
+impl Device {
+    pub fn for_display(display: &Display) -> Result<Self, String> {
+        let mut device: ffi::types::EGLAttrib = 0;
+        if unsafe {
+            ffi::QueryDisplayAttribEXT(
+                display.inner.ptr,
+                ffi::DEVICE_EXT as i32,
+                &mut device as *mut _,
+            )
+        } != ffi::TRUE {
+            return Err("No device attributes supported for display".to_string());
+        }
+
+        let device = device as ffi::types::EGLDeviceEXT;
+
+        if device == ffi::NO_DEVICE_EXT {
+            return Err("Unsupported display".to_string());
+        }
+
+        Ok(Device {
+            inner: device,
+        })
+    }
+
+    pub fn extensions(&self) -> Result<Vec<String>, String> {
+        let ptr = ffi::wrap_egl_call_ptr(|| unsafe {
+            ffi::QueryDeviceStringEXT(self.inner, ffi::EXTENSIONS as ffi::types::EGLint)
+        }).map_err(|e| format!("Failed to query device extensions: {e}"))?;
+
+        let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
+
+        Ok(c_str
+            // NOTE: EGL ensures the string is valid UTF-8.
+            .to_str().expect("found non-UTF8 device extension name")
+            .split_whitespace()
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>())
+    }
 }
