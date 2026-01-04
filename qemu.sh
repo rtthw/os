@@ -31,7 +31,8 @@ cd ..
 qemu-system-x86_64 \
     -m 2G \
     -smp 4 \
-    -vga virtio \
+    -vga none \
+    -device virtio-gpu-gl \
     -display gtk,gl=on,show-tabs=on,show-cursor=on \
     -kernel bzImage \
     -initrd initrd.cpio \
