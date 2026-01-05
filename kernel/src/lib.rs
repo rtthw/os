@@ -5,6 +5,7 @@
 extern crate alloc;
 
 pub mod c_str;
+pub mod epoll;
 mod error;
 pub mod file;
 pub mod mount;
