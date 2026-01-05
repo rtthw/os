@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 anyhow = "1"
 drm = "0.14.1"
+evdev = "0.13"
 gbm = "0.18.0"
 kernel.workspace = true
 libc = "0.2"

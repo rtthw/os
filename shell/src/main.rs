@@ -1,11 +1,18 @@
 
 pub mod egl;
+pub mod input;
 pub mod object;
 
-use std::{ffi::OsString, io::{BufRead as _, Read as _, Write as _}, str::FromStr as _, sync::Arc};
+use std::{
+    ffi::OsString,
+    io::{BufRead as _, Read as _, Write as _},
+    os::fd::AsRawFd as _,
+    str::FromStr as _, sync::Arc
+};
 
 use anyhow::{Result, bail};
 use drm::{Device, control::Device as ControlDevice};
+use kernel::epoll::{Event, EventPoll};
 
 use crate::object::Object;
 
@@ -77,152 +84,67 @@ fn main() -> Result<()> {
     let this_obj = unsafe { Object::open_this().expect("should be able to open shell binary") };
 
     let stdin = std::io::stdin();
-    'main_loop: loop {
-        // if let Ok(events) = gpu.receive_events() {
-        //     for event in events {
-        //         match event {
-        //             drm::control::Event::Vblank(event) => {
-        //                 println!("VBLANK: {}@{:?}", event.frame, event.crtc);
-        //             }
-        //             drm::control::Event::PageFlip(event) => {
-        //                 println!("PAGE_FLIP: {}@{:?}", event.frame, event.crtc);
-        //             }
-        //             drm::control::Event::Unknown(_event) => todo!(),
-        //         }
-        //     }
-        // }
-        let current_dir = std::env::current_dir().unwrap();
-        print!("\x1b[2m {} }} \x1b[0m", current_dir.display());
+    unsafe {
+        assert_ne!(libc::fcntl(stdin.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK), -1);
+    }
 
-        std::io::stdout().flush().unwrap();
+    let mut event_loop = EventLoop::new()?;
+
+    for (path, device) in evdev::enumerate() {
+        let name = device.name().unwrap_or("Unnamed Device").to_string();
+        println!("\x1b[2mshell.dev\x1b[0m: {}", path.display());
+        println!("\t.name: {}", &name);
+        println!("\t.physical_path: {}", device.physical_path().unwrap_or("NONE"));
+        println!("\t.properties: {:?}", device.properties());
+        println!("\t.supported_events: {:?}", device.supported_events());
+        println!("\t.supported_keys: {:?}", device.supported_keys());
+
+        event_loop.add_source(input::InputSource::new(device)?, move |_shell, input_event| {
+            println!("INPUT @ {name}: {input_event:?}");
+            Ok(())
+        })?;
+    }
+
+    let mut shell = Shell {};
+
+    let current_dir = std::env::current_dir().unwrap();
+    print!("\x1b[2m {} }} \x1b[0m", current_dir.display());
+
+    std::io::stdout().flush().unwrap();
+
+    event_loop.run(&mut shell, 10, |shell| {
+        if stdin.lock().read(&mut []).is_err() {
+            return;
+        }
 
         let mut line = String::new();
-        if let Ok(_bytes_read) = stdin.lock().take(256).read_line(&mut line) {
-            let line = line.trim().to_string();
-            if line.is_empty() {
-                continue 'main_loop;
+        let Ok(_) = stdin.lock().take(256).read_line(&mut line) else { return; };
+        let line = line.trim().to_string();
+        if line.is_empty() {
+            return;
+        }
+
+        let args = line.split(' ').collect::<Vec<_>>();
+        let args_os: Vec<OsString> = args
+            .iter()
+            .map(|item| OsString::from_str(item).unwrap())
+            .collect();
+
+        match args[0] {
+            "cd" => {
+                if let Err(error) = std::env::set_current_dir(args[1]) {
+                    println!("{error}");
+                }
             }
-
-            let args = line.split(' ').collect::<Vec<_>>();
-            let args_os: Vec<OsString> = args
-                .iter()
-                .map(|item| OsString::from_str(item).unwrap())
-                .collect();
-
-            match args[0] {
-                "cd" => {
-                    if let Err(error) = std::env::set_current_dir(args[1]) {
-                        println!("{error}");
+            "env" => {
+                if args.len() == 1 {
+                    for (name, value) in std::env::vars() {
+                        println!("{name} = {value}");
                     }
-                }
-                "env" => {
-                    if args.len() == 1 {
-                        for (name, value) in std::env::vars() {
-                            println!("{name} = {value}");
-                        }
-                    } else {
-                        match std::env::var(args[1]) {
-                            Ok(value) => {
-                                println!("{value}")
-                            }
-                            Err(error) => {
-                                println!("{error}");
-                            }
-                        }
-                    }
-                }
-                "exit" => {
-                    std::process::exit(0);
-                }
-                "ls" => {
-                    let mut names = Vec::new();
-                    for entry in std::fs::read_dir(&current_dir).unwrap() {
-                        let entry = entry.unwrap();
-                        let name = entry.path().file_name().unwrap().to_str().unwrap().to_string();
-                        if name.contains(' ') {
-                            names.push(format!("'{name}'"));
-                        } else {
-                            names.push(name);
-                        }
-                    }
-                    println!("{}", names.join("  "));
-                }
-                "sym" => {
-                    // The type doesn't matter in this case (we're just printing debug info).
-                    match this_obj.get_untyped(args[1]) {
-                        Some(ptr) => {
-                            println!("{ptr:?}")
-                        }
-                        None => {
-                            println!("Symbol '{}' not found", args[1]);
-                        }
-                    }
-                }
-                "clear" => 'handle_clear: {
-                    if args.len() >= 4 {
-                        let Ok(r) = u8::from_str_radix(args[1], 10) else {
-                            println!("Invalid red channel: {}", args[1]);
-                            break 'handle_clear;
-                        };
-                        let Ok(g) = u8::from_str_radix(args[2], 10) else {
-                            println!("Invalid green channel: {}", args[2]);
-                            break 'handle_clear;
-                        };
-                        let Ok(b) = u8::from_str_radix(args[3], 10) else {
-                            println!("Invalid blue channel: {}", args[3]);
-                            break 'handle_clear;
-                        };
-                        let a = {
-                            if args.len() == 5 {
-                                let Ok(a) = u8::from_str_radix(args[4], 10) else {
-                                    println!("Invalid alpha channel: {}", args[4]);
-                                    break 'handle_clear;
-                                };
-                                a
-                            } else {
-                                255
-                            }
-                        };
-
-                        clear_color = [b, g, r, a];
-
-                        'map_outputs: for output in &mut outputs {
-                            let Ok(mut map) = gpu.map_dumb_buffer(&mut output.db) else {
-                                println!(
-                                    "\x1b[31mERROR\x1b[0m \x1b[2m(shell.clear)\x1b[0m: \
-                                    Failed to map output buffer",
-                                );
-                                continue 'map_outputs;
-                            };
-                            for pixel in map.chunks_exact_mut(4) {
-                                pixel[0] = clear_color[0];
-                                pixel[1] = clear_color[1];
-                                pixel[2] = clear_color[2];
-                                pixel[3] = clear_color[3];
-                            }
-                            if let Err(error) = gpu.set_crtc(
-                                output.crtc,
-                                Some(output.fb),
-                                (0, 0),
-                                &[output.conn],
-                                Some(output.mode),
-                            ) {
-                                println!(
-                                    "\x1b[31mERROR\x1b[0m \x1b[2m(shell.clear)\x1b[0m: \
-                                    Failed to set CRTC: {error}",
-                                );
-                            }
-                        }
-                    } else {
-                        println!("Invalid arguments");
-                    }
-                }
-                _ => {
-                    let bin_path = format!("/bin/{}", args[0]);
-                    match std::process::Command::new(bin_path).args(&args_os[1..]).output() {
-                        Ok(output) => {
-                            println!("{}", String::from_utf8(output.stdout).unwrap());
-                            println!("{}", String::from_utf8(output.stderr).unwrap());
+                } else {
+                    match std::env::var(args[1]) {
+                        Ok(value) => {
+                            println!("{value}")
                         }
                         Err(error) => {
                             println!("{error}");
@@ -230,9 +152,189 @@ fn main() -> Result<()> {
                     }
                 }
             }
+            "exit" => {
+                std::process::exit(0);
+            }
+            "ls" => {
+                let current_dir = std::env::current_dir().unwrap();
+                let mut names = Vec::new();
+                for entry in std::fs::read_dir(&current_dir).unwrap() {
+                    let entry = entry.unwrap();
+                    let name = entry.path().file_name().unwrap().to_str().unwrap().to_string();
+                    if name.contains(' ') {
+                        names.push(format!("'{name}'"));
+                    } else {
+                        names.push(name);
+                    }
+                }
+                println!("{}", names.join("  "));
+            }
+            "sym" => {
+                // The type doesn't matter in this case (we're just printing debug info).
+                match this_obj.get_untyped(args[1]) {
+                    Some(ptr) => {
+                        println!("{ptr:?}")
+                    }
+                    None => {
+                        println!("Symbol '{}' not found", args[1]);
+                    }
+                }
+            }
+            "clear" => 'handle_clear: {
+                if args.len() >= 4 {
+                    let Ok(r) = u8::from_str_radix(args[1], 10) else {
+                        println!("Invalid red channel: {}", args[1]);
+                        break 'handle_clear;
+                    };
+                    let Ok(g) = u8::from_str_radix(args[2], 10) else {
+                        println!("Invalid green channel: {}", args[2]);
+                        break 'handle_clear;
+                    };
+                    let Ok(b) = u8::from_str_radix(args[3], 10) else {
+                        println!("Invalid blue channel: {}", args[3]);
+                        break 'handle_clear;
+                    };
+                    let a = {
+                        if args.len() == 5 {
+                            let Ok(a) = u8::from_str_radix(args[4], 10) else {
+                                println!("Invalid alpha channel: {}", args[4]);
+                                break 'handle_clear;
+                            };
+                            a
+                        } else {
+                            255
+                        }
+                    };
 
-            std::io::stdout().flush().unwrap();
+                    clear_color = [b, g, r, a];
+
+                    'map_outputs: for output in &mut outputs {
+                        let Ok(mut map) = gpu.map_dumb_buffer(&mut output.db) else {
+                            println!(
+                                "\x1b[31mERROR\x1b[0m \x1b[2m(shell.clear)\x1b[0m: \
+                                Failed to map output buffer",
+                            );
+                            continue 'map_outputs;
+                        };
+                        for pixel in map.chunks_exact_mut(4) {
+                            pixel[0] = clear_color[0];
+                            pixel[1] = clear_color[1];
+                            pixel[2] = clear_color[2];
+                            pixel[3] = clear_color[3];
+                        }
+                        if let Err(error) = gpu.set_crtc(
+                            output.crtc,
+                            Some(output.fb),
+                            (0, 0),
+                            &[output.conn],
+                            Some(output.mode),
+                        ) {
+                            println!(
+                                "\x1b[31mERROR\x1b[0m \x1b[2m(shell.clear)\x1b[0m: \
+                                Failed to set CRTC: {error}",
+                            );
+                        }
+                    }
+                } else {
+                    println!("Invalid arguments");
+                }
+            }
+            _ => {
+                let bin_path = format!("/bin/{}", args[0]);
+                match std::process::Command::new(bin_path).args(&args_os[1..]).output() {
+                    Ok(output) => {
+                        println!("{}", String::from_utf8(output.stdout).unwrap());
+                        println!("{}", String::from_utf8(output.stderr).unwrap());
+                    }
+                    Err(error) => {
+                        println!("{error}");
+                    }
+                }
+            }
         }
+
+        let current_dir = std::env::current_dir().unwrap();
+        print!("\x1b[2m {} }} \x1b[0m", current_dir.display());
+
+        std::io::stdout().flush().unwrap();
+    })
+}
+
+
+
+pub struct Shell {}
+
+
+
+struct EventLoop<'a, D> {
+    poll: EventPoll,
+    event_buffer: Vec<Event>,
+    sources: Vec<Box<dyn AnyEventSource<D> + 'a>>,
+}
+
+const MAX_EVENTS_PER_TICK: usize = 8;
+
+impl<'a, D> EventLoop<'a, D> {
+    fn new() -> Result<Self> {
+        Ok(Self {
+            poll: EventPoll::create()?,
+            event_buffer: Vec::with_capacity(MAX_EVENTS_PER_TICK),
+            sources: Vec::new(),
+        })
+    }
+
+    fn add_source<S, F>(&mut self, mut source: S, callback: F) -> Result<()>
+    where
+        S: EventSource<D> + 'a,
+        F: FnMut(&mut D, S::Event) -> Result<()> + 'a,
+    {
+        let data = self.sources.len() as u64;
+        source.init(&self.poll, data)?;
+        self.sources.push(Box::new((source, callback)));
+        Ok(())
+    }
+
+    fn poll(&mut self, timeout: i32) -> Result<Vec<Event>> {
+        let _event_count = self.poll.wait(&mut self.event_buffer, timeout)?;
+        Ok(self.event_buffer.drain(..).collect())
+    }
+
+    fn run<F>(mut self, data: &mut D, timeout: i32, mut func: F) -> Result<()>
+    where
+        F: FnMut(&mut D),
+    {
+        loop {
+            'drain_events: for event in self.poll(timeout)? {
+                let Some(source) = self.sources.get_mut(event.data() as usize) else {
+                    continue 'drain_events;
+                };
+                source.handle_event(data, event)?;
+            }
+            func(data);
+        }
+    }
+}
+
+pub trait EventSource<D> {
+    type Event;
+
+    fn init(&mut self, poll: &EventPoll, key: u64) -> Result<()>;
+    fn handle_event<F>(&mut self, data: &mut D, event: Event, callback: F) -> Result<()>
+    where
+        F: FnMut(&mut D, Self::Event) -> Result<()>;
+}
+
+trait AnyEventSource<D> {
+    fn handle_event(&mut self, data: &mut D, event: Event) -> Result<()>;
+}
+
+impl<D, S, E, F> AnyEventSource<D> for (S, F)
+where
+    S: EventSource<D, Event = E>,
+    F: FnMut(&mut D, E) -> Result<()>,
+{
+    fn handle_event(&mut self, data: &mut D, event: Event) -> Result<()> {
+        <S as EventSource<D>>::handle_event(&mut self.0, data, event, &mut self.1)
     }
 }
 
