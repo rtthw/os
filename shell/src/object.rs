@@ -1,6 +1,7 @@
 
 use std::ffi::CStr;
 
+use anyhow::Result;
 use kernel::c_str::AsCStr;
 
 
@@ -13,22 +14,21 @@ unsafe impl Send for Object {}
 unsafe impl Sync for Object {}
 
 impl Object {
-    pub unsafe fn open<P>(path: &P) -> Result<Self, String>
+    pub unsafe fn open<P>(path: &P) -> Result<Self>
     where
         P: AsCStr + ?Sized,
     {
         Ok(path
             .map_cstr(|path| unsafe {
                 Self::open_with_path_ptr(path.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL)
-            })
-            .map_err(|error: kernel::Error| error.description().to_string())??)
+            })??)
     }
 
-    pub unsafe fn open_this() -> Result<Self, String> {
+    pub unsafe fn open_this() -> Result<Self> {
         unsafe { Self::open_with_path_ptr(core::ptr::null(), libc::RTLD_LAZY | libc::RTLD_LOCAL) }
     }
 
-    unsafe fn open_with_path_ptr(path: *const i8, flags: i32) -> Result<Self, String> {
+    unsafe fn open_with_path_ptr(path: *const i8, flags: i32) -> Result<Self> {
         let result = unsafe { libc::dlopen(path, flags) };
 
         if result.is_null() {
@@ -40,9 +40,11 @@ impl Object {
                     CStr::from_ptr(error_str_ptr)
                         .to_str()
                         .map_err(|utf8_error| {
-                            format!("dlopen error did not contain valid UTF-8: {utf8_error}")
-                        })?
-                        .to_string()
+                            anyhow::anyhow!(
+                                "dlopen error did not contain valid UTF-8: {utf8_error}"
+                            )
+                        })
+                        .map(|string| anyhow::anyhow!(string))?
                 }
             })
         } else {

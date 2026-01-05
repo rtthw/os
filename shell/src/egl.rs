@@ -2,6 +2,7 @@
 
 use std::{ffi::c_void, mem::MaybeUninit, os::fd::AsFd, sync::Arc};
 
+use anyhow::{Context as _, Result, bail};
 use gbm::AsRaw as _;
 
 
@@ -194,7 +195,7 @@ mod ffi {
     }
 }
 
-pub fn init() -> Result<(), String> {
+pub fn init() -> Result<()> {
     ffi::load_with(|sym| {
         let symbol = ffi::LIB.get::<_, *mut std::ffi::c_void>(sym);
         match symbol {
@@ -211,16 +212,16 @@ pub fn init() -> Result<(), String> {
     Ok(())
 }
 
-pub fn extensions() -> Result<Vec<String>, String> {
+pub fn extensions() -> Result<Vec<String>> {
     unsafe {
         let ptr = ffi::wrap_egl_call_ptr(|| {
             ffi::QueryString(ffi::NO_DISPLAY, ffi::EXTENSIONS as i32)
-        }).map_err(|_| "`EGL_EXT_client_extensions` not supported".to_string())?;
+        }).context("`EGL_EXT_client_extensions` not supported")?;
 
         // NOTE: This is only possible with EGL 1.5 or `EGL_EXT_platform_base`, otherwise
         //       `eglQueryString` would have returned an error.
         if ptr.is_null() {
-            Err("Extension not supported: `EGL_EXT_platform_base`".to_string())
+            bail!("Extension not supported: `EGL_EXT_platform_base`")
         } else {
             let p = std::ffi::CStr::from_ptr(ptr);
             let list = String::from_utf8(p.to_bytes().to_vec()).unwrap_or_else(|_| String::new());
@@ -238,7 +239,7 @@ pub struct Display {
 }
 
 impl Display {
-    pub fn new<D: AsFd>(device: &gbm::Device<D>) -> Result<Self, String> {
+    pub fn new<D: AsFd>(device: &gbm::Device<D>) -> Result<Self> {
         let extensions = extensions()?;
         let gbm_ptr = device.as_raw();
         let display = {
@@ -249,7 +250,7 @@ impl Display {
                         gbm_ptr as _,
                         core::ptr::null(),
                     )
-                }).map_err(|e| format!("Failed to get KHR display: {e}"))?
+                }).context("Failed to get KHR display")?
             } else if extensions.iter().any(|e| e == "EGL_MESA_platform_gbm") {
                 ffi::wrap_egl_call_ptr(|| unsafe {
                     ffi::GetPlatformDisplayEXT(
@@ -257,13 +258,13 @@ impl Display {
                         gbm_ptr as _,
                         core::ptr::null(),
                     )
-                }).map_err(|e| format!("Failed to get MESA display: {e}"))?
+                }).context("Failed to get MESA display")?
             } else {
-                return Err("Failed to select a valid EGL platform for device".to_string());
+                bail!("Failed to select a valid EGL platform for device");
             }
         };
         if display == ffi::NO_DISPLAY {
-            return Err("Unsupported platform display".to_string());
+            bail!("Unsupported platform display");
         }
 
         let egl_version = unsafe {
@@ -272,8 +273,7 @@ impl Display {
 
             ffi::wrap_egl_call_bool(|| {
                 ffi::Initialize(display, major.as_mut_ptr(), minor.as_mut_ptr())
-            })
-            .map_err(|_| "Failed to initialize EGL display".to_string())?;
+            }).context("Failed to initialize EGL display")?;
 
             let major = major.assume_init();
             let minor = minor.assume_init();
@@ -284,7 +284,7 @@ impl Display {
         println!("\x1b[2mshell.gpu\x1b[0m: Initialized EGL v{}.{}", egl_version.0, egl_version.1);
 
         ffi::wrap_egl_call_bool(|| unsafe { ffi::BindAPI(ffi::OPENGL_ES_API) })
-            .map_err(|source| format!("OpenGL ES not supported: {source}"))?;
+            .context("OpenGL ES not supported")?;
 
         Ok(Self {
             inner: Arc::new(DisplayHandle {
@@ -295,14 +295,14 @@ impl Display {
         })
     }
 
-    pub fn extensions(&self) -> Result<Vec<String>, String> {
+    pub fn extensions(&self) -> Result<Vec<String>> {
         if self.egl_version < (1, 2) {
             return Ok(Vec::new());
         }
 
         let ptr = ffi::wrap_egl_call_ptr(|| unsafe {
             ffi::QueryDeviceStringEXT(self.inner.ptr, ffi::EXTENSIONS as ffi::types::EGLint)
-        }).map_err(|e| format!("Failed to query display extensions: {e}"))?;
+        }).context("Failed to query display extensions")?;
 
         let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
 
@@ -325,7 +325,7 @@ pub struct Device {
 }
 
 impl Device {
-    pub fn for_display(display: &Display) -> Result<Self, String> {
+    pub fn for_display(display: &Display) -> Result<Self> {
         let mut device: ffi::types::EGLAttrib = 0;
         if unsafe {
             ffi::QueryDisplayAttribEXT(
@@ -334,13 +334,13 @@ impl Device {
                 &mut device as *mut _,
             )
         } != ffi::TRUE {
-            return Err("No device attributes supported for display".to_string());
+            bail!("No device attributes supported for display");
         }
 
         let device = device as ffi::types::EGLDeviceEXT;
 
         if device == ffi::NO_DEVICE_EXT {
-            return Err("Unsupported display".to_string());
+            bail!("Unsupported display");
         }
 
         Ok(Device {
@@ -348,10 +348,10 @@ impl Device {
         })
     }
 
-    pub fn extensions(&self) -> Result<Vec<String>, String> {
+    pub fn extensions(&self) -> Result<Vec<String>> {
         let ptr = ffi::wrap_egl_call_ptr(|| unsafe {
             ffi::QueryDeviceStringEXT(self.inner, ffi::EXTENSIONS as ffi::types::EGLint)
-        }).map_err(|e| format!("Failed to query device extensions: {e}"))?;
+        }).context("Failed to query device extensions")?;
 
         let c_str = unsafe { std::ffi::CStr::from_ptr(ptr) };
 
@@ -370,7 +370,7 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(display: &Display) -> Result<Self, String> {
+    pub fn new(display: &Display) -> Result<Self> {
         let attributes = vec![
             ffi::NONE as i32,
         ];
@@ -382,7 +382,7 @@ impl Context {
                 attributes.as_ptr(),
             )
         })
-        .map_err(|e| format!("Failed to create context: {e}"))?;
+        .context("Failed to create context")?;
 
         Ok(Self {
             inner: context,
@@ -390,7 +390,7 @@ impl Context {
         })
     }
 
-    pub unsafe fn make_current(&self) -> Result<(), String> {
+    pub unsafe fn make_current(&self) -> Result<()> {
         ffi::wrap_egl_call_bool(|| unsafe {
             ffi::MakeCurrent(
                 self.display.ptr,
@@ -399,7 +399,7 @@ impl Context {
                 self.inner,
             )
         })
-        .map_err(|e| format!("Failed to make EGL context current: {e}"))?;
+        .context("Failed to make EGL context current")?;
 
         Ok(())
     }

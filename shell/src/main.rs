@@ -4,17 +4,18 @@ pub mod object;
 
 use std::{ffi::OsString, io::{BufRead as _, Read as _, Write as _}, str::FromStr as _, sync::Arc};
 
+use anyhow::{Result, bail};
 use drm::{Device, control::Device as ControlDevice};
 
 use crate::object::Object;
 
 
 
-fn main() {
+fn main() -> Result<()> {
     println!("\x1b[2mshell\x1b[0m: Starting...");
     std::thread::sleep(std::time::Duration::from_secs(1));
 
-    let gpu = GraphicsCard::open("/dev/dri/card0");
+    let gpu = GraphicsCard::open("/dev/dri/card0")?;
 
     egl::init().expect("failed to initialize EGL");
 
@@ -54,11 +55,10 @@ fn main() {
     let mut outputs = match gpu.prepare_outputs(clear_color) {
         Ok(outputs) => outputs,
         Err(error) => {
-            println!(
+            bail!(
                 "\x1b[31mERROR\x1b[0m \x1b[2m(shell)\x1b[0m: \
                 Failed to prepare outputs: {error}",
             );
-            return;
         }
     };
 
@@ -252,12 +252,11 @@ impl Device for GraphicsCard {}
 impl ControlDevice for GraphicsCard {}
 
 impl GraphicsCard {
-    fn open(path: &str) -> Self {
-        GraphicsCard(Arc::new(std::fs::OpenOptions::new()
+    fn open(path: &str) -> Result<Self> {
+        Ok(GraphicsCard(Arc::new(std::fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .open(path)
-            .unwrap()))
+            .open(path)?)))
     }
 
     fn print_info(&self, path: &str) {
@@ -378,7 +377,7 @@ impl GraphicsCard {
         }
     }
 
-    fn prepare_outputs(&self, clear_color: [u8; 4]) -> std::io::Result<Vec<Output>> {
+    fn prepare_outputs(&self, clear_color: [u8; 4]) -> Result<Vec<Output>> {
         let mut outputs = Vec::with_capacity(1);
 
         let resources = self.resource_handles()?;
