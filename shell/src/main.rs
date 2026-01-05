@@ -105,10 +105,11 @@ fn main() -> Result<()> {
         })?;
     }
 
-    let mut shell = Shell {};
+    let mut shell = Shell {
+        current_dir: std::env::current_dir().unwrap().to_str().unwrap().to_string(),
+    };
 
-    let current_dir = std::env::current_dir().unwrap();
-    print!("\x1b[2m {} }} \x1b[0m", current_dir.display());
+    print!("\x1b[2m {} }} \x1b[0m", &shell.current_dir);
 
     std::io::stdout().flush().unwrap();
 
@@ -134,6 +135,10 @@ fn main() -> Result<()> {
             "cd" => {
                 if let Err(error) = std::env::set_current_dir(args[1]) {
                     println!("{error}");
+                } else {
+                    shell.current_dir = std::env::current_dir().unwrap()
+                        .to_str().unwrap()
+                        .to_string();
                 }
             }
             "env" => {
@@ -156,9 +161,8 @@ fn main() -> Result<()> {
                 std::process::exit(0);
             }
             "ls" => {
-                let current_dir = std::env::current_dir().unwrap();
                 let mut names = Vec::new();
-                for entry in std::fs::read_dir(&current_dir).unwrap() {
+                for entry in std::fs::read_dir(&shell.current_dir).unwrap() {
                     let entry = entry.unwrap();
                     let name = entry.path().file_name().unwrap().to_str().unwrap().to_string();
                     if name.contains(' ') {
@@ -253,8 +257,7 @@ fn main() -> Result<()> {
             }
         }
 
-        let current_dir = std::env::current_dir().unwrap();
-        print!("\x1b[2m {} }} \x1b[0m", current_dir.display());
+        print!("\x1b[2m {} }} \x1b[0m", &shell.current_dir);
 
         std::io::stdout().flush().unwrap();
     })
@@ -262,7 +265,9 @@ fn main() -> Result<()> {
 
 
 
-pub struct Shell {}
+pub struct Shell {
+    current_dir: String,
+}
 
 
 
