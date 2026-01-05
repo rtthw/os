@@ -3,10 +3,22 @@ use crate::{Error, Result, c_str::AsCStr, proc::{ProcessGroup, Session}, raw};
 
 
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, Hash, PartialEq)]
 #[repr(transparent)]
 pub struct File {
     pub(crate) fd: i32,
+}
+
+impl File {
+    #[inline]
+    pub const unsafe fn from_raw(raw_fd: i32) -> Self {
+        Self { fd: raw_fd }
+    }
+
+    #[inline]
+    pub const unsafe fn into_raw(self) -> i32 {
+        self.fd
+    }
 }
 
 impl File {
@@ -138,6 +150,18 @@ impl File {
 
 #[derive(Clone, Copy, Default, Eq, PartialEq)]
 pub struct OpenFlags(i32);
+
+impl OpenFlags {
+    #[inline]
+    pub const unsafe fn from_raw(raw_flags: i32) -> Self {
+        Self(raw_flags)
+    }
+
+    #[inline]
+    pub const unsafe fn into_raw(self) -> i32 {
+        self.0
+    }
+}
 
 pub const O_APPEND: OpenFlags = OpenFlags(libc::O_APPEND);
 pub const O_ASYNC: OpenFlags = OpenFlags(libc::O_ASYNC);
