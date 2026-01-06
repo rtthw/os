@@ -287,7 +287,7 @@ pub struct Shell {
 struct EventLoop<'a, D> {
     poll: EventPoll,
     event_buffer: Vec<Event>,
-    sources: Vec<Box<dyn AnyEventSource<D> + 'a>>,
+    sources: Vec<Option<Box<dyn AnyEventSource<D> + 'a>>>,
 }
 
 const MAX_EVENTS_PER_TICK: usize = 8;
@@ -306,9 +306,16 @@ impl<'a, D> EventLoop<'a, D> {
         S: EventSource<D> + 'a,
         F: FnMut(&mut D, S::Event) -> Result<()> + 'a,
     {
-        let data = self.sources.len() as u64;
-        source.init(&self.poll, data)?;
-        self.sources.push(Box::new((source, callback)));
+        if let Some(vacant_id) = self.sources.iter().position(|s| s.is_none()) {
+            let data = vacant_id as u64;
+            source.init(&self.poll, data)?;
+            self.sources[vacant_id] = Some(Box::new((source, callback)));
+        } else {
+            let data = self.sources.len() as u64;
+            source.init(&self.poll, data)?;
+            self.sources.push(Some(Box::new((source, callback))));
+        }
+
         Ok(())
     }
 
@@ -323,10 +330,32 @@ impl<'a, D> EventLoop<'a, D> {
     {
         loop {
             'drain_events: for event in self.poll(timeout)? {
-                let Some(source) = self.sources.get_mut(event.data() as usize) else {
-                    continue 'drain_events;
+                let response = {
+                    let Some(source) = self.sources.get_mut(event.data() as usize) else {
+                        continue 'drain_events;
+                    };
+                    let Some(source) = source else {
+                        warn!("Received an event for a nonexistent event source: {event:?}");
+                        continue 'drain_events;
+                    };
+                    source.handle_event(data, event)?
                 };
-                source.handle_event(data, event)?;
+                match response {
+                    EventResponse::Continue => {}
+                    EventResponse::RemoveSource => {
+                        let Some(mut source) = self.sources
+                            .get_mut(event.data() as usize)
+                            .and_then(|s| s.take())
+                        else {
+                            // SAFETY: We wouldn't receive `EventResponse::RemoveSource` if it
+                            //         didn't already exist.
+                            unreachable!()
+                        };
+
+                        // ???: Should we just ignore the error here?
+                        source.cleanup(&self.poll)?;
+                    }
+                }
             }
             func(data);
         }
@@ -337,13 +366,15 @@ pub trait EventSource<D> {
     type Event;
 
     fn init(&mut self, poll: &EventPoll, key: u64) -> Result<()>;
-    fn handle_event<F>(&mut self, data: &mut D, event: Event, callback: F) -> Result<()>
+    fn handle_event<F>(&mut self, data: &mut D, event: Event, callback: F) -> Result<EventResponse>
     where
         F: FnMut(&mut D, Self::Event) -> Result<()>;
+    fn cleanup(&mut self, poll: &EventPoll) -> Result<()>;
 }
 
 trait AnyEventSource<D> {
-    fn handle_event(&mut self, data: &mut D, event: Event) -> Result<()>;
+    fn handle_event(&mut self, data: &mut D, event: Event) -> Result<EventResponse>;
+    fn cleanup(&mut self, poll: &EventPoll) -> Result<()>;
 }
 
 impl<D, S, E, F> AnyEventSource<D> for (S, F)
@@ -351,9 +382,19 @@ where
     S: EventSource<D, Event = E>,
     F: FnMut(&mut D, E) -> Result<()>,
 {
-    fn handle_event(&mut self, data: &mut D, event: Event) -> Result<()> {
+    fn handle_event(&mut self, data: &mut D, event: Event) -> Result<EventResponse> {
         <S as EventSource<D>>::handle_event(&mut self.0, data, event, &mut self.1)
     }
+
+    fn cleanup(&mut self, poll: &EventPoll) -> Result<()> {
+        <S as EventSource<D>>::cleanup(&mut self.0, poll)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EventResponse {
+    Continue,
+    RemoveSource,
 }
 
 
