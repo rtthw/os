@@ -1,6 +1,7 @@
 
 pub mod egl;
 pub mod input;
+pub mod log;
 pub mod object;
 
 use std::{
@@ -13,13 +14,16 @@ use std::{
 use anyhow::{Result, bail};
 use drm::{Device, control::Device as ControlDevice};
 use kernel::epoll::{Event, EventPoll};
+use ::log::{debug, error, info, trace, warn};
 
 use crate::object::Object;
 
 
 
 fn main() -> Result<()> {
-    println!("\x1b[2mshell\x1b[0m: Starting...");
+    log::Logger::default().init()?;
+
+    info!("Starting shell...");
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     let gpu = GraphicsCard::open("/dev/dri/card0")?;
@@ -27,19 +31,19 @@ fn main() -> Result<()> {
     egl::init().expect("failed to initialize EGL");
 
     let egl_extensions = egl::extensions().expect("failed to get EGL extensions");
-    println!("\x1b[2mshell.gpu\x1b[0m: Supported EGL client extensions: {:?}", egl_extensions);
+    trace!(target: "gpu", "Supported EGL client extensions: {:?}", egl_extensions);
 
-    println!("\x1b[2mshell.gpu\x1b[0m: Initializing EGL...");
+    trace!(target: "gpu", "Initializing EGL...");
 
     let gbm = gbm::Device::new(gpu.clone()).expect("failed to create GBM device");
     let display = egl::Display::new(&gbm).expect("failed to initialize EGL display");
     let device = egl::Device::for_display(&display).expect("failed to get EGL device");
 
     let egl_dpy_extensions = device.extensions().expect("failed to get EGL display extensions");
-    println!("\x1b[2mshell.gpu\x1b[0m: Supported EGL display extensions: {:?}", egl_dpy_extensions);
+    trace!(target: "gpu", "Supported EGL display extensions: {:?}", egl_dpy_extensions);
 
     let egl_dev_extensions = device.extensions().expect("failed to get EGL device extensions");
-    println!("\x1b[2mshell.gpu\x1b[0m: Supported EGL device extensions: {:?}", egl_dev_extensions);
+    trace!(target: "gpu", "Supported EGL device extensions: {:?}", egl_dev_extensions);
 
     if egl_dev_extensions.iter().any(|e| e == "EGL_MESA_device_software") {
         panic!("No render node available");
@@ -56,7 +60,7 @@ fn main() -> Result<()> {
     gpu.set_client_capability(drm::ClientCapability::Atomic, true)
         .expect("unable to request gpu.Atomic capability");
 
-    println!("\x1b[2mshell.gpu\x1b[0m: Preparing outputs...");
+    trace!(target: "gpu", "Preparing outputs...");
 
     let mut clear_color: [u8; 4] = [51, 43, 43, 255];
     let mut outputs = match gpu.prepare_outputs(clear_color) {
@@ -69,7 +73,7 @@ fn main() -> Result<()> {
         }
     };
 
-    gpu.print_info("/dev/dri/card0");
+    gpu.debug_info("/dev/dri/card0");
 
     for output in &outputs {
         gpu.set_crtc(
@@ -92,15 +96,24 @@ fn main() -> Result<()> {
 
     for (path, device) in evdev::enumerate() {
         let name = device.name().unwrap_or("Unnamed Device").to_string();
-        println!("\x1b[2mshell.dev\x1b[0m: {}", path.display());
-        println!("\t.name: {}", &name);
-        println!("\t.physical_path: {}", device.physical_path().unwrap_or("NONE"));
-        println!("\t.properties: {:?}", device.properties());
-        println!("\t.supported_events: {:?}", device.supported_events());
-        println!("\t.supported_keys: {:?}", device.supported_keys());
+        debug!(
+            target: "dev",
+            "{}\n\
+            \t.name: {}\n\
+            \t.physical_path: {}\n\
+            \t.properties: {:?}\n\
+            \t.supported_events: {:?}\n\
+            \t.supported_keys: {:?}",
+            path.display(),
+            &name,
+            device.physical_path().unwrap_or("NONE"),
+            device.properties(),
+            device.supported_events(),
+            device.supported_keys(),
+        );
 
         event_loop.add_source(input::InputSource::new(device)?, move |_shell, input_event| {
-            println!("INPUT @ {name}: {input_event:?}");
+            trace!(target: "input", "EVENT @ {name}: {input_event:?}");
             Ok(())
         })?;
     }
@@ -366,43 +379,39 @@ impl GraphicsCard {
             .open(path)?)))
     }
 
-    fn print_info(&self, path: &str) {
+    fn debug_info(&self, path: &str) {
         let name = path.rsplit_once('/').map_or(path, |(_, name)| name).to_string();
 
         let driver = match self.get_driver() {
             Ok(driver) => driver,
             Err(error) => {
-                println!(
-                    "\x1b[31mERROR\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
-                    Failed to get driver: {error}",
-                );
+                error!(target: "gpu_info", "Failed to get driver for {name}: {error}");
                 return;
             }
         };
 
-        println!("\x1b[2mshell.gpu_info.{name}\x1b[0m: DRIVER:");
-
-        println!("\t.name = {}", driver.name().display());
-        println!("\t.date = {}", driver.date().display());
-        println!("\t.description = {}", driver.description().display());
+        trace!(
+            target: "gpu_info",
+            "Graphics driver for {name}:\n\
+            \t.name = {}\n\
+            \t.date = {}\n\
+            \t.description = {}",
+            driver.name().display(),
+            driver.date().display(),
+            driver.description().display(),
+        );
 
         let resources = match self.resource_handles() {
             Ok(resources) => resources,
             Err(error) => {
-                println!(
-                    "\x1b[31mERROR\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
-                    Failed to get resources: {error}",
-                );
+                error!(target: "gpu_info", "Failed to get resources for {name}: {error}");
                 return;
             }
         };
         let planes = match self.plane_handles() {
             Ok(planes) => planes,
             Err(error) => {
-                println!(
-                    "\x1b[31mERROR\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
-                    Failed to get planes: {error}",
-                );
+                error!(target: "gpu_info", "Failed to get planes for {name}: {error}");
                 return;
             }
         };
@@ -410,57 +419,76 @@ impl GraphicsCard {
         let mut found_planes = Vec::new();
         'crtc_iter: for crtc in resources.crtcs() {
             let Ok(info) = self.get_crtc(*crtc) else {
-                println!(
-                    "\x1b[33mWARN\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
-                    Failed to get CRTC info at {:?}",
-                    crtc,
+                warn!(
+                    target: "gpu_info",
+                    "Failed to get CRTC info for {name} at {crtc:?}",
                 );
                 continue 'crtc_iter;
             };
 
-            println!("\x1b[2mshell.gpu_info.{name}\x1b[0m: CRTC:");
-
-            println!("\t.position = {},{}", info.position().0, info.position().1);
-
-            if let Some(mode) = info.mode() {
-                println!("\t.size = {},{}", mode.size().0, mode.size().1);
-                println!("\t.clock_speed = {} kHz", mode.clock());
-            } else {
-                println!("\t.mode = NONE");
-                return;
-            };
+            trace!(
+                target: "gpu_info",
+                "{}\n\
+                \t.position: ({}, {})\n\
+                \t.mode: {}\n\
+                \t.framebuffer: {:?}\n\
+                \t.gamma_length: {}",
+                info,
+                info.position().0, info.position().1,
+                if let Some(mode) = info.mode() {
+                    format!(
+                        "{}\n\
+                        \t\t.size: ({}, {})\n\
+                        \t\t.clock_speed: {} kHz\n\
+                        \t\t.vrefresh: {}\n\
+                        \t\t.flags: {:?}\n\
+                        \t\t.mode_type: {:?}",
+                        mode.name().to_string_lossy(),
+                        mode.size().0, mode.size().1,
+                        mode.clock(),
+                        mode.vrefresh(),
+                        mode.flags(),
+                        mode.mode_type(),
+                    )
+                } else {
+                    "NONE".to_string()
+                },
+                info.framebuffer(),
+                info.gamma_length(),
+            );
 
             for plane in &planes {
                 let Ok(plane_info) = self.get_plane(*plane) else {
-                    println!(
-                        "\x1b[33mWARN\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
-                        Failed to get plane info at {:?}",
-                        plane,
-                    );
+                    warn!(target: "gpu_info", "Failed to get plane info for {name} at {plane:?}");
                     continue;
                 };
                 if plane_info.crtc() != Some(*crtc) {
                     continue;
                 }
                 found_planes.push(*plane);
-                println!("\tPLANE @{:?}:", plane);
-                println!("\t\t.fb = {:?}", plane_info.framebuffer());
-                println!("\t\t.formats = {:?}", plane_info.formats());
+                trace!(
+                    target: "gpu_info",
+                    "Plane for {crtc:?}: {plane:?}\n\
+                    \t.fb = {:?}\n\
+                    \t.formats = {:?}",
+                    plane_info.framebuffer(),
+                    plane_info.formats(),
+                );
             }
 
             if let Ok(properties) = self.get_properties(*crtc) {
                 'prop_iter: for (prop, raw_value) in properties {
                     let Ok(info) = self.get_property(prop) else {
-                        println!(
-                            "\x1b[33mWARN\x1b[0m \x1b[2m(shell.gpu_info.{name})\x1b[0m: \
-                            Failed to get property info at {:?}",
-                            prop,
+                        warn!(
+                            target: "gpu_info",
+                            "Failed to get property info for {name} at {prop:?}",
                         );
                         continue 'prop_iter;
                     };
 
-                    println!(
-                        "\t...: {} = {:?}",
+                    trace!(
+                        target: "gpu_info",
+                        "Property for {crtc:?}: {} = {:?}",
                         info.name().to_string_lossy(),
                         info.value_type().convert_value(raw_value),
                     );
@@ -470,16 +498,19 @@ impl GraphicsCard {
 
         for plane in planes {
             if !found_planes.contains(&plane) {
-                println!(
-                    "\x1b[2mshell.gpu_info.{name}\x1b[0m: PLANE @{:?} (DISCONNECTED):",
-                    plane,
-                );
                 let Ok(plane_info) = self.get_plane(plane) else {
-                    println!("\tINFO UNAVAILABLE");
+                    trace!(target: "gpu_info", "Info unavailable for {plane:?}");
                     continue;
                 };
-                println!("\t.fb = {:?}", plane_info.framebuffer());
-                println!("\t.formats = {:?}", plane_info.formats());
+                trace!(
+                    target: "gpu_info",
+                    "PLANE @{:?} (DISCONNECTED):\n\
+                    \t.fb = {:?}\n\
+                    \t.formats = {:?}",
+                    plane,
+                    plane_info.framebuffer(),
+                    plane_info.formats(),
+                );
             }
         }
     }

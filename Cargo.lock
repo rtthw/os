@@ -367,6 +367,7 @@ dependencies = [
  "gl_generator",
  "kernel",
  "libc",
+ "log",
  "thiserror",
 ]
 

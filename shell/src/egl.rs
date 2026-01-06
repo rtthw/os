@@ -4,6 +4,7 @@ use std::{ffi::c_void, mem::MaybeUninit, os::fd::AsFd, sync::Arc};
 
 use anyhow::{Context as _, Result, bail};
 use gbm::AsRaw as _;
+use log::info;
 
 
 
@@ -281,7 +282,7 @@ impl Display {
             (major, minor)
         };
 
-        println!("\x1b[2mshell.gpu\x1b[0m: Initialized EGL v{}.{}", egl_version.0, egl_version.1);
+        info!(target: "graphics", "Initialized EGL v{}.{}", egl_version.0, egl_version.1);
 
         ffi::wrap_egl_call_bool(|| unsafe { ffi::BindAPI(ffi::OPENGL_ES_API) })
             .context("OpenGL ES not supported")?;
