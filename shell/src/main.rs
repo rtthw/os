@@ -8,7 +8,7 @@ use std::{
     ffi::OsString,
     io::{BufRead as _, Read as _, Write as _},
     os::fd::AsRawFd as _,
-    str::FromStr as _, sync::Arc
+    str::FromStr as _, sync::Arc, time::Instant
 };
 
 use anyhow::{Result, bail};
@@ -319,17 +319,37 @@ impl<'a, D> EventLoop<'a, D> {
         Ok(())
     }
 
-    fn poll(&mut self, timeout: i32) -> Result<Vec<Event>> {
+    fn poll(&mut self, timeout: i32) -> Result<Vec<Event>, kernel::Error> {
         let _event_count = self.poll.wait(&mut self.event_buffer, timeout)?;
         Ok(self.event_buffer.drain(..).collect())
     }
 
-    fn run<F>(mut self, data: &mut D, timeout: i32, mut func: F) -> Result<()>
+    fn run<F>(mut self, data: &mut D, mut timeout: i32, mut func: F) -> Result<()>
     where
         F: FnMut(&mut D),
     {
-        loop {
-            'drain_events: for event in self.poll(timeout)? {
+        'main_loop: loop {
+            let now = Instant::now();
+            let events = 'poll_for_events: loop {
+                match self.poll(timeout) {
+                    Ok(events) => {
+                        break 'poll_for_events events;
+                    }
+                    // If the poll was interrupted, retry until the timeout expires.
+                    Err(error) if error == kernel::Error::INTR => {
+                        let total_polling_time = now.elapsed().as_millis() as i32;
+                        if total_polling_time >= timeout {
+                            continue 'main_loop;
+                        } else {
+                            // Subtract the total polling time from the timeout so the kernel polls
+                            // for *exactly* the amount of time requested.
+                            timeout -= total_polling_time;
+                        }
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            };
+            'drain_events: for event in events {
                 let response = {
                     let Some(source) = self.sources.get_mut(event.data() as usize) else {
                         continue 'drain_events;
