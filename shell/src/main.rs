@@ -7,16 +7,25 @@ pub mod object;
 use std::{
     ffi::OsString,
     io::{BufRead as _, Read as _, Write as _},
+    num::NonZeroU32,
     os::fd::AsRawFd as _,
-    str::FromStr as _, sync::Arc, time::Instant
+    str::FromStr as _,
+    sync::Arc,
+    time::Instant,
 };
 
 use anyhow::{Result, bail};
 use drm::{Device, control::Device as ControlDevice};
-use kernel::epoll::{Event, EventPoll};
+use glutin::{
+    config::GlConfig as _,
+    display::{GetGlDisplay as _, GlDisplay as _},
+    prelude::{NotCurrentGlContext as _, PossiblyCurrentGlContext as _},
+    surface::GlSurface as _,
+};
+use kernel::{epoll::{Event, EventPoll}, file::File};
 use ::log::{debug, error, info, trace, warn};
 
-use crate::object::Object;
+use crate::{egl::gl, object::Object};
 
 
 
@@ -28,32 +37,48 @@ fn main() -> Result<()> {
 
     let gpu = GraphicsCard::open("/dev/dri/card0")?;
 
-    egl::init().expect("failed to initialize EGL");
+    let devices = glutin::api::egl::device::Device::query_devices()
+        .expect("failed to query devices")
+        .collect::<Vec<_>>();
 
-    let egl_extensions = egl::extensions().expect("failed to get EGL extensions");
-    trace!(target: "gpu", "Supported EGL client extensions: {:?}", egl_extensions);
+    let device = devices.first().expect("failed to discover any output devices");
 
-    trace!(target: "gpu", "Initializing EGL...");
-
-    let gbm = gbm::Device::new(gpu.clone()).expect("failed to create GBM device");
-    let display = egl::Display::new(&gbm).expect("failed to initialize EGL display");
-    let device = egl::Device::for_display(&display).expect("failed to get EGL device");
-
-    let egl_dpy_extensions = device.extensions().expect("failed to get EGL display extensions");
-    trace!(target: "gpu", "Supported EGL display extensions: {:?}", egl_dpy_extensions);
-
-    let egl_dev_extensions = device.extensions().expect("failed to get EGL device extensions");
-    trace!(target: "gpu", "Supported EGL device extensions: {:?}", egl_dev_extensions);
-
-    if egl_dev_extensions.iter().any(|e| e == "EGL_MESA_device_software") {
-        panic!("No render node available");
+    let display = unsafe {
+        glutin::api::egl::display::Display::with_device(
+            device,
+            Some(raw_window_handle::RawDisplayHandle::Drm(
+                raw_window_handle::DrmDisplayHandle::new(gpu.as_raw_fd()),
+            )),
+        )
     }
+        .expect("Failed to create display");
 
-    let context = egl::Context::new(&display).expect("failed to initialize EGL context");
-
-    unsafe {
-        context.make_current().unwrap();
+    let config = unsafe {
+        display.find_configs(glutin::config::ConfigTemplateBuilder::default()
+            .with_surface_type(glutin::config::ConfigSurfaceTypes::empty())
+            .build())
     }
+        .unwrap()
+        .reduce(
+            |config, acc| {
+                debug!("{:?}, {:?}, {:?}, SRGB={}, HWACC={}", config.api(), config.config_surface_types(), config.color_buffer_type(), config.srgb_capable(), config.hardware_accelerated());
+                if config.num_samples() > acc.num_samples() { config } else { acc }
+            },
+        )
+        .expect("no available GL configs");
+
+    let context_attributes = glutin::context::ContextAttributesBuilder::new().build(None);
+    let fallback_context_attributes = glutin::context::ContextAttributesBuilder::new()
+        .with_context_api(glutin::context::ContextApi::Gles(None))
+        .build(None);
+
+    let context = unsafe {
+        display.create_context(&config, &context_attributes).unwrap_or_else(|_| {
+            display
+                .create_context(&config, &fallback_context_attributes)
+                .expect("failed to create context")
+        })
+    };
 
     gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
         .expect("unable to request gpu.UniversalPlanes capability");
@@ -62,9 +87,8 @@ fn main() -> Result<()> {
 
     trace!(target: "gpu", "Preparing outputs...");
 
-    let mut clear_color: [u8; 4] = [51, 43, 43, 255];
-    let mut outputs = match gpu.prepare_outputs(clear_color) {
-        Ok(outputs) => outputs,
+    let output = match gpu.prepare_output(&display, &config, context) {
+        Ok(output) => output,
         Err(error) => {
             bail!(
                 "\x1b[31mERROR\x1b[0m \x1b[2m(shell)\x1b[0m: \
@@ -75,15 +99,19 @@ fn main() -> Result<()> {
 
     gpu.debug_info("/dev/dri/card0");
 
-    for output in &outputs {
-        gpu.set_crtc(
-            output.crtc,
-            Some(output.fb),
-            (0, 0),
-            &[output.conn],
-            Some(output.mode),
-        ).unwrap();
-    }
+    gpu.set_crtc(
+        output.crtc,
+        Some(output.fb),
+        (0, 0),
+        &[output.conn],
+        Some(output.mode),
+    )?;
+    gpu.page_flip(
+        output.crtc,
+        output.fb,
+        drm::control::PageFlipFlags::EVENT,
+        None,
+    )?;
 
     let this_obj = unsafe { Object::open_this().expect("should be able to open shell binary") };
 
@@ -93,6 +121,15 @@ fn main() -> Result<()> {
     }
 
     let mut event_loop = EventLoop::new()?;
+
+    event_loop.add_source(gpu.clone(), |shell, drm_event| {
+        if let drm::control::Event::PageFlip(event) = drm_event {
+            shell.render(event.crtc)?;
+        } else {
+            trace!("Unknown DRM event occurred");
+        }
+        Ok(())
+    })?;
 
     for (path, device) in evdev::enumerate() {
         let name = device.name().unwrap_or("Unnamed Device").to_string();
@@ -119,6 +156,8 @@ fn main() -> Result<()> {
     }
 
     let mut shell = Shell {
+        gpu: gpu.clone(),
+        output,
         current_dir: std::env::current_dir().unwrap().to_str().unwrap().to_string(),
     };
 
@@ -126,7 +165,7 @@ fn main() -> Result<()> {
 
     std::io::stdout().flush().unwrap();
 
-    event_loop.run(&mut shell, 10, |shell| {
+    event_loop.run(&mut shell, 30, |shell| {
         if stdin.lock().read(&mut []).is_err() {
             return;
         }
@@ -197,65 +236,65 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            "clear" => 'handle_clear: {
-                if args.len() >= 4 {
-                    let Ok(r) = u8::from_str_radix(args[1], 10) else {
-                        println!("Invalid red channel: {}", args[1]);
-                        break 'handle_clear;
-                    };
-                    let Ok(g) = u8::from_str_radix(args[2], 10) else {
-                        println!("Invalid green channel: {}", args[2]);
-                        break 'handle_clear;
-                    };
-                    let Ok(b) = u8::from_str_radix(args[3], 10) else {
-                        println!("Invalid blue channel: {}", args[3]);
-                        break 'handle_clear;
-                    };
-                    let a = {
-                        if args.len() == 5 {
-                            let Ok(a) = u8::from_str_radix(args[4], 10) else {
-                                println!("Invalid alpha channel: {}", args[4]);
-                                break 'handle_clear;
-                            };
-                            a
-                        } else {
-                            255
-                        }
-                    };
+            // "clear" => 'handle_clear: {
+            //     if args.len() >= 4 {
+            //         let Ok(r) = u8::from_str_radix(args[1], 10) else {
+            //             println!("Invalid red channel: {}", args[1]);
+            //             break 'handle_clear;
+            //         };
+            //         let Ok(g) = u8::from_str_radix(args[2], 10) else {
+            //             println!("Invalid green channel: {}", args[2]);
+            //             break 'handle_clear;
+            //         };
+            //         let Ok(b) = u8::from_str_radix(args[3], 10) else {
+            //             println!("Invalid blue channel: {}", args[3]);
+            //             break 'handle_clear;
+            //         };
+            //         let a = {
+            //             if args.len() == 5 {
+            //                 let Ok(a) = u8::from_str_radix(args[4], 10) else {
+            //                     println!("Invalid alpha channel: {}", args[4]);
+            //                     break 'handle_clear;
+            //                 };
+            //                 a
+            //             } else {
+            //                 255
+            //             }
+            //         };
 
-                    clear_color = [b, g, r, a];
+            //         clear_color = [b, g, r, a];
 
-                    'map_outputs: for output in &mut outputs {
-                        let Ok(mut map) = gpu.map_dumb_buffer(&mut output.db) else {
-                            println!(
-                                "\x1b[31mERROR\x1b[0m \x1b[2m(shell.clear)\x1b[0m: \
-                                Failed to map output buffer",
-                            );
-                            continue 'map_outputs;
-                        };
-                        for pixel in map.chunks_exact_mut(4) {
-                            pixel[0] = clear_color[0];
-                            pixel[1] = clear_color[1];
-                            pixel[2] = clear_color[2];
-                            pixel[3] = clear_color[3];
-                        }
-                        if let Err(error) = gpu.set_crtc(
-                            output.crtc,
-                            Some(output.fb),
-                            (0, 0),
-                            &[output.conn],
-                            Some(output.mode),
-                        ) {
-                            println!(
-                                "\x1b[31mERROR\x1b[0m \x1b[2m(shell.clear)\x1b[0m: \
-                                Failed to set CRTC: {error}",
-                            );
-                        }
-                    }
-                } else {
-                    println!("Invalid arguments");
-                }
-            }
+            //         'map_outputs: for output in &mut outputs {
+            //             let Ok(mut map) = gpu.map_dumb_buffer(&mut output.db) else {
+            //                 println!(
+            //                     "\x1b[31mERROR\x1b[0m \x1b[2m(shell.clear)\x1b[0m: \
+            //                     Failed to map output buffer",
+            //                 );
+            //                 continue 'map_outputs;
+            //             };
+            //             for pixel in map.chunks_exact_mut(4) {
+            //                 pixel[0] = clear_color[0];
+            //                 pixel[1] = clear_color[1];
+            //                 pixel[2] = clear_color[2];
+            //                 pixel[3] = clear_color[3];
+            //             }
+            //             if let Err(error) = gpu.set_crtc(
+            //                 output.crtc,
+            //                 Some(output.fb),
+            //                 (0, 0),
+            //                 &[output.conn],
+            //                 Some(output.mode),
+            //             ) {
+            //                 println!(
+            //                     "\x1b[31mERROR\x1b[0m \x1b[2m(shell.clear)\x1b[0m: \
+            //                     Failed to set CRTC: {error}",
+            //                 );
+            //             }
+            //         }
+            //     } else {
+            //         println!("Invalid arguments");
+            //     }
+            // }
             _ => {
                 let bin_path = format!("/bin/{}", args[0]);
                 match std::process::Command::new(bin_path).args(&args_os[1..]).output() {
@@ -279,7 +318,68 @@ fn main() -> Result<()> {
 
 
 pub struct Shell {
+    gpu: GraphicsCard,
     current_dir: String,
+    output: Output,
+}
+
+impl Shell {
+    fn render(&mut self, _crtc: drm::control::crtc::Handle) -> Result<()> {
+        self.output.context.make_current(&self.output.surface).unwrap();
+
+        unsafe {
+            let x = 0;
+            let y = 0;
+            let width = self.output.mode.size().0 as i32;
+            let height = self.output.mode.size().1 as i32;
+
+            self.output.renderer.Viewport(0, 0, width, height);
+
+            self.output.renderer.Scissor(0, 0, width, height);
+            self.output.renderer.Enable(gl::SCISSOR_TEST);
+
+            self.output.renderer.Enable(gl::BLEND);
+            self.output.renderer.BlendFunc(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
+
+            self.output.renderer.draw_with_clear_color(0.1, 0.1, 0.1, 1.0);
+
+            self.output.renderer.Disable(gl::SCISSOR_TEST);
+            self.output.renderer.Disable(gl::BLEND);
+
+            self.output.renderer.Finish();
+
+            self.output.bo.map_mut(x, y, width as _, height as _, |map| {
+                self.output.renderer.ReadPixels(
+                    x as _,
+                    y as _,
+                    width,
+                    height,
+                    gl::RGBA,
+                    gl::UNSIGNED_BYTE,
+                    map.buffer_mut().as_mut_ptr() as _,
+                );
+            }).unwrap();
+        }
+
+        self.output.surface.swap_buffers(&self.output.context).unwrap();
+
+        // let mut req = drm::control::atomic::AtomicModeReq::new();
+        // req.add_property(output.bo, property, value);
+        // self.gpu.atomic_commit(
+        //     drm::control::AtomicCommitFlags::PAGE_FLIP_EVENT
+        //     | drm::control::AtomicCommitFlags::NONBLOCK,
+        //     req,
+        // )?;
+
+        self.gpu.page_flip(
+            self.output.crtc,
+            self.output.fb,
+            drm::control::PageFlipFlags::EVENT,
+            None,
+        )?;
+
+        Ok(())
+    }
 }
 
 
@@ -420,11 +520,19 @@ pub enum EventResponse {
 
 
 #[derive(Clone, Debug)]
-struct GraphicsCard(Arc<std::fs::File>);
+struct GraphicsCard(Arc<gbm::Device<std::fs::File>>);
 
 impl std::os::unix::io::AsFd for GraphicsCard {
     fn as_fd(&self) -> std::os::unix::io::BorrowedFd<'_> {
         self.0.as_fd()
+    }
+}
+
+impl std::ops::Deref for GraphicsCard {
+    type Target = gbm::Device<std::fs::File>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -434,10 +542,10 @@ impl ControlDevice for GraphicsCard {}
 
 impl GraphicsCard {
     fn open(path: &str) -> Result<Self> {
-        Ok(GraphicsCard(Arc::new(std::fs::OpenOptions::new()
+        Ok(GraphicsCard(Arc::new(gbm::Device::new(std::fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .open(path)?)))
+            .open(path)?)?)))
     }
 
     fn debug_info(&self, path: &str) {
@@ -576,9 +684,12 @@ impl GraphicsCard {
         }
     }
 
-    fn prepare_outputs(&self, clear_color: [u8; 4]) -> Result<Vec<Output>> {
-        let mut outputs = Vec::with_capacity(1);
-
+    fn prepare_output(
+        &self,
+        display: &glutin::api::egl::display::Display,
+        config: &glutin::api::egl::config::Config,
+        context: glutin::api::egl::context::NotCurrentContext,
+    ) -> Result<Output> {
         let resources = self.resource_handles()?;
         for conn in resources.connectors().iter().copied() {
             let conn_info = self.get_connector(conn, true)?;
@@ -588,35 +699,81 @@ impl GraphicsCard {
             let crtc_info = self.get_crtc(crtc)?;
             let Some(mode) = crtc_info.mode() else { continue; };
 
-            let mut db = self.create_dumb_buffer(
-                (mode.size().0 as _, mode.size().1 as _),
-                drm::buffer::DrmFourcc::Xrgb8888,
-                32,
+            let bo = self.create_buffer_object(
+                mode.size().0 as _,
+                mode.size().1 as _,
+                gbm::Format::Xrgb8888,
+                gbm::BufferObjectFlags::RENDERING | gbm::BufferObjectFlags::SCANOUT,
             )?;
 
-            {
-                let mut map = self.map_dumb_buffer(&mut db)?;
-                for pixel in map.chunks_exact_mut(4) {
-                    pixel[0] = clear_color[0];
-                    pixel[1] = clear_color[1];
-                    pixel[2] = clear_color[2];
-                    pixel[3] = clear_color[3];
-                }
-            }
+            let fb = self.add_planar_framebuffer(&bo, drm::control::FbCmd2Flags::empty())?;
 
-            let fb = self.add_framebuffer(&db, 24, 32)?;
+            let surface = unsafe {
+                context.display()
+                    .create_pbuffer_surface(&config, &glutin::surface::SurfaceAttributesBuilder::new()
+                        .with_largest_pbuffer(true)
+                        // .with_srgb(Some(config.srgb_capable()))
+                        .build(NonZeroU32::new(mode.size().0 as _).unwrap(), NonZeroU32::new(mode.size().1 as _).unwrap()))
+                    .unwrap()
+            };
+            let context = context.make_current(&surface).unwrap();
+            let renderer = egl::Renderer::new(display);
 
-            outputs.push(Output { db, fb, conn, crtc, mode });
+            return Ok(Output {
+                bo,
+                fb,
+                conn,
+                crtc,
+                mode,
+                renderer,
+                surface,
+                context,
+            });
         }
 
-        Ok(outputs)
+        bail!("no valid outputs found")
     }
 }
 
+impl EventSource<Shell> for GraphicsCard {
+    type Event = drm::control::Event;
+
+    fn init(&mut self, poll: &EventPoll, key: u64) -> Result<()> {
+        poll.add(&unsafe { File::from_raw(self.as_raw_fd()) }, Event::new(key, true, false))?;
+        Ok(())
+    }
+
+    fn handle_event<F>(
+        &mut self,
+        data: &mut Shell,
+        _event: Event,
+        mut callback: F,
+    ) -> Result<EventResponse>
+    where
+        F: FnMut(&mut Shell, Self::Event) -> Result<()>
+    {
+        for event in self.receive_events()? {
+            callback(data, event)?;
+        }
+
+        Ok(EventResponse::Continue)
+    }
+
+    fn cleanup(&mut self, poll: &EventPoll) -> Result<()> {
+        poll.remove(&unsafe { File::from_raw(self.as_raw_fd()) })?;
+        Ok(())
+    }
+}
+
+
+
 struct Output {
-    db: drm::control::dumbbuffer::DumbBuffer,
+    bo: gbm::BufferObject<()>,
     fb: drm::control::framebuffer::Handle,
     conn: drm::control::connector::Handle,
     crtc: drm::control::crtc::Handle,
     mode: drm::control::Mode,
+    renderer: egl::Renderer,
+    surface: glutin::api::egl::surface::Surface<glutin::surface::PbufferSurface>,
+    context: glutin::api::egl::context::PossiblyCurrentContext,
 }

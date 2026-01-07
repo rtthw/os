@@ -8,9 +8,11 @@ anyhow = "1"
 drm = "0.14.1"
 evdev = "0.13"
 gbm = "0.18.0"
+glutin = "0.32.3"
 kernel.workspace = true
 libc = "0.2"
 log = { version = "0.4", features = ["std"] }
+raw-window-handle = "0.6"
 thiserror = "2"
 
 [build-dependencies]
