@@ -16,6 +16,7 @@ use std::{
 
 use anyhow::{Result, bail};
 use drm::{Device, control::Device as ControlDevice};
+use glow::HasContext as _;
 use glutin::{
     config::GlConfig as _,
     display::{GetGlDisplay as _, GlDisplay as _},
@@ -25,7 +26,7 @@ use glutin::{
 use kernel::{epoll::{Event, EventPoll}, file::File};
 use ::log::{debug, error, info, trace, warn};
 
-use crate::{egl::gl, object::Object};
+use crate::object::Object;
 
 
 
@@ -87,7 +88,7 @@ fn main() -> Result<()> {
 
     trace!(target: "gpu", "Preparing outputs...");
 
-    let output = match gpu.prepare_output(&display, &config, context) {
+    let output = match gpu.prepare_output(&config, context) {
         Ok(output) => output,
         Err(error) => {
             bail!(
@@ -328,40 +329,49 @@ impl Shell {
         self.output.context.make_current(&self.output.surface).unwrap();
 
         unsafe {
-            let x = 0;
-            let y = 0;
-            let width = self.output.mode.size().0 as i32;
-            let height = self.output.mode.size().1 as i32;
-
-            self.output.renderer.Viewport(0, 0, width, height);
-
-            self.output.renderer.Scissor(0, 0, width, height);
-            self.output.renderer.Enable(gl::SCISSOR_TEST);
-
-            self.output.renderer.Enable(gl::BLEND);
-            self.output.renderer.BlendFunc(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
-
-            self.output.renderer.draw_with_clear_color(0.1, 0.1, 0.1, 1.0);
-
-            self.output.renderer.Disable(gl::SCISSOR_TEST);
-            self.output.renderer.Disable(gl::BLEND);
-
-            self.output.renderer.Finish();
-
-            self.output.bo.map_mut(x, y, width as _, height as _, |map| {
-                self.output.renderer.ReadPixels(
-                    x as _,
-                    y as _,
-                    width,
-                    height,
-                    gl::RGBA,
-                    gl::UNSIGNED_BYTE,
-                    map.buffer_mut().as_mut_ptr() as _,
-                );
-            }).unwrap();
+            self.output.renderer.gl.bind_framebuffer(
+                glow::FRAMEBUFFER,
+                Some(glow::NativeFramebuffer(self.output.fb.into())),
+            );
         }
 
+        let (width, height) = self.output.mode.size();
+
+        let raw_input = egui::RawInput::default();
+        let full_output = self.output.renderer.egui_ctx.run(raw_input, |ctx| {
+            egui::SidePanel::left("sidebar").exact_width(200.0).show(ctx, |ui| {
+                ui.weak("TODO");
+            });
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.centered_and_justified(|ui| ui.weak("TODO"));
+            });
+        });
+        let clipped_primitives = self.output.renderer.egui_ctx.tessellate(
+            full_output.shapes,
+            full_output.pixels_per_point,
+        );
+
+        self.output.renderer.painter.paint_and_update_textures(
+            [width as _, height as _],
+            full_output.pixels_per_point,
+            &clipped_primitives,
+            &full_output.textures_delta,
+        );
+
         self.output.surface.swap_buffers(&self.output.context).unwrap();
+        unsafe {
+            self.output.bo.map_mut(0, 0, width as _, height as _, |map| {
+                self.output.renderer.gl.read_pixels(
+                    0,
+                    0,
+                    width as _,
+                    height as _,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelPackData::Slice(Some(map.buffer_mut())),
+                );
+            })?;
+        }
 
         // let mut req = drm::control::atomic::AtomicModeReq::new();
         // req.add_property(output.bo, property, value);
@@ -371,6 +381,13 @@ impl Shell {
         //     req,
         // )?;
 
+        // self.gpu.set_crtc(
+        //     self.output.crtc,
+        //     Some(self.output.fb),
+        //     (0, 0),
+        //     &[self.output.conn],
+        //     Some(self.output.mode),
+        // )?;
         self.gpu.page_flip(
             self.output.crtc,
             self.output.fb,
@@ -686,7 +703,6 @@ impl GraphicsCard {
 
     fn prepare_output(
         &self,
-        display: &glutin::api::egl::display::Display,
         config: &glutin::api::egl::config::Config,
         context: glutin::api::egl::context::NotCurrentContext,
     ) -> Result<Output> {
@@ -709,15 +725,28 @@ impl GraphicsCard {
             let fb = self.add_planar_framebuffer(&bo, drm::control::FbCmd2Flags::empty())?;
 
             let surface = unsafe {
-                context.display()
-                    .create_pbuffer_surface(&config, &glutin::surface::SurfaceAttributesBuilder::new()
-                        .with_largest_pbuffer(true)
-                        // .with_srgb(Some(config.srgb_capable()))
-                        .build(NonZeroU32::new(mode.size().0 as _).unwrap(), NonZeroU32::new(mode.size().1 as _).unwrap()))
+                context
+                    .display()
+                    .create_pbuffer_surface(
+                        &config,
+                        &glutin::surface::SurfaceAttributesBuilder::<
+                            glutin::surface::PbufferSurface
+                        >::new()
+                            .build(
+                                NonZeroU32::new(mode.size().0 as _).unwrap(),
+                                NonZeroU32::new(mode.size().1 as _).unwrap(),
+                            ))
                     .unwrap()
             };
-            let context = context.make_current(&surface).unwrap();
-            let renderer = egl::Renderer::new(display);
+
+            let context = context.make_current(&surface)?;
+
+            surface.set_swap_interval(
+                &context,
+                glutin::surface::SwapInterval::Wait(NonZeroU32::MIN),
+            )?;
+
+            let renderer = egl::Renderer::new(&context.display())?;
 
             return Ok(Output {
                 bo,
