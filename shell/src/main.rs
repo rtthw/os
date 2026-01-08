@@ -9,13 +9,14 @@ use std::{
     io::{BufRead as _, Read as _, Write as _},
     num::NonZeroU32,
     os::fd::AsRawFd as _,
-    str::FromStr as _,
+    ptr::NonNull, str::FromStr as _,
     sync::Arc,
     time::Instant,
 };
 
 use anyhow::{Result, bail};
 use drm::{Device, control::Device as ControlDevice};
+use gbm::AsRaw as _;
 use glow::HasContext as _;
 use glutin::{
     config::GlConfig as _,
@@ -38,25 +39,20 @@ fn main() -> Result<()> {
 
     let gpu = GraphicsCard::open("/dev/dri/card0")?;
 
-    let devices = glutin::api::egl::device::Device::query_devices()
-        .expect("failed to query devices")
-        .collect::<Vec<_>>();
-
-    let device = devices.first().expect("failed to discover any output devices");
-
     let display = unsafe {
-        glutin::api::egl::display::Display::with_device(
-            device,
-            Some(raw_window_handle::RawDisplayHandle::Drm(
-                raw_window_handle::DrmDisplayHandle::new(gpu.as_raw_fd()),
-            )),
+        glutin::api::egl::display::Display::new(
+            raw_window_handle::RawDisplayHandle::Gbm(
+                raw_window_handle::GbmDisplayHandle::new(
+                    NonNull::new(gpu.as_raw() as *mut _).unwrap(),
+                ),
+            ),
         )
     }
         .expect("Failed to create display");
 
     let config = unsafe {
         display.find_configs(glutin::config::ConfigTemplateBuilder::default()
-            .with_surface_type(glutin::config::ConfigSurfaceTypes::empty())
+            .with_surface_type(glutin::config::ConfigSurfaceTypes::WINDOW)
             .build())
     }
         .unwrap()
@@ -81,10 +77,10 @@ fn main() -> Result<()> {
         })
     };
 
-    gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
-        .expect("unable to request gpu.UniversalPlanes capability");
-    gpu.set_client_capability(drm::ClientCapability::Atomic, true)
-        .expect("unable to request gpu.Atomic capability");
+    // gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
+    //     .expect("unable to request gpu.UniversalPlanes capability");
+    // gpu.set_client_capability(drm::ClientCapability::Atomic, true)
+    //     .expect("unable to request gpu.Atomic capability");
 
     trace!(target: "gpu", "Preparing outputs...");
 
@@ -100,20 +96,6 @@ fn main() -> Result<()> {
 
     gpu.debug_info("/dev/dri/card0");
 
-    gpu.set_crtc(
-        output.crtc,
-        Some(output.fb),
-        (0, 0),
-        &[output.conn],
-        Some(output.mode),
-    )?;
-    gpu.page_flip(
-        output.crtc,
-        output.fb,
-        drm::control::PageFlipFlags::EVENT,
-        None,
-    )?;
-
     let this_obj = unsafe { Object::open_this().expect("should be able to open shell binary") };
 
     let stdin = std::io::stdin();
@@ -124,8 +106,8 @@ fn main() -> Result<()> {
     let mut event_loop = EventLoop::new()?;
 
     event_loop.add_source(gpu.clone(), |shell, drm_event| {
-        if let drm::control::Event::PageFlip(event) = drm_event {
-            shell.render(event.crtc)?;
+        if let drm::control::Event::PageFlip(_event) = drm_event {
+            shell.render()?;
         } else {
             trace!("Unknown DRM event occurred");
         }
@@ -161,6 +143,8 @@ fn main() -> Result<()> {
         output,
         current_dir: std::env::current_dir().unwrap().to_str().unwrap().to_string(),
     };
+
+    shell.render()?;
 
     print!("\x1b[2m {} }} \x1b[0m", &shell.current_dir);
 
@@ -325,15 +309,8 @@ pub struct Shell {
 }
 
 impl Shell {
-    fn render(&mut self, _crtc: drm::control::crtc::Handle) -> Result<()> {
+    fn render(&mut self) -> Result<()> {
         self.output.context.make_current(&self.output.surface).unwrap();
-
-        unsafe {
-            self.output.renderer.gl.bind_framebuffer(
-                glow::FRAMEBUFFER,
-                Some(glow::NativeFramebuffer(self.output.fb.into())),
-            );
-        }
 
         let (width, height) = self.output.mode.size();
 
@@ -351,6 +328,10 @@ impl Shell {
             full_output.pixels_per_point,
         );
 
+        unsafe {
+            self.output.renderer.gl.clear_color(0.1, 0.1, 0.1, 0.7);
+        }
+
         self.output.renderer.painter.paint_and_update_textures(
             [width as _, height as _],
             full_output.pixels_per_point,
@@ -358,19 +339,44 @@ impl Shell {
             &full_output.textures_delta,
         );
 
-        self.output.surface.swap_buffers(&self.output.context).unwrap();
         unsafe {
-            self.output.bo.map_mut(0, 0, width as _, height as _, |map| {
-                self.output.renderer.gl.read_pixels(
-                    0,
-                    0,
-                    width as _,
-                    height as _,
-                    glow::RGBA,
-                    glow::UNSIGNED_BYTE,
-                    glow::PixelPackData::Slice(Some(map.buffer_mut())),
-                );
-            })?;
+            self.output.renderer.gl.finish();
+        }
+
+        self.output.surface.swap_buffers(&self.output.context).unwrap();
+        let bo = unsafe { self.output.bo.lock_front_buffer().unwrap() };
+
+        let fb = if let Some(handle) = &self.output.fb {
+            *handle
+        } else {
+            let fb = self.gpu.add_framebuffer(&bo, 24, 32).unwrap();
+            self.output.fb = Some(fb);
+            // bo.set_userdata(fb).expect("could not set buffer object user data");
+            fb
+        };
+
+        if !self.output.crtc_set {
+            self.output.crtc_set = true;
+            self.gpu.set_crtc(
+                self.output.crtc,
+                Some(fb),
+                (0, 0),
+                &[self.output.conn],
+                Some(self.output.mode),
+            )?;
+            self.gpu.page_flip(
+                self.output.crtc,
+                fb,
+                drm::control::PageFlipFlags::EVENT,
+                None,
+            )?;
+        } else {
+            self.gpu.page_flip(
+                self.output.crtc,
+                fb,
+                drm::control::PageFlipFlags::EVENT,
+                None,
+            )?;
         }
 
         // let mut req = drm::control::atomic::AtomicModeReq::new();
@@ -380,20 +386,6 @@ impl Shell {
         //     | drm::control::AtomicCommitFlags::NONBLOCK,
         //     req,
         // )?;
-
-        // self.gpu.set_crtc(
-        //     self.output.crtc,
-        //     Some(self.output.fb),
-        //     (0, 0),
-        //     &[self.output.conn],
-        //     Some(self.output.mode),
-        // )?;
-        self.gpu.page_flip(
-            self.output.crtc,
-            self.output.fb,
-            drm::control::PageFlipFlags::EVENT,
-            None,
-        )?;
 
         Ok(())
     }
@@ -712,27 +704,32 @@ impl GraphicsCard {
             let Some(enc) = conn_info.current_encoder() else { continue; };
             let enc_info = self.get_encoder(enc)?;
             let Some(crtc) = enc_info.crtc() else { continue; };
-            let crtc_info = self.get_crtc(crtc)?;
-            let Some(mode) = crtc_info.mode() else { continue; };
+            let Some(mode) = conn_info.modes()
+                .iter()
+                .find(|mode| mode.mode_type().contains(drm::control::ModeTypeFlags::PREFERRED))
+            else { continue; };
 
-            let bo = self.create_buffer_object(
+            let bo = self.create_surface(
                 mode.size().0 as _,
                 mode.size().1 as _,
-                gbm::Format::Xrgb8888,
-                gbm::BufferObjectFlags::RENDERING | gbm::BufferObjectFlags::SCANOUT,
+                gbm::Format::Argb8888,
+                gbm::BufferObjectFlags::SCANOUT | gbm::BufferObjectFlags::RENDERING,
             )?;
-
-            let fb = self.add_planar_framebuffer(&bo, drm::control::FbCmd2Flags::empty())?;
 
             let surface = unsafe {
                 context
                     .display()
-                    .create_pbuffer_surface(
+                    .create_window_surface(
                         &config,
                         &glutin::surface::SurfaceAttributesBuilder::<
-                            glutin::surface::PbufferSurface
+                            glutin::surface::WindowSurface
                         >::new()
                             .build(
+                                raw_window_handle::RawWindowHandle::Gbm(
+                                    raw_window_handle::GbmWindowHandle::new(
+                                        NonNull::new(bo.as_raw() as *mut _).unwrap()
+                                    ),
+                                ),
                                 NonZeroU32::new(mode.size().0 as _).unwrap(),
                                 NonZeroU32::new(mode.size().1 as _).unwrap(),
                             ))
@@ -750,13 +747,14 @@ impl GraphicsCard {
 
             return Ok(Output {
                 bo,
-                fb,
+                fb: None,
                 conn,
                 crtc,
-                mode,
+                mode: *mode,
                 renderer,
                 surface,
                 context,
+                crtc_set: false,
             });
         }
 
@@ -797,12 +795,13 @@ impl EventSource<Shell> for GraphicsCard {
 
 
 struct Output {
-    bo: gbm::BufferObject<()>,
-    fb: drm::control::framebuffer::Handle,
+    bo: gbm::Surface<drm::control::framebuffer::Handle>,
+    fb: Option<drm::control::framebuffer::Handle>,
     conn: drm::control::connector::Handle,
     crtc: drm::control::crtc::Handle,
     mode: drm::control::Mode,
     renderer: egl::Renderer,
-    surface: glutin::api::egl::surface::Surface<glutin::surface::PbufferSurface>,
+    surface: glutin::api::egl::surface::Surface<glutin::surface::WindowSurface>,
     context: glutin::api::egl::context::PossiblyCurrentContext,
+    crtc_set: bool,
 }
