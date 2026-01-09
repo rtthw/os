@@ -195,7 +195,18 @@ fn main() -> Result<()> {
                             evdev::KeyCode::KEY_LEFTALT | evdev::KeyCode::KEY_RIGHTALT => {
                                 shell.input_state.key_modifiers.alt = input_event.value() == 1;
                             }
-                            _ => {}
+
+                            other => {
+                                if let Some(key) = evdev_keycode_to_egui_key(other) {
+                                    shell.input_state.events.push(egui::Event::Key {
+                                        key,
+                                        physical_key: Some(key),
+                                        pressed: input_event.value() == 1,
+                                        repeat: false,
+                                        modifiers: shell.input_state.key_modifiers,
+                                    });
+                                }
+                            }
                         }
                     }
                 }
@@ -473,6 +484,80 @@ struct InputState {
     mouse_pos: Pos2,
     events: Vec<egui::Event>,
     key_modifiers: egui::Modifiers,
+}
+
+fn evdev_keycode_to_egui_key(code: evdev::KeyCode) -> Option<egui::Key> {
+    use egui::Key;
+    use evdev::KeyCode;
+
+    Some(match code {
+        KeyCode::KEY_0 => Key::Num0,
+        KeyCode::KEY_1 => Key::Num1,
+        KeyCode::KEY_2 => Key::Num2,
+        KeyCode::KEY_3 => Key::Num3,
+        KeyCode::KEY_4 => Key::Num4,
+        KeyCode::KEY_5 => Key::Num5,
+        KeyCode::KEY_6 => Key::Num6,
+        KeyCode::KEY_7 => Key::Num7,
+        KeyCode::KEY_8 => Key::Num8,
+        KeyCode::KEY_9 => Key::Num9,
+
+        KeyCode::KEY_A => Key::A,
+        KeyCode::KEY_B => Key::B,
+        KeyCode::KEY_C => Key::C,
+        KeyCode::KEY_D => Key::D,
+        KeyCode::KEY_E => Key::E,
+        KeyCode::KEY_F => Key::F,
+        KeyCode::KEY_G => Key::G,
+        KeyCode::KEY_H => Key::H,
+        KeyCode::KEY_I => Key::I,
+        KeyCode::KEY_J => Key::J,
+        KeyCode::KEY_K => Key::K,
+        KeyCode::KEY_L => Key::L,
+        KeyCode::KEY_M => Key::M,
+        KeyCode::KEY_N => Key::N,
+        KeyCode::KEY_O => Key::O,
+        KeyCode::KEY_P => Key::P,
+        KeyCode::KEY_Q => Key::Q,
+        KeyCode::KEY_R => Key::R,
+        KeyCode::KEY_S => Key::S,
+        KeyCode::KEY_T => Key::T,
+        KeyCode::KEY_U => Key::U,
+        KeyCode::KEY_V => Key::V,
+        KeyCode::KEY_W => Key::W,
+        KeyCode::KEY_X => Key::X,
+        KeyCode::KEY_Y => Key::Y,
+        KeyCode::KEY_Z => Key::Z,
+
+        KeyCode::KEY_GRAVE => Key::Backtick,
+        KeyCode::KEY_BACKSLASH => Key::Backslash,
+        KeyCode::KEY_MINUS => Key::Minus,
+        KeyCode::KEY_EQUAL => Key::Equals,
+        KeyCode::KEY_LEFTBRACE => Key::OpenBracket,
+        KeyCode::KEY_RIGHTBRACE => Key::CloseBracket,
+        KeyCode::KEY_SEMICOLON => Key::Semicolon,
+        KeyCode::KEY_APOSTROPHE => Key::Quote,
+        KeyCode::KEY_COMMA => Key::Comma,
+        KeyCode::KEY_DOT => Key::Period,
+        KeyCode::KEY_SLASH => Key::Slash,
+
+        KeyCode::KEY_LEFT => Key::ArrowLeft,
+        KeyCode::KEY_RIGHT => Key::ArrowRight,
+        KeyCode::KEY_UP => Key::ArrowUp,
+        KeyCode::KEY_DOWN => Key::ArrowDown,
+
+        KeyCode::KEY_PAGEUP => Key::PageUp,
+        KeyCode::KEY_PAGEDOWN => Key::PageDown,
+
+        KeyCode::KEY_SPACE => Key::Space,
+        KeyCode::KEY_TAB => Key::Tab,
+        KeyCode::KEY_ENTER => Key::Enter,
+        KeyCode::KEY_BACKSPACE => Key::Backspace,
+        KeyCode::KEY_DELETE => Key::Delete,
+        KeyCode::KEY_ESC => Key::Escape,
+
+        _ => None?,
+    })
 }
 
 
