@@ -16,6 +16,7 @@ use std::{
 
 use anyhow::{Result, bail};
 use drm::{Device, control::Device as ControlDevice};
+use egui::{Pos2, pos2, vec2};
 use gbm::AsRaw as _;
 use glow::HasContext as _;
 use glutin::{
@@ -116,6 +117,7 @@ fn main() -> Result<()> {
 
     for (path, device) in evdev::enumerate() {
         let name = device.name().unwrap_or("Unnamed Device").to_string();
+        let is_pointer = device.properties().contains(evdev::PropType::POINTER);
         debug!(
             target: "dev",
             "{}\n\
@@ -132,8 +134,73 @@ fn main() -> Result<()> {
             device.supported_keys(),
         );
 
-        event_loop.add_source(input::InputSource::new(device)?, move |_shell, input_event| {
-            trace!(target: "input", "EVENT @ {name}: {input_event:?}");
+        event_loop.add_source(input::InputSource::new(device)?, move |shell, input_event| {
+            // trace!(target: "input", "EVENT @ {name}: {input_event:?}");
+            match input_event.event_type() {
+                evdev::EventType::RELATIVE => {
+                    if is_pointer {
+                        match input_event.code() {
+                            0 => {
+                                let movement = input_event.value() as f32;
+                                shell.input_state.mouse_pos.x += movement;
+                                shell.input_state.events
+                                    .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
+                                shell.input_state.events
+                                    .push(egui::Event::MouseMoved(vec2(movement, 0.0)));
+                            }
+                            1 => {
+                                let movement = input_event.value() as f32;
+                                shell.input_state.mouse_pos.y += movement;
+                                shell.input_state.events
+                                    .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
+                                shell.input_state.events
+                                    .push(egui::Event::MouseMoved(vec2(0.0, movement)));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                evdev::EventType::KEY => {
+                    if is_pointer {
+                        match evdev::KeyCode(input_event.code()) {
+                            evdev::KeyCode::BTN_LEFT => {
+                                shell.input_state.events
+                                    .push(egui::Event::PointerButton {
+                                        pos: shell.input_state.mouse_pos,
+                                        button: egui::PointerButton::Primary,
+                                        pressed: input_event.value() == 1,
+                                        modifiers: shell.input_state.key_modifiers,
+                                    });
+                            }
+                            evdev::KeyCode::BTN_RIGHT => {
+                                shell.input_state.events
+                                    .push(egui::Event::PointerButton {
+                                        pos: shell.input_state.mouse_pos,
+                                        button: egui::PointerButton::Secondary,
+                                        pressed: input_event.value() == 1,
+                                        modifiers: shell.input_state.key_modifiers,
+                                    });
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        match evdev::KeyCode(input_event.code()) {
+                            evdev::KeyCode::KEY_LEFTCTRL | evdev::KeyCode::KEY_RIGHTCTRL => {
+                                shell.input_state.key_modifiers.ctrl = input_event.value() == 1;
+                                shell.input_state.key_modifiers.command = input_event.value() == 1;
+                            }
+                            evdev::KeyCode::KEY_LEFTSHIFT | evdev::KeyCode::KEY_RIGHTSHIFT => {
+                                shell.input_state.key_modifiers.shift = input_event.value() == 1;
+                            }
+                            evdev::KeyCode::KEY_LEFTALT | evdev::KeyCode::KEY_RIGHTALT => {
+                                shell.input_state.key_modifiers.alt = input_event.value() == 1;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
             Ok(())
         })?;
     }
@@ -142,6 +209,11 @@ fn main() -> Result<()> {
         gpu: gpu.clone(),
         output,
         current_dir: std::env::current_dir().unwrap().to_str().unwrap().to_string(),
+        input_state: InputState {
+            mouse_pos: pos2(0.0, 0.0),
+            events: Vec::with_capacity(2),
+            key_modifiers: egui::Modifiers::NONE,
+        },
     };
 
     shell.render()?;
@@ -306,6 +378,7 @@ pub struct Shell {
     gpu: GraphicsCard,
     current_dir: String,
     output: Output,
+    input_state: InputState,
 }
 
 impl Shell {
@@ -314,10 +387,15 @@ impl Shell {
 
         let (width, height) = self.output.mode.size();
 
-        let raw_input = egui::RawInput::default();
+        let mut raw_input = egui::RawInput::default();
+        raw_input.focused = true;
+        raw_input.events = self.input_state.events.drain(..).collect();
+
         let full_output = self.output.renderer.egui_ctx.run(raw_input, |ctx| {
-            egui::SidePanel::left("sidebar").exact_width(200.0).show(ctx, |ui| {
-                ui.weak("TODO");
+            egui::SidePanel::left("sidebar").default_width(200.0).resizable(true).show(ctx, |ui| {
+                if ui.button("TEST").on_hover_text("TESTING...").clicked() {
+                    println!("CLICK");
+                }
             });
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.centered_and_justified(|ui| ui.weak("TODO"));
@@ -389,6 +467,12 @@ impl Shell {
 
         Ok(())
     }
+}
+
+struct InputState {
+    mouse_pos: Pos2,
+    events: Vec<egui::Event>,
+    key_modifiers: egui::Modifiers,
 }
 
 
