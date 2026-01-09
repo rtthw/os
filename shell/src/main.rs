@@ -16,7 +16,7 @@ use std::{
 
 use anyhow::{Result, bail};
 use drm::{Device, control::Device as ControlDevice};
-use egui::{Pos2, pos2, vec2};
+use egui::{Pos2, Rect, pos2, vec2};
 use gbm::AsRaw as _;
 use glow::HasContext as _;
 use glutin::{
@@ -78,10 +78,14 @@ fn main() -> Result<()> {
         })
     };
 
-    // gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
-    //     .expect("unable to request gpu.UniversalPlanes capability");
-    // gpu.set_client_capability(drm::ClientCapability::Atomic, true)
-    //     .expect("unable to request gpu.Atomic capability");
+    trace!(target: "gpu", "Setting DRM client capabilities...");
+
+    gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
+        .expect("unable to request gpu.UniversalPlanes capability");
+    gpu.set_client_capability(drm::ClientCapability::Atomic, true)
+        .expect("unable to request gpu.Atomic capability");
+    gpu.set_client_capability(drm::ClientCapability::CursorPlaneHotspot, true)
+        .expect("unable to request gpu.Atomic capability");
 
     trace!(target: "gpu", "Preparing outputs...");
 
@@ -95,7 +99,54 @@ fn main() -> Result<()> {
         }
     };
 
-    gpu.debug_info("/dev/dri/card0");
+    let cursor_width = gpu
+        .get_driver_capability(drm::DriverCapability::CursorWidth)
+        .unwrap_or(64);
+    let cursor_height = gpu
+        .get_driver_capability(drm::DriverCapability::CursorHeight)
+        .unwrap_or(64);
+    #[allow(deprecated)]
+    let cursor_buffer = {
+        let hotspot = (2, 2);
+        let bytes = include_bytes!("../../res/cursor.rgba");
+
+        let mut buffer: gbm::BufferObject<()> = gpu.create_buffer_object(
+            cursor_width as _,
+            cursor_height as _,
+            gbm::Format::Argb8888,
+            gbm::BufferObjectFlags::CURSOR | gbm::BufferObjectFlags::WRITE,
+        )?;
+
+        buffer.write(bytes)?;
+
+        if gpu.set_cursor2(output.crtc, Some(&buffer), hotspot).is_err() {
+            gpu.set_cursor(output.crtc, Some(&buffer))?;
+        }
+
+        buffer
+    };
+
+    // let cursor_plane = gpu.plane_handles()?.iter()
+    //     .find_map(|plane| {
+    //         let info = gpu.get_plane(*plane).ok()?;
+    //         let prop = gpu.get_properties(*plane).ok()?.iter().find_map(|prop| {
+    //             let info = gpu.get_property(*prop.0).ok()?;
+    //             (info.name() == c"type").then_some({
+    //                 let value_type = info.value_type();
+    //                 let drm::control::property::Value::Enum(value)
+    //                     = value_type.convert_value(*prop.1)
+    //                 else {
+    //                     return None;
+    //                 };
+    //                 value?.value()
+    //             })
+    //         })?;
+
+    //         (prop == drm::control::PlaneType::Cursor as u64&& info.crtc() == Some(output.crtc))
+    //             .then_some(info)
+    //     })
+    //     .expect("failed to find cursor plane")
+    //     .handle();
 
     let this_obj = unsafe { Object::open_this().expect("should be able to open shell binary") };
 
@@ -216,6 +267,8 @@ fn main() -> Result<()> {
         })?;
     }
 
+    gpu.debug_info("/dev/dri/card0");
+
     let mut shell = Shell {
         gpu: gpu.clone(),
         output,
@@ -225,6 +278,7 @@ fn main() -> Result<()> {
             events: Vec::with_capacity(2),
             key_modifiers: egui::Modifiers::NONE,
         },
+        cursor_buffer,
     };
 
     shell.render()?;
@@ -390,26 +444,41 @@ pub struct Shell {
     current_dir: String,
     output: Output,
     input_state: InputState,
+    cursor_buffer: gbm::BufferObject<()>,
 }
 
 impl Shell {
     fn render(&mut self) -> Result<()> {
         self.output.context.make_current(&self.output.surface).unwrap();
 
+        #[allow(deprecated)]
+        self.gpu.move_cursor(
+            self.output.crtc,
+            (self.input_state.mouse_pos.x as _, self.input_state.mouse_pos.y as _),
+        )?;
+
         let (width, height) = self.output.mode.size();
 
         let mut raw_input = egui::RawInput::default();
         raw_input.focused = true;
         raw_input.events = self.input_state.events.drain(..).collect();
+        raw_input.screen_rect = Some(
+            Rect::from_min_size(Pos2::ZERO, vec2(width as _, height as _)),
+        );
 
         let full_output = self.output.renderer.egui_ctx.run(raw_input, |ctx| {
             egui::SidePanel::left("sidebar").default_width(200.0).resizable(true).show(ctx, |ui| {
-                if ui.button("TEST").on_hover_text("TESTING...").clicked() {
-                    println!("CLICK");
-                }
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    if ui.button("TEST").on_hover_text("TESTING...").clicked() {
+                        println!("CLICK");
+                    }
+                });
             });
             egui::CentralPanel::default().show(ctx, |ui| {
-                ui.centered_and_justified(|ui| ui.weak("TODO"));
+                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+                    ui.heading("OS");
+                    ui.separator();
+                });
             });
         });
         let clipped_primitives = self.output.renderer.egui_ctx.tessellate(
@@ -466,6 +535,11 @@ impl Shell {
                 drm::control::PageFlipFlags::EVENT,
                 None,
             )?;
+        }
+
+        #[allow(deprecated)]
+        if self.gpu.set_cursor2(self.output.crtc, Some(&self.cursor_buffer), (2, 2)).is_err() {
+            self.gpu.set_cursor(self.output.crtc, Some(&self.cursor_buffer))?;
         }
 
         // let mut req = drm::control::atomic::AtomicModeReq::new();
@@ -821,6 +895,24 @@ impl GraphicsCard {
                     plane_info.framebuffer(),
                     plane_info.formats(),
                 );
+                if let Some(fb) = plane_info.framebuffer() {
+                    let Ok(fb_info) = self.get_planar_framebuffer(fb) else {
+                        trace!(target: "gpu_info", "Info unavailable for {fb:?}");
+                        continue;
+                    };
+                    trace!(
+                        target: "gpu_info",
+                        "PLANAR_FRAMEBUFFER for {plane:?} @{fb:?}:\n\
+                        \t.buffers = {:?}\n\
+                        \t.flags = {:?}\n\
+                        \t.modifier = {:?}\n\
+                        \t.pixel_format = {:?}",
+                        fb_info.buffers(),
+                        fb_info.flags(),
+                        fb_info.modifier(),
+                        fb_info.pixel_format(),
+                    );
+                }
             }
 
             if let Ok(properties) = self.get_properties(*crtc) {
@@ -852,12 +944,35 @@ impl GraphicsCard {
                 trace!(
                     target: "gpu_info",
                     "PLANE @{:?} (DISCONNECTED):\n\
+                    \t.crtc = {:?}\n\
+                    \t.possible_crtcs = {:?}\n\
                     \t.fb = {:?}\n\
                     \t.formats = {:?}",
                     plane,
+                    plane_info.crtc(),
+                    plane_info.possible_crtcs(),
                     plane_info.framebuffer(),
                     plane_info.formats(),
                 );
+            }
+
+            if let Ok(properties) = self.get_properties(plane) {
+                'prop_iter: for (prop, raw_value) in properties {
+                    let Ok(info) = self.get_property(prop) else {
+                        warn!(
+                            target: "gpu_info",
+                            "Failed to get property info for {plane:?} at {prop:?}",
+                        );
+                        continue 'prop_iter;
+                    };
+
+                    trace!(
+                        target: "gpu_info",
+                        "Property for {plane:?}: {} = {:?}",
+                        info.name().to_string_lossy(),
+                        info.value_type().convert_value(raw_value),
+                    );
+                }
             }
         }
     }
