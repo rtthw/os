@@ -623,11 +623,12 @@ impl Shell {
         let (width, height) = self.output.mode.size();
 
         let mut raw_input = egui::RawInput::default();
-
+        raw_input.viewport_id = egui::ViewportId::ROOT;
+        raw_input.system_theme = Some(egui::Theme::Dark);
         raw_input.focused = true;
-
+        raw_input.modifiers = self.input_state.key_modifiers;
+        raw_input.time = Some(self.startup_time.elapsed().as_secs_f64());
         raw_input.events = self.input_state.events.drain(..).collect();
-
         raw_input.screen_rect = Some(Rect::from_min_size(
             Pos2::ZERO,
             vec2(width as _, height as _),
@@ -646,7 +647,6 @@ impl Shell {
                             }
                         });
                 });
-
             egui::CentralPanel::default().show(ctx, |ui| {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
@@ -657,7 +657,6 @@ impl Shell {
                     });
             });
         });
-
         let clipped_primitives = self
             .output
             .renderer
@@ -665,7 +664,7 @@ impl Shell {
             .tessellate(full_output.shapes, full_output.pixels_per_point);
 
         unsafe {
-            self.output.renderer.gl.clear_color(0.1, 0.1, 0.1, 0.7);
+            self.output.renderer.gl.clear_color(0.1, 0.1, 0.1, 1.0);
         }
 
         self.output.renderer.painter.paint_and_update_textures(
@@ -731,10 +730,7 @@ impl Shell {
             *handle
         } else {
             let fb = self.gpu.add_framebuffer(&bo, 24, 32).unwrap();
-
             self.output.fb = Some(fb);
-
-            // bo.set_userdata(fb).expect("could not set buffer object user data");
             fb
         };
 
@@ -748,7 +744,6 @@ impl Shell {
                 &[self.output.conn],
                 Some(self.output.mode),
             )?;
-
             self.gpu.page_flip(
                 self.output.crtc,
                 fb,
