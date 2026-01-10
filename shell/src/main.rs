@@ -1,10 +1,12 @@
 
+pub mod cursor;
 pub mod egl;
 pub mod input;
 pub mod log;
 pub mod object;
 
 use std::{
+    collections::HashMap,
     ffi::OsString,
     io::{BufRead as _, Read as _, Write as _},
     num::NonZeroU32,
@@ -29,11 +31,17 @@ use glutin::{
 use kernel::{epoll::{Event, EventPoll}, file::File};
 use ::log::{debug, error, info, trace, warn};
 
-use crate::object::Object;
+use crate::{cursor::{CursorData, CursorIcon}, object::Object};
 
 
 
 fn main() -> Result<()> {
+    let startup_time = Instant::now();
+
+    unsafe {
+        std::env::set_var("RUST_BACKTRACE", "1");
+    }
+
     log::Logger::default().init()?;
 
     info!("Starting shell...");
@@ -106,10 +114,14 @@ fn main() -> Result<()> {
     let cursor_height = gpu
         .get_driver_capability(drm::DriverCapability::CursorHeight)
         .unwrap_or(64);
+    let cursor_hotspot;
+    let mut cursor_data = HashMap::new();
     #[allow(deprecated)]
     let cursor_buffer = {
-        let hotspot = (2, 2);
-        let bytes = include_bytes!("../../res/cursor.rgba");
+        let data = cursor_data
+            .entry(CursorIcon::Default)
+            .or_insert_with(|| CursorData::load_or_fallback("/usr/share/cursors/default/default"))
+            .get_image(1, startup_time.elapsed().as_millis() as _);
 
         let mut buffer: gbm::BufferObject<()> = gpu.create_buffer_object(
             cursor_width as _,
@@ -118,9 +130,18 @@ fn main() -> Result<()> {
             gbm::BufferObjectFlags::CURSOR | gbm::BufferObjectFlags::WRITE,
         )?;
 
-        buffer.write(bytes)?;
+        println!("IMAGE: {}x{}, {}", data.width, data.height, data.pixels_rgba.len());
 
-        if gpu.set_cursor2(output.crtc, Some(&buffer), hotspot).is_err() {
+        buffer.map_mut(0, 0, data.width, data.height, |map| {
+            map.buffer_mut()
+                .chunks_exact_mut(cursor_width as usize * 4)
+                .zip(data.pixels_rgba.chunks_exact(data.width as usize * 4))
+                .for_each(|(dst, src)| dst[..src.len()].copy_from_slice(src));
+        })?;
+
+        cursor_hotspot = (data.xhot as _, data.yhot as _);
+
+        if gpu.set_cursor2(output.crtc, Some(&buffer), cursor_hotspot).is_err() {
             gpu.set_cursor(output.crtc, Some(&buffer))?;
         }
 
@@ -313,6 +334,7 @@ fn main() -> Result<()> {
     gpu.debug_info("/dev/dri/card0");
 
     let mut shell = Shell {
+        startup_time,
         gpu: gpu.clone(),
         output,
         current_dir: std::env::current_dir().unwrap().to_str().unwrap().to_string(),
@@ -321,6 +343,10 @@ fn main() -> Result<()> {
             events: Vec::with_capacity(2),
             key_modifiers: egui::Modifiers::NONE,
         },
+        cursor_width,
+        cursor_hotspot,
+        cursor_icon: CursorIcon::Default,
+        cursor_data,
         cursor_buffer,
     };
 
@@ -483,10 +509,15 @@ fn main() -> Result<()> {
 
 
 pub struct Shell {
+    startup_time: Instant,
     gpu: GraphicsCard,
     current_dir: String,
     output: Output,
     input_state: InputState,
+    cursor_width: u64,
+    cursor_hotspot: (i32, i32),
+    cursor_icon: CursorIcon,
+    cursor_data: HashMap<CursorIcon, CursorData>,
     cursor_buffer: gbm::BufferObject<()>,
 }
 
@@ -544,6 +575,33 @@ impl Shell {
             self.output.renderer.gl.finish();
         }
 
+        let next_icon = CursorIcon::from(full_output.platform_output.cursor_icon);
+        if self.cursor_icon != next_icon {
+            self.cursor_icon = next_icon;
+            let data = self.cursor_data
+                .entry(self.cursor_icon)
+                .or_insert_with(|| CursorData::load_or_fallback(&format!(
+                    "/usr/share/cursors/default/{}",
+                    self.cursor_icon.name(),
+                )))
+                .get_image(1, self.startup_time.elapsed().as_millis() as _);
+            self.cursor_buffer.map_mut(0, 0, data.width, data.height, |map| {
+                map.buffer_mut()
+                    .chunks_exact_mut(self.cursor_width as usize * 4)
+                    .zip(data.pixels_rgba.chunks_exact(data.width as usize * 4))
+                    .for_each(|(dst, src)| dst[..src.len()].copy_from_slice(src));
+            })?;
+            self.cursor_hotspot = (data.xhot as _, data.yhot as _);
+            #[allow(deprecated)]
+            if self.gpu.set_cursor2(
+                self.output.crtc,
+                Some(&self.cursor_buffer),
+                self.cursor_hotspot,
+            ).is_err() {
+                self.gpu.set_cursor(self.output.crtc, Some(&self.cursor_buffer))?;
+            }
+        }
+
         self.output.surface.swap_buffers(&self.output.context).unwrap();
         let bo = unsafe { self.output.bo.lock_front_buffer().unwrap() };
 
@@ -581,7 +639,11 @@ impl Shell {
         }
 
         #[allow(deprecated)]
-        if self.gpu.set_cursor2(self.output.crtc, Some(&self.cursor_buffer), (2, 2)).is_err() {
+        if self.gpu.set_cursor2(
+            self.output.crtc,
+            Some(&self.cursor_buffer),
+            self.cursor_hotspot,
+        ).is_err() {
             self.gpu.set_cursor(self.output.crtc, Some(&self.cursor_buffer))?;
         }
 

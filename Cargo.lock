@@ -714,6 +714,7 @@ dependencies = [
  "log",
  "raw-window-handle",
  "thiserror",
+ "xcursor",
 ]
 
 [[package]]
@@ -1021,6 +1022,12 @@ dependencies = [
  "once_cell",
  "pkg-config",
 ]
+
+[[package]]
+name = "xcursor"
+version = "0.3.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bec9e4a500ca8864c5b47b8b482a73d62e4237670e5b5f1d6b9e3cae50f28f2b"
 
 [[package]]
 name = "xml-rs"
