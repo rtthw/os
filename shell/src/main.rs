@@ -264,7 +264,6 @@ fn main() -> Result<()> {
                     .unwrap_or(0)
             })
             .unwrap_or(0) as f32;
-
         let max_abs_y = abs_info
             .as_ref()
             .map(|vals| {
@@ -283,14 +282,12 @@ fn main() -> Result<()> {
                         match evdev::AbsoluteAxisCode(input_event.code()) {
                             evdev::AbsoluteAxisCode::ABS_X => {
                                 let abs_x = input_event.value() as f32;
-
                                 if abs_x == 0.0 {
                                     shell.input_state.mouse_pos.x = 0.0;
                                 } else {
                                     shell.input_state.mouse_pos.x =
                                         shell.output.width() as f32 / (max_abs_x / abs_x);
                                 }
-
                                 shell
                                     .input_state
                                     .events
@@ -298,14 +295,12 @@ fn main() -> Result<()> {
                             }
                             evdev::AbsoluteAxisCode::ABS_Y => {
                                 let abs_y = input_event.value() as f32;
-
                                 if abs_y == 0.0 {
                                     shell.input_state.mouse_pos.y = 0.0;
                                 } else {
                                     shell.input_state.mouse_pos.y =
                                         shell.output.height() as f32 / (max_abs_y / abs_y);
                                 }
-
                                 shell
                                     .input_state
                                     .events
@@ -314,31 +309,35 @@ fn main() -> Result<()> {
                             _ => {}
                         }
                     }
-                    // evdev::EventType::RELATIVE => {
-                    //     if is_pointer {
-                    //         match input_event.code() {
-                    //             0 => {
-                    //                 let movement = input_event.value() as f32;
-                    //                 shell.input_state.mouse_pos.x += movement;
-                    //                 shell.input_state.events
-                    //                     
-                    // .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
-                    //                 shell.input_state.events
-                    //                     .push(egui::Event::MouseMoved(vec2(movement, 0.0)));
-                    //             }
-                    //             1 => {
-                    //                 let movement = input_event.value() as f32;
-                    //                 shell.input_state.mouse_pos.y += movement;
-                    //                 shell.input_state.events
-                    //                     
-                    // .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
-                    //                 shell.input_state.events
-                    //                     .push(egui::Event::MouseMoved(vec2(0.0, movement)));
-                    //             }
-                    //             _ => {}
-                    //         }
-                    //     }
-                    // }
+                    evdev::EventType::RELATIVE => {
+                        match evdev::RelativeAxisCode(input_event.code()) {
+                            evdev::RelativeAxisCode::REL_X => {
+                                let movement = input_event.value() as f32;
+                                shell.input_state.mouse_pos.x += movement;
+                                shell
+                                    .input_state
+                                    .events
+                                    .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
+                                shell
+                                    .input_state
+                                    .events
+                                    .push(egui::Event::MouseMoved(vec2(movement, 0.0)));
+                            }
+                            evdev::RelativeAxisCode::REL_Y => {
+                                let movement = input_event.value() as f32;
+                                shell.input_state.mouse_pos.y += movement;
+                                shell
+                                    .input_state
+                                    .events
+                                    .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
+                                shell
+                                    .input_state
+                                    .events
+                                    .push(egui::Event::MouseMoved(vec2(0.0, movement)));
+                            }
+                            _ => {}
+                        }
+                    }
                     evdev::EventType::KEY => match evdev::KeyCode(input_event.code()) {
                         evdev::KeyCode::BTN_LEFT => {
                             shell.input_state.events.push(egui::Event::PointerButton {
@@ -359,7 +358,6 @@ fn main() -> Result<()> {
 
                         evdev::KeyCode::KEY_LEFTCTRL | evdev::KeyCode::KEY_RIGHTCTRL => {
                             shell.input_state.key_modifiers.ctrl = input_event.value() == 1;
-
                             shell.input_state.key_modifiers.command = input_event.value() == 1;
                         }
                         evdev::KeyCode::KEY_LEFTSHIFT | evdev::KeyCode::KEY_RIGHTSHIFT => {
