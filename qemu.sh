@@ -34,6 +34,7 @@ qemu-system-x86_64 \
     -vga none \
     -device virtio-gpu-gl \
     -display gtk,gl=on,show-tabs=on,show-cursor=on \
+    -usbdevice tablet \
     -kernel bzImage \
     -initrd initrd.cpio \
     -append 'console=ttyS0'
