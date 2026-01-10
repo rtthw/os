@@ -9,7 +9,8 @@ use std::{
     io::{BufRead as _, Read as _, Write as _},
     num::NonZeroU32,
     os::fd::AsRawFd as _,
-    ptr::NonNull, str::FromStr as _,
+    ptr::NonNull,
+    str::FromStr as _,
     sync::Arc,
     time::Instant,
 };
@@ -168,95 +169,137 @@ fn main() -> Result<()> {
 
     for (path, device) in evdev::enumerate() {
         let name = device.name().unwrap_or("Unnamed Device").to_string();
-        let is_pointer = device.properties().contains(evdev::PropType::POINTER);
+        let abs_info = device.get_absinfo().map(|info| info.collect::<Vec<_>>());
         debug!(
             target: "dev",
             "{}\n\
             \t.name: {}\n\
             \t.physical_path: {}\n\
             \t.properties: {:?}\n\
+            \t.misc_properties: {:?}\n\
             \t.supported_events: {:?}\n\
-            \t.supported_keys: {:?}",
+            \t.supported_keys: {:?}\n\
+            \t.supported_absolute_axes: {:?}\n\
+            \t.supported_relative_axes: {:?}\n\
+            \t.abs_info: {:?}",
             path.display(),
             &name,
             device.physical_path().unwrap_or("NONE"),
             device.properties(),
+            device.misc_properties(),
             device.supported_events(),
             device.supported_keys(),
+            device.supported_absolute_axes(),
+            device.supported_relative_axes(),
+            &abs_info,
         );
 
+        let max_abs_x = abs_info.as_ref()
+            .map(|vals| vals.iter()
+                .find(|val| val.0 == evdev::AbsoluteAxisCode::ABS_X)
+                .map(|val| val.1.maximum())
+                .unwrap_or(0))
+            .unwrap_or(0) as f32;
+        let max_abs_y = abs_info.as_ref()
+            .map(|vals| vals.iter()
+                .find(|val| val.0 == evdev::AbsoluteAxisCode::ABS_Y)
+                .map(|val| val.1.maximum())
+                .unwrap_or(0))
+            .unwrap_or(0) as f32;
+
         event_loop.add_source(input::InputSource::new(device)?, move |shell, input_event| {
-            // trace!(target: "input", "EVENT @ {name}: {input_event:?}");
             match input_event.event_type() {
-                evdev::EventType::RELATIVE => {
-                    if is_pointer {
-                        match input_event.code() {
-                            0 => {
-                                let movement = input_event.value() as f32;
-                                shell.input_state.mouse_pos.x += movement;
-                                shell.input_state.events
-                                    .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
-                                shell.input_state.events
-                                    .push(egui::Event::MouseMoved(vec2(movement, 0.0)));
+                evdev::EventType::ABSOLUTE => {
+                    match evdev::AbsoluteAxisCode(input_event.code()) {
+                        evdev::AbsoluteAxisCode::ABS_X => {
+                            let abs_x = input_event.value() as f32;
+                            if abs_x == 0.0 {
+                                shell.input_state.mouse_pos.x = 0.0;
+                            } else {
+                                shell.input_state.mouse_pos.x
+                                    = shell.output.width() as f32 / (max_abs_x / abs_x);
                             }
-                            1 => {
-                                let movement = input_event.value() as f32;
-                                shell.input_state.mouse_pos.y += movement;
-                                shell.input_state.events
-                                    .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
-                                shell.input_state.events
-                                    .push(egui::Event::MouseMoved(vec2(0.0, movement)));
-                            }
-                            _ => {}
+                            shell.input_state.events
+                                .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
                         }
+                        evdev::AbsoluteAxisCode::ABS_Y => {
+                            let abs_y = input_event.value() as f32;
+                            if abs_y == 0.0 {
+                                shell.input_state.mouse_pos.y = 0.0;
+                            } else {
+                                shell.input_state.mouse_pos.y
+                                    = shell.output.height() as f32 / (max_abs_y / abs_y);
+                            }
+                            shell.input_state.events
+                                .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
+                        }
+                        _ => {}
                     }
                 }
+                // evdev::EventType::RELATIVE => {
+                //     if is_pointer {
+                //         match input_event.code() {
+                //             0 => {
+                //                 let movement = input_event.value() as f32;
+                //                 shell.input_state.mouse_pos.x += movement;
+                //                 shell.input_state.events
+                //                     .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
+                //                 shell.input_state.events
+                //                     .push(egui::Event::MouseMoved(vec2(movement, 0.0)));
+                //             }
+                //             1 => {
+                //                 let movement = input_event.value() as f32;
+                //                 shell.input_state.mouse_pos.y += movement;
+                //                 shell.input_state.events
+                //                     .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
+                //                 shell.input_state.events
+                //                     .push(egui::Event::MouseMoved(vec2(0.0, movement)));
+                //             }
+                //             _ => {}
+                //         }
+                //     }
+                // }
                 evdev::EventType::KEY => {
-                    if is_pointer {
-                        match evdev::KeyCode(input_event.code()) {
-                            evdev::KeyCode::BTN_LEFT => {
-                                shell.input_state.events
-                                    .push(egui::Event::PointerButton {
-                                        pos: shell.input_state.mouse_pos,
-                                        button: egui::PointerButton::Primary,
-                                        pressed: input_event.value() == 1,
-                                        modifiers: shell.input_state.key_modifiers,
-                                    });
-                            }
-                            evdev::KeyCode::BTN_RIGHT => {
-                                shell.input_state.events
-                                    .push(egui::Event::PointerButton {
-                                        pos: shell.input_state.mouse_pos,
-                                        button: egui::PointerButton::Secondary,
-                                        pressed: input_event.value() == 1,
-                                        modifiers: shell.input_state.key_modifiers,
-                                    });
-                            }
-                            _ => {}
+                    match evdev::KeyCode(input_event.code()) {
+                        evdev::KeyCode::BTN_LEFT => {
+                            shell.input_state.events
+                                .push(egui::Event::PointerButton {
+                                    pos: shell.input_state.mouse_pos,
+                                    button: egui::PointerButton::Primary,
+                                    pressed: input_event.value() == 1,
+                                    modifiers: shell.input_state.key_modifiers,
+                                });
                         }
-                    } else {
-                        match evdev::KeyCode(input_event.code()) {
-                            evdev::KeyCode::KEY_LEFTCTRL | evdev::KeyCode::KEY_RIGHTCTRL => {
-                                shell.input_state.key_modifiers.ctrl = input_event.value() == 1;
-                                shell.input_state.key_modifiers.command = input_event.value() == 1;
-                            }
-                            evdev::KeyCode::KEY_LEFTSHIFT | evdev::KeyCode::KEY_RIGHTSHIFT => {
-                                shell.input_state.key_modifiers.shift = input_event.value() == 1;
-                            }
-                            evdev::KeyCode::KEY_LEFTALT | evdev::KeyCode::KEY_RIGHTALT => {
-                                shell.input_state.key_modifiers.alt = input_event.value() == 1;
-                            }
+                        evdev::KeyCode::BTN_RIGHT => {
+                            shell.input_state.events
+                                .push(egui::Event::PointerButton {
+                                    pos: shell.input_state.mouse_pos,
+                                    button: egui::PointerButton::Secondary,
+                                    pressed: input_event.value() == 1,
+                                    modifiers: shell.input_state.key_modifiers,
+                                });
+                        }
 
-                            other => {
-                                if let Some(key) = evdev_keycode_to_egui_key(other) {
-                                    shell.input_state.events.push(egui::Event::Key {
-                                        key,
-                                        physical_key: Some(key),
-                                        pressed: input_event.value() == 1,
-                                        repeat: false,
-                                        modifiers: shell.input_state.key_modifiers,
-                                    });
-                                }
+                        evdev::KeyCode::KEY_LEFTCTRL | evdev::KeyCode::KEY_RIGHTCTRL => {
+                            shell.input_state.key_modifiers.ctrl = input_event.value() == 1;
+                            shell.input_state.key_modifiers.command = input_event.value() == 1;
+                        }
+                        evdev::KeyCode::KEY_LEFTSHIFT | evdev::KeyCode::KEY_RIGHTSHIFT => {
+                            shell.input_state.key_modifiers.shift = input_event.value() == 1;
+                        }
+                        evdev::KeyCode::KEY_LEFTALT | evdev::KeyCode::KEY_RIGHTALT => {
+                            shell.input_state.key_modifiers.alt = input_event.value() == 1;
+                        }
+
+                        other => {
+                            if let Some(key) = evdev_keycode_to_egui_key(other) {
+                                shell.input_state.events.push(egui::Event::Key {
+                                    key,
+                                    physical_key: Some(key),
+                                    pressed: input_event.value() == 1,
+                                    repeat: false,
+                                    modifiers: shell.input_state.key_modifiers,
+                                });
                             }
                         }
                     }
@@ -1088,4 +1131,14 @@ struct Output {
     surface: glutin::api::egl::surface::Surface<glutin::surface::WindowSurface>,
     context: glutin::api::egl::context::PossiblyCurrentContext,
     crtc_set: bool,
+}
+
+impl Output {
+    pub fn width(&self) -> u16 {
+        self.mode.size().0
+    }
+
+    pub fn height(&self) -> u16 {
+        self.mode.size().1
+    }
 }
