@@ -10,18 +10,35 @@ use {anyhow::Result, log::warn, xcursor::parser::Image};
 pub enum CursorIcon {
     #[default]
     Default,
+
+    AllScroll,
+    Grab,
+    Grabbing,
+    Help,
+    IBeam,
+    NoDrop,
     PointingHand,
     SplitH,
     SplitV,
+    ZoomIn,
+    ZoomOut,
 }
 
 impl CursorIcon {
     pub const fn name(&self) -> &'static str {
         match self {
             CursorIcon::Default => "default",
+            CursorIcon::AllScroll => "all_scroll",
+            CursorIcon::Grab => "grab",
+            CursorIcon::Grabbing => "grabbing",
+            CursorIcon::Help => "help",
+            CursorIcon::IBeam => "ibeam",
+            CursorIcon::NoDrop => "no_drop",
             CursorIcon::PointingHand => "pointing_hand",
             CursorIcon::SplitH => "split_h",
             CursorIcon::SplitV => "split_v",
+            CursorIcon::ZoomIn => "zoom_in",
+            CursorIcon::ZoomOut => "zoom_out",
         }
     }
 }
@@ -106,11 +123,19 @@ fn frame(mut millis: u32, size: u32, images: &[Image]) -> Image {
 impl From<egui::CursorIcon> for CursorIcon {
     fn from(value: egui::CursorIcon) -> Self {
         match value {
+            egui::CursorIcon::AllScroll => Self::AllScroll,
+            egui::CursorIcon::Grab => Self::Grab,
+            egui::CursorIcon::Grabbing => Self::Grabbing,
+            egui::CursorIcon::Help => Self::Help,
+            egui::CursorIcon::NoDrop => Self::NoDrop,
             egui::CursorIcon::PointingHand => Self::PointingHand,
             egui::CursorIcon::ResizeColumn => Self::SplitH,
             egui::CursorIcon::ResizeHorizontal => Self::SplitH,
             egui::CursorIcon::ResizeRow => Self::SplitV,
             egui::CursorIcon::ResizeVertical => Self::SplitV,
+            egui::CursorIcon::Text => Self::IBeam,
+            egui::CursorIcon::ZoomIn => Self::ZoomIn,
+            egui::CursorIcon::ZoomOut => Self::ZoomOut,
             _ => Self::Default,
         }
     }
