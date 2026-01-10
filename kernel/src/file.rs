@@ -1,5 +1,9 @@
-
-use crate::{Error, Result, c_str::AsCStr, proc::{ProcessGroup, Session}, raw};
+use crate::{
+    Error, Result,
+    c_str::AsCStr,
+    proc::{ProcessGroup, Session},
+    raw,
+};
 
 
 
@@ -22,9 +26,15 @@ impl File {
 }
 
 impl File {
-    pub const STDIN: Self = Self { fd: libc::STDIN_FILENO };
-    pub const STDOUT: Self = Self { fd: libc::STDOUT_FILENO };
-    pub const STDERR: Self = Self { fd: libc::STDERR_FILENO };
+    pub const STDIN: Self = Self {
+        fd: libc::STDIN_FILENO,
+    };
+    pub const STDOUT: Self = Self {
+        fd: libc::STDOUT_FILENO,
+    };
+    pub const STDERR: Self = Self {
+        fd: libc::STDERR_FILENO,
+    };
 }
 
 impl File {
@@ -101,8 +111,8 @@ impl File {
 
 impl File {
     pub fn is_a_tty(&self) -> bool {
-        // NOTE: We ignore the error here because it doesn't matter whether the file descriptor is
-        //       valid at this point, just whether it's a TTY.
+        // NOTE: We ignore the error here because it doesn't matter whether the file
+        //       descriptor is valid at this point, just whether it's a TTY.
         unsafe { libc::isatty(self.fd) == 1 }
     }
 

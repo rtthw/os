@@ -1,8 +1,6 @@
-
 use std::ffi::CStr;
 
-use anyhow::Result;
-use kernel::c_str::AsCStr;
+use {anyhow::Result, kernel::c_str::AsCStr};
 
 
 
@@ -18,10 +16,9 @@ impl Object {
     where
         P: AsCStr + ?Sized,
     {
-        Ok(path
-            .map_cstr(|path| unsafe {
-                Self::open_with_path_ptr(path.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL)
-            })??)
+        Ok(path.map_cstr(|path| unsafe {
+            Self::open_with_path_ptr(path.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL)
+        })??)
     }
 
     pub unsafe fn open_this() -> Result<Self> {
@@ -60,44 +57,44 @@ impl Object {
             return None;
         }
 
-        name
-            .map_cstr(|name| {
-                let value = unsafe { libc::dlsym(self.handle, name.as_ptr()) };
-                if value.is_null() {
-                    None
-                } else {
-                    Some(Ptr {
-                        ptr: value,
-                        _type: core::marker::PhantomData,
-                    })
-                }
-            })
-            .ok()?
+        name.map_cstr(|name| {
+            let value = unsafe { libc::dlsym(self.handle, name.as_ptr()) };
+            if value.is_null() {
+                None
+            } else {
+                Some(Ptr {
+                    ptr: value,
+                    _type: core::marker::PhantomData,
+                })
+            }
+        })
+        .ok()?
     }
 
     pub fn get_untyped<N>(&self, name: &N) -> Option<Ptr<()>>
     where
         N: AsCStr + ?Sized,
     {
-        name
-            .map_cstr(|name| {
-                let value = unsafe { libc::dlsym(self.handle, name.as_ptr()) };
-                if value.is_null() {
-                    None
-                } else {
-                    Some(Ptr {
-                        ptr: value,
-                        _type: core::marker::PhantomData,
-                    })
-                }
-            })
-            .ok()?
+        name.map_cstr(|name| {
+            let value = unsafe { libc::dlsym(self.handle, name.as_ptr()) };
+            if value.is_null() {
+                None
+            } else {
+                Some(Ptr {
+                    ptr: value,
+                    _type: core::marker::PhantomData,
+                })
+            }
+        })
+        .ok()?
     }
 }
 
 impl Drop for Object {
     fn drop(&mut self) {
-        unsafe { libc::dlclose(self.handle); }
+        unsafe {
+            libc::dlclose(self.handle);
+        }
     }
 }
 

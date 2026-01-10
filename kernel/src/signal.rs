@@ -37,7 +37,7 @@ pub enum Signal {
     VTALRM = 26,
     PROF = 27,
     WINCH = 28,
-    IO = 29, // POLL
+    IO = 29,  // POLL
     PWR = 30, // INFO
     SYS = 31, // UNUSED
 }
@@ -155,7 +155,11 @@ impl SignalMask {
         let mut set = core::mem::MaybeUninit::uninit();
         let _ = unsafe { libc::sigfillset(set.as_mut_ptr()) };
 
-        unsafe{ Self { raw: set.assume_init() } }
+        unsafe {
+            Self {
+                raw: set.assume_init(),
+            }
+        }
     }
 
     // https://www.man7.org/linux/man-pages/man3/sigemptyset.3.html
@@ -163,7 +167,11 @@ impl SignalMask {
         let mut set = core::mem::MaybeUninit::uninit();
         let _ = unsafe { libc::sigemptyset(set.as_mut_ptr()) };
 
-        unsafe{ Self { raw: set.assume_init() } }
+        unsafe {
+            Self {
+                raw: set.assume_init(),
+            }
+        }
     }
 
     // https://www.man7.org/linux/man-pages/man3/sigaddset.3.html
@@ -183,13 +191,7 @@ impl SignalMask {
 
     // https://www.man7.org/linux/man-pages/man2/sigprocmask.2.html
     pub fn block(&self) -> Result<()> {
-        let res = unsafe {
-            libc::sigprocmask(
-                libc::SIG_BLOCK,
-                &self.raw,
-                core::ptr::null_mut(),
-            )
-        };
+        let res = unsafe { libc::sigprocmask(libc::SIG_BLOCK, &self.raw, core::ptr::null_mut()) };
         if res == -1 {
             Err(Error::latest())
         } else {

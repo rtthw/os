@@ -2,9 +2,7 @@
 
 use std::io::Read as _;
 
-use anyhow::Result;
-use log::warn;
-use xcursor::parser::Image;
+use {anyhow::Result, log::warn, xcursor::parser::Image};
 
 
 
@@ -41,18 +39,16 @@ impl CursorData {
             Err(error) => {
                 warn!("Failed to load cursor data at '{path}': {error}");
                 Self {
-                    icons: vec![
-                        Image {
-                            size: 32,
-                            width: 64,
-                            height: 64,
-                            xhot: 1,
-                            yhot: 1,
-                            delay: 1,
-                            pixels_rgba: Vec::from(FALLBACK_CURSOR_DATA),
-                            pixels_argb: vec![], // Unused.
-                        },
-                    ],
+                    icons: vec![Image {
+                        size: 32,
+                        width: 64,
+                        height: 64,
+                        xhot: 1,
+                        yhot: 1,
+                        delay: 1,
+                        pixels_rgba: Vec::from(FALLBACK_CURSOR_DATA),
+                        pixels_argb: vec![], // Unused.
+                    }],
                 }
             }
         }
@@ -65,9 +61,7 @@ impl CursorData {
         let icons = xcursor::parser::parse_xcursor(&data)
             .ok_or(anyhow::anyhow!("Failed to parse XCurosr at '{path}'"))?;
 
-        Ok(Self {
-            icons,
-        })
+        Ok(Self { icons })
     }
 
     pub fn get_image(&self, scale: u32, millis: u32) -> Image {

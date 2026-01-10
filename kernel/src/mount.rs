@@ -1,14 +1,12 @@
+use crate::{
+    Error, Result,
+    c_str::{AsCStr, map_cstr_opt},
+    raw,
+};
 
-use crate::{Error, Result, c_str::{AsCStr, map_cstr_opt}, raw};
 
 
-
-pub fn mount<
-    S1: AsCStr + ?Sized,
-    S2: AsCStr + ?Sized,
-    S3: AsCStr + ?Sized,
-    S4: AsCStr + ?Sized,
->(
+pub fn mount<S1: AsCStr + ?Sized, S2: AsCStr + ?Sized, S3: AsCStr + ?Sized, S4: AsCStr + ?Sized>(
     source: &S1,
     target: &S2,
     fs: &S3,
@@ -19,13 +17,7 @@ pub fn mount<
         target.map_cstr(|target| {
             fs.map_cstr(|fs| {
                 map_cstr_opt(options, |options| {
-                    raw::mount(
-                        source,
-                        target,
-                        fs,
-                        flags.0,
-                        options,
-                    )
+                    raw::mount(source, target, fs, flags.0, options)
                 })
             })
         })

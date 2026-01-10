@@ -16,9 +16,6 @@ pub mod traits;
 
 
 
-pub use {
-    error::Error,
-    signal::Signal,
-};
+pub use {error::Error, signal::Signal};
 
 pub type Result<T> = core::result::Result<T, error::Error>;

@@ -1,4 +1,3 @@
-
 use core::ffi::CStr;
 
 use alloc::ffi::CString;
@@ -30,7 +29,7 @@ impl AsCStr for str {
 
     fn map_cstr<F, R>(&self, op: F) -> Result<R>
     where
-        F: FnOnce(&CStr) -> R
+        F: FnOnce(&CStr) -> R,
     {
         self.as_bytes().map_cstr(op)
     }
@@ -47,7 +46,7 @@ impl AsCStr for CStr {
 
     fn map_cstr<F, R>(&self, op: F) -> Result<R>
     where
-        F: FnOnce(&CStr) -> R
+        F: FnOnce(&CStr) -> R,
     {
         Ok(op(self))
     }
@@ -66,11 +65,12 @@ impl AsCStr for [u8] {
     where
         F: FnOnce(&CStr) -> R,
     {
-        // NOTE: The real `PATH_MAX` is typically 4096, but it's statistically unlikely to have a
-        //       cstr longer than ~300 bytes. See the `nix` PR description for more information:
+        // NOTE: The real `PATH_MAX` is typically 4096, but it's statistically unlikely
+        //       to have a cstr longer than ~300 bytes. See the `nix` PR description for
+        //       more information:
         //           https://github.com/nix-rust/nix/pull/1656
-        //       By being smaller than a memory page, we also avoid the compiler inserting a probe
-        //       frame:
+        //       By being smaller than a memory page, we also avoid the compiler
+        //       inserting a probe frame:
         //           https://docs.rs/compiler_builtins/latest/compiler_builtins/probestack
         const MAX_STACK_ALLOCATION: usize = 1024;
 

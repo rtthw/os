@@ -3,8 +3,13 @@
 
 use std::os::fd::AsRawFd as _;
 
-use anyhow::Result;
-use kernel::{epoll::{Event, EventPoll}, file::File};
+use {
+    anyhow::Result,
+    kernel::{
+        epoll::{Event, EventPoll},
+        file::File,
+    },
+};
 
 use crate::{EventResponse, EventSource, Shell};
 
@@ -17,9 +22,7 @@ pub struct InputSource {
 impl InputSource {
     pub fn new(device: evdev::Device) -> Result<Self> {
         device.set_nonblocking(true)?;
-        Ok(Self {
-            device,
-        })
+        Ok(Self { device })
     }
 }
 

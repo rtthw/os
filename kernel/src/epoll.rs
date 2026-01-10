@@ -48,14 +48,8 @@ impl EventPoll {
 
     // https://www.man7.org/linux/man-pages/man2/epoll_ctl.2.html
     pub fn remove(&self, fd: &File) -> Result<()> {
-        let res = unsafe {
-            libc::epoll_ctl(
-                self.fd,
-                libc::EPOLL_CTL_DEL,
-                fd.fd,
-                core::ptr::null_mut(),
-            )
-        };
+        let res =
+            unsafe { libc::epoll_ctl(self.fd, libc::EPOLL_CTL_DEL, fd.fd, core::ptr::null_mut()) };
         if res == -1 {
             Err(Error::latest())
         } else {
@@ -78,7 +72,9 @@ impl EventPoll {
             Err(Error::latest())
         } else {
             let new_events_count = res as usize;
-            unsafe { events.set_len(events.len() + new_events_count as usize); }
+            unsafe {
+                events.set_len(events.len() + new_events_count);
+            }
             Ok(new_events_count)
         }
     }

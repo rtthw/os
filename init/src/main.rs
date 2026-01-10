@@ -68,29 +68,42 @@ fn setup_mount_points() -> Result<()> {
     use kernel::mount::{NODEV, NOEXEC, NOSUID};
 
     _ = mkdir(c"/proc", 0);
-    mount(c"proc",  c"/proc",    c"proc",     NOSUID | NOEXEC | NODEV, NULL_CSTR)?;
+    mount(
+        c"proc",
+        c"/proc",
+        c"proc",
+        NOSUID | NOEXEC | NODEV,
+        NULL_CSTR,
+    )?;
+
     _ = mkdir(c"/sys", 0);
-    mount(c"sys",   c"/sys",     c"sysfs",    NOSUID | NOEXEC | NODEV, NULL_CSTR)?;
+    mount(
+        c"sys",
+        c"/sys",
+        c"sysfs",
+        NOSUID | NOEXEC | NODEV,
+        NULL_CSTR,
+    )?;
+
     _ = mkdir(c"/dev", 0);
-    mount(c"dev",   c"/dev",     c"devtmpfs", NOSUID,                  Some(c"mode=755"))?;
-    // mount(c"tmpfs", c"/dev/shm", c"tmpfs",    NOSUID | NOEXEC | NODEV, Some(c"mode=1777"))?;
+    mount(c"dev", c"/dev", c"devtmpfs", NOSUID, Some(c"mode=755"))?;
+
+    // mount(c"tmpfs", c"/dev/shm", c"tmpfs",    NOSUID | NOEXEC | NODEV,
+    // Some(c"mode=1777"))?;
 
     Ok(())
 }
 
 fn print_filesystem() -> Result<()> {
-    const IGNORE: &[&str] = &[
-        "/proc",
-        "/sys/class",
-        "/sys/kernel/slab",
-        "/sys/devices",
-    ];
+    const IGNORE: &[&str] = &["/proc", "/sys/class", "/sys/kernel/slab", "/sys/devices"];
 
     fn inner(dir: &str, depth: usize) -> Result<()> {
         for entry in std::fs::read_dir(dir).map_err(|_| kernel::Error::NOENT)? {
             let entry = entry.map_err(|_| kernel::Error::NOENT)?;
             let path = entry.path().to_str().unwrap().to_string();
-            let name = path.rsplit_once('/').map_or(path.clone(), |(_, name)| name.to_string());
+            let name = path
+                .rsplit_once('/')
+                .map_or(path.clone(), |(_, name)| name.to_string());
 
             println!("{}\x1b[2m/\x1b[0m{}", "    ".repeat(depth), name);
 
@@ -119,7 +132,11 @@ fn handle_sigchld(shell: &mut std::process::Child) {
         if let Ok(status) = wait_for_children_once() {
             let termination: Option<(Process, i32)> = match status {
                 WaitStatus::Exited { proc, code } => Some((proc, code)),
-                WaitStatus::Signaled { proc, sig, core_dumped: _ } => Some((
+                WaitStatus::Signaled {
+                    proc,
+                    sig,
+                    core_dumped: _,
+                } => Some((
                     proc,
                     sig as i32 + 128, // Signal to exit code conversion.
                 )),

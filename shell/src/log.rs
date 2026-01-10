@@ -3,8 +3,6 @@
 use anyhow::Result;
 use log::{Level, LevelFilter, Log};
 
-
-
 pub struct Logger {
     pub use_stderr: bool,
     pub default_level: LevelFilter,
@@ -30,7 +28,12 @@ impl Logger {
     }
 
     pub fn max_level(&self) -> LevelFilter {
-        let max_level = self.targets.iter().map(|(_name, level)| level).copied().max();
+        let max_level = self
+            .targets
+            .iter()
+            .map(|(_name, level)| level)
+            .copied()
+            .max();
         max_level
             .map(|lvl| lvl.max(self.default_level))
             .unwrap_or(self.default_level)
@@ -45,7 +48,9 @@ impl Logger {
 impl Log for Logger {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
         &metadata.level().to_level_filter()
-            <= self.targets.iter()
+            <= self
+                .targets
+                .iter()
                 .find(|(name, _level)| metadata.target().starts_with(name))
                 .map(|(_name, level)| level)
                 .unwrap_or(&self.default_level)
@@ -58,10 +63,10 @@ impl Log for Logger {
 
         let level_color_code = match record.level() {
             Level::Error => 31, // ANSI SGR "red"
-            Level::Warn => 33, // ANSI SGR "yellow"
-            Level::Info => 0, // ANSI SGR "reset"
+            Level::Warn => 33,  // ANSI SGR "yellow"
+            Level::Info => 0,   // ANSI SGR "reset"
             Level::Debug => 34, // ANSI SGR "blue"
-            Level::Trace => 2, // ANSI SGR "dim"
+            Level::Trace => 2,  // ANSI SGR "dim"
         };
         let target = if !record.target().is_empty() {
             record.target()

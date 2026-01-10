@@ -1,4 +1,3 @@
-
 pub mod cursor;
 pub mod egl;
 pub mod input;
@@ -17,21 +16,29 @@ use std::{
     time::Instant,
 };
 
-use anyhow::{Result, bail};
-use drm::{Device, control::Device as ControlDevice};
-use egui::{Pos2, Rect, pos2, vec2};
-use gbm::AsRaw as _;
-use glow::HasContext as _;
-use glutin::{
-    config::GlConfig as _,
-    display::{GetGlDisplay as _, GlDisplay as _},
-    prelude::{NotCurrentGlContext as _, PossiblyCurrentGlContext as _},
-    surface::GlSurface as _,
+use {
+    ::log::{debug, error, info, trace, warn},
+    anyhow::{Result, bail},
+    drm::{Device, control::Device as ControlDevice},
+    egui::{Pos2, Rect, pos2, vec2},
+    gbm::AsRaw as _,
+    glow::HasContext as _,
+    glutin::{
+        config::GlConfig as _,
+        display::{GetGlDisplay as _, GlDisplay as _},
+        prelude::{NotCurrentGlContext as _, PossiblyCurrentGlContext as _},
+        surface::GlSurface as _,
+    },
+    kernel::{
+        epoll::{Event, EventPoll},
+        file::File,
+    },
 };
-use kernel::{epoll::{Event, EventPoll}, file::File};
-use ::log::{debug, error, info, trace, warn};
 
-use crate::{cursor::{CursorData, CursorIcon}, object::Object};
+use crate::{
+    cursor::{CursorData, CursorIcon},
+    object::Object,
+};
 
 
 
@@ -45,54 +52,68 @@ fn main() -> Result<()> {
     log::Logger::default().init()?;
 
     info!("Starting shell...");
+
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     let gpu = GraphicsCard::open("/dev/dri/card0")?;
 
     let display = unsafe {
-        glutin::api::egl::display::Display::new(
-            raw_window_handle::RawDisplayHandle::Gbm(
-                raw_window_handle::GbmDisplayHandle::new(
-                    NonNull::new(gpu.as_raw() as *mut _).unwrap(),
-                ),
-            ),
-        )
+        glutin::api::egl::display::Display::new(raw_window_handle::RawDisplayHandle::Gbm(
+            raw_window_handle::GbmDisplayHandle::new(NonNull::new(gpu.as_raw() as *mut _).unwrap()),
+        ))
     }
-        .expect("Failed to create display");
+    .expect("Failed to create display");
 
     let config = unsafe {
-        display.find_configs(glutin::config::ConfigTemplateBuilder::default()
-            .with_surface_type(glutin::config::ConfigSurfaceTypes::WINDOW)
-            .build())
-    }
-        .unwrap()
-        .reduce(
-            |config, acc| {
-                debug!("{:?}, {:?}, {:?}, SRGB={}, HWACC={}", config.api(), config.config_surface_types(), config.color_buffer_type(), config.srgb_capable(), config.hardware_accelerated());
-                if config.num_samples() > acc.num_samples() { config } else { acc }
-            },
+        display.find_configs(
+            glutin::config::ConfigTemplateBuilder::default()
+                .with_surface_type(glutin::config::ConfigSurfaceTypes::WINDOW)
+                .build(),
         )
-        .expect("no available GL configs");
+    }
+    .unwrap()
+    .reduce(|config, acc| {
+        debug!(
+            "{:?}, {:?}, {:?}, SRGB={}, HWACC={}",
+            config.api(),
+            config.config_surface_types(),
+            config.color_buffer_type(),
+            config.srgb_capable(),
+            config.hardware_accelerated()
+        );
+
+        if config.num_samples() > acc.num_samples() {
+            config
+        } else {
+            acc
+        }
+    })
+    .expect("no available GL configs");
 
     let context_attributes = glutin::context::ContextAttributesBuilder::new().build(None);
+
     let fallback_context_attributes = glutin::context::ContextAttributesBuilder::new()
         .with_context_api(glutin::context::ContextApi::Gles(None))
         .build(None);
 
     let context = unsafe {
-        display.create_context(&config, &context_attributes).unwrap_or_else(|_| {
-            display
-                .create_context(&config, &fallback_context_attributes)
-                .expect("failed to create context")
-        })
+        display
+            .create_context(&config, &context_attributes)
+            .unwrap_or_else(|_| {
+                display
+                    .create_context(&config, &fallback_context_attributes)
+                    .expect("failed to create context")
+            })
     };
 
     trace!(target: "gpu", "Setting DRM client capabilities...");
 
     gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
         .expect("unable to request gpu.UniversalPlanes capability");
+
     gpu.set_client_capability(drm::ClientCapability::Atomic, true)
         .expect("unable to request gpu.Atomic capability");
+
     gpu.set_client_capability(drm::ClientCapability::CursorPlaneHotspot, true)
         .expect("unable to request gpu.Atomic capability");
 
@@ -111,11 +132,15 @@ fn main() -> Result<()> {
     let cursor_width = gpu
         .get_driver_capability(drm::DriverCapability::CursorWidth)
         .unwrap_or(64);
+
     let cursor_height = gpu
         .get_driver_capability(drm::DriverCapability::CursorHeight)
         .unwrap_or(64);
+
     let cursor_hotspot;
+
     let mut cursor_data = HashMap::new();
+
     #[allow(deprecated)]
     let cursor_buffer = {
         let data = cursor_data
@@ -130,7 +155,12 @@ fn main() -> Result<()> {
             gbm::BufferObjectFlags::CURSOR | gbm::BufferObjectFlags::WRITE,
         )?;
 
-        println!("IMAGE: {}x{}, {}", data.width, data.height, data.pixels_rgba.len());
+        println!(
+            "IMAGE: {}x{}, {}",
+            data.width,
+            data.height,
+            data.pixels_rgba.len()
+        );
 
         buffer.map_mut(0, 0, data.width, data.height, |map| {
             map.buffer_mut()
@@ -141,7 +171,10 @@ fn main() -> Result<()> {
 
         cursor_hotspot = (data.xhot as _, data.yhot as _);
 
-        if gpu.set_cursor2(output.crtc, Some(&buffer), cursor_hotspot).is_err() {
+        if gpu
+            .set_cursor2(output.crtc, Some(&buffer), cursor_hotspot)
+            .is_err()
+        {
             gpu.set_cursor(output.crtc, Some(&buffer))?;
         }
 
@@ -164,8 +197,8 @@ fn main() -> Result<()> {
     //             })
     //         })?;
 
-    //         (prop == drm::control::PlaneType::Cursor as u64&& info.crtc() == Some(output.crtc))
-    //             .then_some(info)
+    //         (prop == drm::control::PlaneType::Cursor as u64&& info.crtc() ==
+    // Some(output.crtc))             .then_some(info)
     //     })
     //     .expect("failed to find cursor plane")
     //     .handle();
@@ -173,8 +206,12 @@ fn main() -> Result<()> {
     let this_obj = unsafe { Object::open_this().expect("should be able to open shell binary") };
 
     let stdin = std::io::stdin();
+
     unsafe {
-        assert_ne!(libc::fcntl(stdin.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK), -1);
+        assert_ne!(
+            libc::fcntl(stdin.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK),
+            -1
+        );
     }
 
     let mut event_loop = EventLoop::new()?;
@@ -185,12 +222,15 @@ fn main() -> Result<()> {
         } else {
             trace!("Unknown DRM event occurred");
         }
+
         Ok(())
     })?;
 
     for (path, device) in evdev::enumerate() {
         let name = device.name().unwrap_or("Unnamed Device").to_string();
+
         let abs_info = device.get_absinfo().map(|info| info.collect::<Vec<_>>());
+
         debug!(
             target: "dev",
             "{}\n\
@@ -215,94 +255,111 @@ fn main() -> Result<()> {
             &abs_info,
         );
 
-        let max_abs_x = abs_info.as_ref()
-            .map(|vals| vals.iter()
-                .find(|val| val.0 == evdev::AbsoluteAxisCode::ABS_X)
-                .map(|val| val.1.maximum())
-                .unwrap_or(0))
-            .unwrap_or(0) as f32;
-        let max_abs_y = abs_info.as_ref()
-            .map(|vals| vals.iter()
-                .find(|val| val.0 == evdev::AbsoluteAxisCode::ABS_Y)
-                .map(|val| val.1.maximum())
-                .unwrap_or(0))
+        let max_abs_x = abs_info
+            .as_ref()
+            .map(|vals| {
+                vals.iter()
+                    .find(|val| val.0 == evdev::AbsoluteAxisCode::ABS_X)
+                    .map(|val| val.1.maximum())
+                    .unwrap_or(0)
+            })
             .unwrap_or(0) as f32;
 
-        event_loop.add_source(input::InputSource::new(device)?, move |shell, input_event| {
-            match input_event.event_type() {
-                evdev::EventType::ABSOLUTE => {
-                    match evdev::AbsoluteAxisCode(input_event.code()) {
-                        evdev::AbsoluteAxisCode::ABS_X => {
-                            let abs_x = input_event.value() as f32;
-                            if abs_x == 0.0 {
-                                shell.input_state.mouse_pos.x = 0.0;
-                            } else {
-                                shell.input_state.mouse_pos.x
-                                    = shell.output.width() as f32 / (max_abs_x / abs_x);
+        let max_abs_y = abs_info
+            .as_ref()
+            .map(|vals| {
+                vals.iter()
+                    .find(|val| val.0 == evdev::AbsoluteAxisCode::ABS_Y)
+                    .map(|val| val.1.maximum())
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0) as f32;
+
+        event_loop.add_source(
+            input::InputSource::new(device)?,
+            move |shell, input_event| {
+                match input_event.event_type() {
+                    evdev::EventType::ABSOLUTE => {
+                        match evdev::AbsoluteAxisCode(input_event.code()) {
+                            evdev::AbsoluteAxisCode::ABS_X => {
+                                let abs_x = input_event.value() as f32;
+
+                                if abs_x == 0.0 {
+                                    shell.input_state.mouse_pos.x = 0.0;
+                                } else {
+                                    shell.input_state.mouse_pos.x =
+                                        shell.output.width() as f32 / (max_abs_x / abs_x);
+                                }
+
+                                shell
+                                    .input_state
+                                    .events
+                                    .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
                             }
-                            shell.input_state.events
-                                .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
-                        }
-                        evdev::AbsoluteAxisCode::ABS_Y => {
-                            let abs_y = input_event.value() as f32;
-                            if abs_y == 0.0 {
-                                shell.input_state.mouse_pos.y = 0.0;
-                            } else {
-                                shell.input_state.mouse_pos.y
-                                    = shell.output.height() as f32 / (max_abs_y / abs_y);
+                            evdev::AbsoluteAxisCode::ABS_Y => {
+                                let abs_y = input_event.value() as f32;
+
+                                if abs_y == 0.0 {
+                                    shell.input_state.mouse_pos.y = 0.0;
+                                } else {
+                                    shell.input_state.mouse_pos.y =
+                                        shell.output.height() as f32 / (max_abs_y / abs_y);
+                                }
+
+                                shell
+                                    .input_state
+                                    .events
+                                    .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
                             }
-                            shell.input_state.events
-                                .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
+                            _ => {}
                         }
-                        _ => {}
                     }
-                }
-                // evdev::EventType::RELATIVE => {
-                //     if is_pointer {
-                //         match input_event.code() {
-                //             0 => {
-                //                 let movement = input_event.value() as f32;
-                //                 shell.input_state.mouse_pos.x += movement;
-                //                 shell.input_state.events
-                //                     .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
-                //                 shell.input_state.events
-                //                     .push(egui::Event::MouseMoved(vec2(movement, 0.0)));
-                //             }
-                //             1 => {
-                //                 let movement = input_event.value() as f32;
-                //                 shell.input_state.mouse_pos.y += movement;
-                //                 shell.input_state.events
-                //                     .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
-                //                 shell.input_state.events
-                //                     .push(egui::Event::MouseMoved(vec2(0.0, movement)));
-                //             }
-                //             _ => {}
-                //         }
-                //     }
-                // }
-                evdev::EventType::KEY => {
-                    match evdev::KeyCode(input_event.code()) {
+                    // evdev::EventType::RELATIVE => {
+                    //     if is_pointer {
+                    //         match input_event.code() {
+                    //             0 => {
+                    //                 let movement = input_event.value() as f32;
+                    //                 shell.input_state.mouse_pos.x += movement;
+                    //                 shell.input_state.events
+                    //                     
+                    // .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
+                    //                 shell.input_state.events
+                    //                     .push(egui::Event::MouseMoved(vec2(movement, 0.0)));
+                    //             }
+                    //             1 => {
+                    //                 let movement = input_event.value() as f32;
+                    //                 shell.input_state.mouse_pos.y += movement;
+                    //                 shell.input_state.events
+                    //                     
+                    // .push(egui::Event::PointerMoved(shell.input_state.mouse_pos));
+                    //                 shell.input_state.events
+                    //                     .push(egui::Event::MouseMoved(vec2(0.0, movement)));
+                    //             }
+                    //             _ => {}
+                    //         }
+                    //     }
+                    // }
+                    evdev::EventType::KEY => match evdev::KeyCode(input_event.code()) {
                         evdev::KeyCode::BTN_LEFT => {
-                            shell.input_state.events
-                                .push(egui::Event::PointerButton {
-                                    pos: shell.input_state.mouse_pos,
-                                    button: egui::PointerButton::Primary,
-                                    pressed: input_event.value() == 1,
-                                    modifiers: shell.input_state.key_modifiers,
-                                });
+                            shell.input_state.events.push(egui::Event::PointerButton {
+                                pos: shell.input_state.mouse_pos,
+                                button: egui::PointerButton::Primary,
+                                pressed: input_event.value() == 1,
+                                modifiers: shell.input_state.key_modifiers,
+                            });
                         }
                         evdev::KeyCode::BTN_RIGHT => {
-                            shell.input_state.events
-                                .push(egui::Event::PointerButton {
-                                    pos: shell.input_state.mouse_pos,
-                                    button: egui::PointerButton::Secondary,
-                                    pressed: input_event.value() == 1,
-                                    modifiers: shell.input_state.key_modifiers,
-                                });
+                            shell.input_state.events.push(egui::Event::PointerButton {
+                                pos: shell.input_state.mouse_pos,
+                                button: egui::PointerButton::Secondary,
+                                pressed: input_event.value() == 1,
+                                modifiers: shell.input_state.key_modifiers,
+                            });
                         }
 
                         evdev::KeyCode::KEY_LEFTCTRL | evdev::KeyCode::KEY_RIGHTCTRL => {
                             shell.input_state.key_modifiers.ctrl = input_event.value() == 1;
+
                             shell.input_state.key_modifiers.command = input_event.value() == 1;
                         }
                         evdev::KeyCode::KEY_LEFTSHIFT | evdev::KeyCode::KEY_RIGHTSHIFT => {
@@ -323,12 +380,13 @@ fn main() -> Result<()> {
                                 });
                             }
                         }
-                    }
+                    },
+                    _ => {}
                 }
-                _ => {}
-            }
-            Ok(())
-        })?;
+
+                Ok(())
+            },
+        )?;
     }
 
     gpu.debug_info("/dev/dri/card0");
@@ -337,7 +395,11 @@ fn main() -> Result<()> {
         startup_time,
         gpu: gpu.clone(),
         output,
-        current_dir: std::env::current_dir().unwrap().to_str().unwrap().to_string(),
+        current_dir: std::env::current_dir()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string(),
         input_state: InputState {
             mouse_pos: pos2(0.0, 0.0),
             events: Vec::with_capacity(2),
@@ -362,13 +424,19 @@ fn main() -> Result<()> {
         }
 
         let mut line = String::new();
-        let Ok(_) = stdin.lock().take(256).read_line(&mut line) else { return; };
+
+        let Ok(_) = stdin.lock().take(256).read_line(&mut line) else {
+            return;
+        };
+
         let line = line.trim().to_string();
+
         if line.is_empty() {
             return;
         }
 
         let args = line.split(' ').collect::<Vec<_>>();
+
         let args_os: Vec<OsString> = args
             .iter()
             .map(|item| OsString::from_str(item).unwrap())
@@ -379,8 +447,10 @@ fn main() -> Result<()> {
                 if let Err(error) = std::env::set_current_dir(args[1]) {
                     println!("{error}");
                 } else {
-                    shell.current_dir = std::env::current_dir().unwrap()
-                        .to_str().unwrap()
+                    shell.current_dir = std::env::current_dir()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
                         .to_string();
                 }
             }
@@ -405,15 +475,25 @@ fn main() -> Result<()> {
             }
             "ls" => {
                 let mut names = Vec::new();
+
                 for entry in std::fs::read_dir(&shell.current_dir).unwrap() {
                     let entry = entry.unwrap();
-                    let name = entry.path().file_name().unwrap().to_str().unwrap().to_string();
+
+                    let name = entry
+                        .path()
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string();
+
                     if name.contains(' ') {
                         names.push(format!("'{name}'"));
                     } else {
                         names.push(name);
                     }
                 }
+
                 println!("{}", names.join("  "));
             }
             "sym" => {
@@ -488,9 +568,14 @@ fn main() -> Result<()> {
             // }
             _ => {
                 let bin_path = format!("/bin/{}", args[0]);
-                match std::process::Command::new(bin_path).args(&args_os[1..]).output() {
+
+                match std::process::Command::new(bin_path)
+                    .args(&args_os[1..])
+                    .output()
+                {
                     Ok(output) => {
                         println!("{}", String::from_utf8(output.stdout).unwrap());
+
                         println!("{}", String::from_utf8(output.stderr).unwrap());
                     }
                     Err(error) => {
@@ -523,42 +608,63 @@ pub struct Shell {
 
 impl Shell {
     fn render(&mut self) -> Result<()> {
-        self.output.context.make_current(&self.output.surface).unwrap();
+        self.output
+            .context
+            .make_current(&self.output.surface)
+            .unwrap();
 
         #[allow(deprecated)]
         self.gpu.move_cursor(
             self.output.crtc,
-            (self.input_state.mouse_pos.x as _, self.input_state.mouse_pos.y as _),
+            (
+                self.input_state.mouse_pos.x as _,
+                self.input_state.mouse_pos.y as _,
+            ),
         )?;
 
         let (width, height) = self.output.mode.size();
 
         let mut raw_input = egui::RawInput::default();
+
         raw_input.focused = true;
+
         raw_input.events = self.input_state.events.drain(..).collect();
-        raw_input.screen_rect = Some(
-            Rect::from_min_size(Pos2::ZERO, vec2(width as _, height as _)),
-        );
+
+        raw_input.screen_rect = Some(Rect::from_min_size(
+            Pos2::ZERO,
+            vec2(width as _, height as _),
+        ));
 
         let full_output = self.output.renderer.egui_ctx.run(raw_input, |ctx| {
-            egui::SidePanel::left("sidebar").default_width(200.0).resizable(true).show(ctx, |ui| {
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                    if ui.button("TEST").on_hover_text("TESTING...").clicked() {
-                        println!("CLICK");
-                    }
+            egui::SidePanel::left("sidebar")
+                .default_width(200.0)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            if ui.button("TEST").on_hover_text("TESTING...").clicked() {
+                                println!("CLICK");
+                            }
+                        });
                 });
-            });
+
             egui::CentralPanel::default().show(ctx, |ui| {
-                egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                    ui.heading("OS");
-                    ui.separator();
-                });
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.heading("OS");
+
+                        ui.separator();
+                    });
             });
         });
-        let clipped_primitives = self.output.renderer.egui_ctx.tessellate(
-            full_output.shapes,
-            full_output.pixels_per_point,
-        );
+
+        let clipped_primitives = self
+            .output
+            .renderer
+            .egui_ctx
+            .tessellate(full_output.shapes, full_output.pixels_per_point);
 
         unsafe {
             self.output.renderer.gl.clear_color(0.1, 0.1, 0.1, 0.7);
@@ -576,46 +682,67 @@ impl Shell {
         }
 
         let next_icon = CursorIcon::from(full_output.platform_output.cursor_icon);
+
         if self.cursor_icon != next_icon {
             self.cursor_icon = next_icon;
-            let data = self.cursor_data
+
+            let data = self
+                .cursor_data
                 .entry(self.cursor_icon)
-                .or_insert_with(|| CursorData::load_or_fallback(&format!(
-                    "/usr/share/cursors/default/{}",
-                    self.cursor_icon.name(),
-                )))
+                .or_insert_with(|| {
+                    CursorData::load_or_fallback(&format!(
+                        "/usr/share/cursors/default/{}",
+                        self.cursor_icon.name(),
+                    ))
+                })
                 .get_image(1, self.startup_time.elapsed().as_millis() as _);
-            self.cursor_buffer.map_mut(0, 0, data.width, data.height, |map| {
-                map.buffer_mut()
-                    .chunks_exact_mut(self.cursor_width as usize * 4)
-                    .zip(data.pixels_rgba.chunks_exact(data.width as usize * 4))
-                    .for_each(|(dst, src)| dst[..src.len()].copy_from_slice(src));
-            })?;
+
+            self.cursor_buffer
+                .map_mut(0, 0, data.width, data.height, |map| {
+                    map.buffer_mut()
+                        .chunks_exact_mut(self.cursor_width as usize * 4)
+                        .zip(data.pixels_rgba.chunks_exact(data.width as usize * 4))
+                        .for_each(|(dst, src)| dst[..src.len()].copy_from_slice(src));
+                })?;
+
             self.cursor_hotspot = (data.xhot as _, data.yhot as _);
+
             #[allow(deprecated)]
-            if self.gpu.set_cursor2(
-                self.output.crtc,
-                Some(&self.cursor_buffer),
-                self.cursor_hotspot,
-            ).is_err() {
-                self.gpu.set_cursor(self.output.crtc, Some(&self.cursor_buffer))?;
+            if self
+                .gpu
+                .set_cursor2(
+                    self.output.crtc,
+                    Some(&self.cursor_buffer),
+                    self.cursor_hotspot,
+                )
+                .is_err()
+            {
+                self.gpu
+                    .set_cursor(self.output.crtc, Some(&self.cursor_buffer))?;
             }
         }
 
-        self.output.surface.swap_buffers(&self.output.context).unwrap();
+        self.output
+            .surface
+            .swap_buffers(&self.output.context)
+            .unwrap();
+
         let bo = unsafe { self.output.bo.lock_front_buffer().unwrap() };
 
         let fb = if let Some(handle) = &self.output.fb {
             *handle
         } else {
             let fb = self.gpu.add_framebuffer(&bo, 24, 32).unwrap();
+
             self.output.fb = Some(fb);
+
             // bo.set_userdata(fb).expect("could not set buffer object user data");
             fb
         };
 
         if !self.output.crtc_set {
             self.output.crtc_set = true;
+
             self.gpu.set_crtc(
                 self.output.crtc,
                 Some(fb),
@@ -623,6 +750,7 @@ impl Shell {
                 &[self.output.conn],
                 Some(self.output.mode),
             )?;
+
             self.gpu.page_flip(
                 self.output.crtc,
                 fb,
@@ -639,12 +767,17 @@ impl Shell {
         }
 
         #[allow(deprecated)]
-        if self.gpu.set_cursor2(
-            self.output.crtc,
-            Some(&self.cursor_buffer),
-            self.cursor_hotspot,
-        ).is_err() {
-            self.gpu.set_cursor(self.output.crtc, Some(&self.cursor_buffer))?;
+        if self
+            .gpu
+            .set_cursor2(
+                self.output.crtc,
+                Some(&self.cursor_buffer),
+                self.cursor_hotspot,
+            )
+            .is_err()
+        {
+            self.gpu
+                .set_cursor(self.output.crtc, Some(&self.cursor_buffer))?;
         }
 
         // let mut req = drm::control::atomic::AtomicModeReq::new();
@@ -666,8 +799,7 @@ struct InputState {
 }
 
 fn evdev_keycode_to_egui_key(code: evdev::KeyCode) -> Option<egui::Key> {
-    use egui::Key;
-    use evdev::KeyCode;
+    use {egui::Key, evdev::KeyCode};
 
     Some(match code {
         KeyCode::KEY_0 => Key::Num0,
@@ -765,11 +897,15 @@ impl<'a, D> EventLoop<'a, D> {
     {
         if let Some(vacant_id) = self.sources.iter().position(|s| s.is_none()) {
             let data = vacant_id as u64;
+
             source.init(&self.poll, data)?;
+
             self.sources[vacant_id] = Some(Box::new((source, callback)));
         } else {
             let data = self.sources.len() as u64;
+
             source.init(&self.poll, data)?;
+
             self.sources.push(Some(Box::new((source, callback))));
         }
 
@@ -778,6 +914,7 @@ impl<'a, D> EventLoop<'a, D> {
 
     fn poll(&mut self, timeout: i32) -> Result<Vec<Event>, kernel::Error> {
         let _event_count = self.poll.wait(&mut self.event_buffer, timeout)?;
+
         Ok(self.event_buffer.drain(..).collect())
     }
 
@@ -787,6 +924,7 @@ impl<'a, D> EventLoop<'a, D> {
     {
         'main_loop: loop {
             let now = Instant::now();
+
             let events = 'poll_for_events: loop {
                 match self.poll(timeout) {
                     Ok(events) => {
@@ -795,6 +933,7 @@ impl<'a, D> EventLoop<'a, D> {
                     // If the poll was interrupted, retry until the timeout expires.
                     Err(error) if error == kernel::Error::INTR => {
                         let total_polling_time = now.elapsed().as_millis() as i32;
+
                         if total_polling_time >= timeout {
                             continue 'main_loop;
                         } else {
@@ -806,21 +945,27 @@ impl<'a, D> EventLoop<'a, D> {
                     Err(error) => return Err(error.into()),
                 }
             };
+
             'drain_events: for event in events {
                 let response = {
                     let Some(source) = self.sources.get_mut(event.data() as usize) else {
                         continue 'drain_events;
                     };
+
                     let Some(source) = source else {
                         warn!("Received an event for a nonexistent event source: {event:?}");
+
                         continue 'drain_events;
                     };
+
                     source.handle_event(data, event)?
                 };
+
                 match response {
                     EventResponse::Continue => {}
                     EventResponse::RemoveSource => {
-                        let Some(mut source) = self.sources
+                        let Some(mut source) = self
+                            .sources
                             .get_mut(event.data() as usize)
                             .and_then(|s| s.take())
                         else {
@@ -834,6 +979,7 @@ impl<'a, D> EventLoop<'a, D> {
                     }
                 }
             }
+
             func(data);
         }
     }
@@ -843,14 +989,17 @@ pub trait EventSource<D> {
     type Event;
 
     fn init(&mut self, poll: &EventPoll, key: u64) -> Result<()>;
+
     fn handle_event<F>(&mut self, data: &mut D, event: Event, callback: F) -> Result<EventResponse>
     where
         F: FnMut(&mut D, Self::Event) -> Result<()>;
+
     fn cleanup(&mut self, poll: &EventPoll) -> Result<()>;
 }
 
 trait AnyEventSource<D> {
     fn handle_event(&mut self, data: &mut D, event: Event) -> Result<EventResponse>;
+
     fn cleanup(&mut self, poll: &EventPoll) -> Result<()>;
 }
 
@@ -899,19 +1048,25 @@ impl ControlDevice for GraphicsCard {}
 
 impl GraphicsCard {
     fn open(path: &str) -> Result<Self> {
-        Ok(GraphicsCard(Arc::new(gbm::Device::new(std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(path)?)?)))
+        Ok(GraphicsCard(Arc::new(gbm::Device::new(
+            std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(path)?,
+        )?)))
     }
 
     fn debug_info(&self, path: &str) {
-        let name = path.rsplit_once('/').map_or(path, |(_, name)| name).to_string();
+        let name = path
+            .rsplit_once('/')
+            .map_or(path, |(_, name)| name)
+            .to_string();
 
         let driver = match self.get_driver() {
             Ok(driver) => driver,
             Err(error) => {
                 error!(target: "gpu_info", "Failed to get driver for {name}: {error}");
+
                 return;
             }
         };
@@ -931,24 +1086,29 @@ impl GraphicsCard {
             Ok(resources) => resources,
             Err(error) => {
                 error!(target: "gpu_info", "Failed to get resources for {name}: {error}");
+
                 return;
             }
         };
+
         let planes = match self.plane_handles() {
             Ok(planes) => planes,
             Err(error) => {
                 error!(target: "gpu_info", "Failed to get planes for {name}: {error}");
+
                 return;
             }
         };
 
         let mut found_planes = Vec::new();
+
         'crtc_iter: for crtc in resources.crtcs() {
             let Ok(info) = self.get_crtc(*crtc) else {
                 warn!(
                     target: "gpu_info",
                     "Failed to get CRTC info for {name} at {crtc:?}",
                 );
+
                 continue 'crtc_iter;
             };
 
@@ -986,12 +1146,16 @@ impl GraphicsCard {
             for plane in &planes {
                 let Ok(plane_info) = self.get_plane(*plane) else {
                     warn!(target: "gpu_info", "Failed to get plane info for {name} at {plane:?}");
+
                     continue;
                 };
+
                 if plane_info.crtc() != Some(*crtc) {
                     continue;
                 }
+
                 found_planes.push(*plane);
+
                 trace!(
                     target: "gpu_info",
                     "Plane for {crtc:?}: {plane:?}\n\
@@ -1000,11 +1164,14 @@ impl GraphicsCard {
                     plane_info.framebuffer(),
                     plane_info.formats(),
                 );
+
                 if let Some(fb) = plane_info.framebuffer() {
                     let Ok(fb_info) = self.get_planar_framebuffer(fb) else {
                         trace!(target: "gpu_info", "Info unavailable for {fb:?}");
+
                         continue;
                     };
+
                     trace!(
                         target: "gpu_info",
                         "PLANAR_FRAMEBUFFER for {plane:?} @{fb:?}:\n\
@@ -1027,6 +1194,7 @@ impl GraphicsCard {
                             target: "gpu_info",
                             "Failed to get property info for {name} at {prop:?}",
                         );
+
                         continue 'prop_iter;
                     };
 
@@ -1044,8 +1212,10 @@ impl GraphicsCard {
             if !found_planes.contains(&plane) {
                 let Ok(plane_info) = self.get_plane(plane) else {
                     trace!(target: "gpu_info", "Info unavailable for {plane:?}");
+
                     continue;
                 };
+
                 trace!(
                     target: "gpu_info",
                     "PLANE @{:?} (DISCONNECTED):\n\
@@ -1068,6 +1238,7 @@ impl GraphicsCard {
                             target: "gpu_info",
                             "Failed to get property info for {plane:?} at {prop:?}",
                         );
+
                         continue 'prop_iter;
                     };
 
@@ -1088,15 +1259,26 @@ impl GraphicsCard {
         context: glutin::api::egl::context::NotCurrentContext,
     ) -> Result<Output> {
         let resources = self.resource_handles()?;
+
         for conn in resources.connectors().iter().copied() {
             let conn_info = self.get_connector(conn, true)?;
-            let Some(enc) = conn_info.current_encoder() else { continue; };
+
+            let Some(enc) = conn_info.current_encoder() else {
+                continue;
+            };
+
             let enc_info = self.get_encoder(enc)?;
-            let Some(crtc) = enc_info.crtc() else { continue; };
-            let Some(mode) = conn_info.modes()
-                .iter()
-                .find(|mode| mode.mode_type().contains(drm::control::ModeTypeFlags::PREFERRED))
-            else { continue; };
+
+            let Some(crtc) = enc_info.crtc() else {
+                continue;
+            };
+
+            let Some(mode) = conn_info.modes().iter().find(|mode| {
+                mode.mode_type()
+                    .contains(drm::control::ModeTypeFlags::PREFERRED)
+            }) else {
+                continue;
+            };
 
             let bo = self.create_surface(
                 mode.size().0 as _,
@@ -1155,7 +1337,11 @@ impl EventSource<Shell> for GraphicsCard {
     type Event = drm::control::Event;
 
     fn init(&mut self, poll: &EventPoll, key: u64) -> Result<()> {
-        poll.add(&unsafe { File::from_raw(self.as_raw_fd()) }, Event::new(key, true, false))?;
+        poll.add(
+            &unsafe { File::from_raw(self.as_raw_fd()) },
+            Event::new(key, true, false),
+        )?;
+
         Ok(())
     }
 
@@ -1166,7 +1352,7 @@ impl EventSource<Shell> for GraphicsCard {
         mut callback: F,
     ) -> Result<EventResponse>
     where
-        F: FnMut(&mut Shell, Self::Event) -> Result<()>
+        F: FnMut(&mut Shell, Self::Event) -> Result<()>,
     {
         for event in self.receive_events()? {
             callback(data, event)?;
@@ -1177,6 +1363,7 @@ impl EventSource<Shell> for GraphicsCard {
 
     fn cleanup(&mut self, poll: &EventPoll) -> Result<()> {
         poll.remove(&unsafe { File::from_raw(self.as_raw_fd()) })?;
+
         Ok(())
     }
 }

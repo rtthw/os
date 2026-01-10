@@ -1,4 +1,3 @@
-
 use crate::raw;
 
 
@@ -52,8 +51,8 @@ pub enum Error {
     ISDIR = 21,
     /// Invalid argument.
     INVAL = 22,
-    /// Too many open files in system. This is probably a result of encountering the
-    /// `/proc/sys/fs/file-max` limit.
+    /// Too many open files in system. This is probably a result of encountering
+    /// the `/proc/sys/fs/file-max` limit.
     NFILE = 23,
     /// Too many open files.
     MFILE = 24,
@@ -77,8 +76,6 @@ pub enum Error {
     DOM = 33,
     /// Result too large.
     RANGE = 34,
-
-
 
     /// Resource deadlock avoided.
     DEADLK = 35,
@@ -126,7 +123,8 @@ pub enum Error {
     BFONT = 59,
     /// Not a stream.
     NOSTR = 60,
-    /// The named attribute does not exist, or the process has no access to this attribute.
+    /// The named attribute does not exist, or the process has no access to this
+    /// attribute.
     NODATA = 61,
     /// Timer expired.
     TIME = 62,
