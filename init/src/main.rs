@@ -3,9 +3,10 @@
 use kernel::{
     Result,
     c_str::NULL_CSTR,
+    file::File,
     mount::mount,
     proc::Process,
-    raw::{exit, mkdir, setsid},
+    raw::{chdir, chroot, close, exit, fork, mkdir, setsid},
     signal::{Signal, SignalMask},
 };
 
@@ -65,7 +66,7 @@ fn main() {
 
 
 fn setup_mount_points() -> Result<()> {
-    use kernel::mount::{NODEV, NOEXEC, NOSUID};
+    use kernel::mount::{MOVE, MountFlags, NODEV, NOEXEC, NOSUID};
 
     _ = mkdir(c"/proc", 0);
     mount(
@@ -90,6 +91,74 @@ fn setup_mount_points() -> Result<()> {
 
     // mount(c"tmpfs", c"/dev/shm", c"tmpfs",    NOSUID | NOEXEC | NODEV,
     // Some(c"mode=1777"))?;
+
+    println!("\x1b[2minit\x1b[0m: Mounting root directory...");
+
+    if mkdir(c"/rootfs", 0) < 0 {
+        return Err(kernel::Error::latest());
+    }
+
+    mount(
+        c"/dev/sda1",
+        c"/rootfs",
+        c"vfat",
+        MountFlags::default(),
+        NULL_CSTR,
+    )?;
+
+    // if umount2(c"/dev", DETACH) < 0 {
+    //     println!("FAILED DEV MOVE");
+    //     return Err(kernel::Error::latest());
+    // }
+
+    println!("\x1b[2minit\x1b[0m: Moving dev...");
+    _ = mkdir(c"/rootfs/dev", 0);
+    mount(c"/dev", c"/rootfs/dev", c"", MOVE, NULL_CSTR)?;
+
+    println!("\x1b[2minit\x1b[0m: Moving proc...");
+    _ = mkdir(c"/rootfs/proc", 0);
+    mount(c"/proc", c"/rootfs/proc", c"", MOVE, NULL_CSTR)?;
+
+    println!("\x1b[2minit\x1b[0m: Moving sys...");
+    _ = mkdir(c"/rootfs/sys", 0);
+    mount(c"/sys", c"/rootfs/sys", c"", MOVE, NULL_CSTR)?;
+
+    if chdir(c"rootfs") < 0 {
+        return Err(kernel::Error::latest());
+    }
+
+    let old_root_fd = File::open(c"/", kernel::file::O_RDONLY)?;
+
+    mount(c"/rootfs", c"/", c"", kernel::mount::MOVE, NULL_CSTR)?;
+
+    if chroot(c".") < 0 {
+        return Err(kernel::Error::latest());
+    }
+
+    if chdir(c"/") < 0 {
+        return Err(kernel::Error::latest());
+    }
+
+    match fork() {
+        0 => {
+            cleanup_initramfs(old_root_fd)?;
+            exit(0)
+        }
+        -1 => Err(kernel::Error::latest()),
+        _ => {
+            if close(unsafe { old_root_fd.into_raw() }) < 0 {
+                Err(kernel::Error::latest())
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+fn cleanup_initramfs(old_root_fd: File) -> Result<()> {
+    let _dirfd = unsafe { old_root_fd.into_raw() };
+
+    // TODO
 
     Ok(())
 }

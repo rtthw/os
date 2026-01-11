@@ -12,12 +12,13 @@ mkdir -p initrd
 cd initrd
 
     # Create the core directories.
-    mkdir -p bin dev etc lib proc run sbin sys
+    mkdir -p dev proc sbin sys
 
     # Put the init program where the kernel can find it.
     rm sbin/init
     cp ../../target/x86_64-unknown-linux-musl/release/init sbin/
     cp ../../target/x86_64-unknown-linux-gnu/release/shell sbin/
+    cp -r sbin ../rootfs/
     chmod +x sbin/init
     chmod +x sbin/shell
     ln -s sbin/init init 2>/dev/null
@@ -35,6 +36,7 @@ qemu-system-x86_64 \
     -device virtio-gpu-gl \
     -display gtk,gl=on,show-tabs=on,show-cursor=on \
     -usbdevice tablet \
+    -drive file=fat:rw:rootfs,format=raw \
     -kernel bzImage \
     -initrd initrd.cpio \
     -append 'console=ttyS0'
