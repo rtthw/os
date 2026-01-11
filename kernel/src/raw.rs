@@ -12,12 +12,20 @@ pub fn access(path: &CStr, amode: i32) -> i32 {
     unsafe { libc::access(path.as_ptr(), amode) }
 }
 
+pub fn chdir(path: &CStr) -> i32 {
+    unsafe { libc::chdir(path.as_ptr()) }
+}
+
 pub fn chmod(path: &CStr, mode: u32) -> i32 {
     unsafe { libc::chmod(path.as_ptr(), mode) }
 }
 
 pub fn chown(path: &CStr, uid: u32, gid: u32) -> i32 {
     unsafe { libc::chown(path.as_ptr(), uid, gid) }
+}
+
+pub fn chroot(path: &CStr) -> i32 {
+    unsafe { libc::chroot(path.as_ptr()) }
 }
 
 pub fn close(fd: i32) -> i32 {
@@ -92,6 +100,10 @@ pub fn kill(pid: i32, sig: i32) -> i32 {
     unsafe { libc::kill(pid, sig) }
 }
 
+pub fn link(old: &CStr, new: &CStr) -> i32 {
+    unsafe { libc::link(old.as_ptr(), new.as_ptr()) }
+}
+
 pub fn mkdir(path: &CStr, mode: u32) -> i32 {
     unsafe { libc::mkdir(path.as_ptr(), mode) }
 }
@@ -112,8 +124,32 @@ pub fn open(path: &CStr, flags: i32) -> i32 {
     unsafe { libc::open(path.as_ptr(), flags) }
 }
 
+pub fn openat(dirfd: i32, path: &CStr, flags: i32) -> i32 {
+    unsafe { libc::openat(dirfd, path.as_ptr(), flags) }
+}
+
+pub fn pivot_root(new_root: &CStr, put_old: &CStr) -> i32 {
+    unsafe { libc::syscall(libc::SYS_pivot_root, new_root.as_ptr(), put_old.as_ptr()) as i32 }
+}
+
 pub fn read(fd: i32, buf: &mut [u8], count: usize) -> isize {
     unsafe { libc::read(fd, buf.as_mut_ptr() as _, count) }
+}
+
+pub fn remove(path: &CStr) -> i32 {
+    unsafe { libc::remove(path.as_ptr()) }
+}
+
+pub fn rename(old: &CStr, new: &CStr) -> i32 {
+    unsafe { libc::rename(old.as_ptr(), new.as_ptr()) }
+}
+
+pub fn renameat(olddirfd: i32, oldpath: &CStr, newdirfd: i32, newpath: &CStr) -> i32 {
+    unsafe { libc::renameat(olddirfd, oldpath.as_ptr(), newdirfd, newpath.as_ptr()) }
+}
+
+pub fn rmdir(path: &CStr) -> i32 {
+    unsafe { libc::rmdir(path.as_ptr()) }
 }
 
 pub fn setfsgid(gid: u32) -> i32 {
@@ -158,6 +194,18 @@ pub fn setuid(uid: u32) -> i32 {
 
 pub fn umask(mask: u32) -> u32 {
     unsafe { libc::umask(mask) }
+}
+
+pub fn umount(path: &CStr) -> i32 {
+    unsafe { libc::umount(path.as_ptr()) }
+}
+
+pub fn umount2(path: &CStr, flags: i32) -> i32 {
+    unsafe { libc::umount2(path.as_ptr(), flags) }
+}
+
+pub fn unlink(path: &CStr) -> i32 {
+    unsafe { libc::unlink(path.as_ptr()) }
 }
 
 pub fn wait(status: &mut i32) -> i32 {
