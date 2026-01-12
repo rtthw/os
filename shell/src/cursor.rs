@@ -76,7 +76,7 @@ impl CursorData {
         let mut data = Vec::new();
         file.read_to_end(&mut data)?;
         let icons = xcursor::parser::parse_xcursor(&data)
-            .ok_or(anyhow::anyhow!("Failed to parse XCurosr at '{path}'"))?;
+            .ok_or(anyhow::anyhow!("Failed to parse XCursor at '{path}'"))?;
 
         Ok(Self { icons })
     }
