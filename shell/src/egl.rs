@@ -21,6 +21,11 @@ impl Renderer {
         let painter = egui_glow::Painter::new(Arc::clone(&gl), "", None, true)?;
 
         let egui_ctx = egui::Context::default();
+
+        let mut fonts = egui::FontDefinitions::default();
+        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+        egui_ctx.set_fonts(fonts);
+
         egui_ctx.style_mut(|s| {
             s.visuals.interact_cursor = Some(egui::CursorIcon::PointingHand);
 

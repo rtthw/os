@@ -664,12 +664,23 @@ impl Shell {
                 .show_separator_line(false)
                 .default_height(30.0)
                 .show(ctx, |ui| {
-                    let layout_ltr = egui::Layout::left_to_right(egui::Align::Center);
-                    let layout_rtl = egui::Layout::right_to_left(egui::Align::Center);
+                    let layout_ltr = egui::Layout::left_to_right(egui::Align::BOTTOM);
+                    let layout_rtl = egui::Layout::right_to_left(egui::Align::BOTTOM);
 
                     ui.with_layout(layout_ltr, |ui| {
+                        if ui
+                            .button(egui_phosphor::regular::HOUSE)
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            println!("TODO");
+                        }
                         ui.with_layout(layout_rtl, |ui| {
-                            if ui.button("Exit").clicked() {
+                            if ui
+                                .button(egui_phosphor::regular::POWER)
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .clicked()
+                            {
                                 println!("TODO");
                             }
                         });
@@ -697,7 +708,7 @@ impl Shell {
                         egui::ScrollArea::vertical()
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
-                                ui.heading("OS");
+                                ui.heading("Home");
                                 ui.separator();
 
                                 let resp = ui.add(
@@ -710,6 +721,15 @@ impl Shell {
                                     let line: String = self.input_buffer.drain(..).collect();
                                     println!("{}", line);
                                 }
+
+                                // ui.horizontal_wrapped(|ui| {
+                                //     for (name, icon) in
+                                // egui_phosphor::regular::ICONS {
+                                //         ui.label(egui::RichText::new(*icon).
+                                // size(30.0))
+                                //             .on_hover_text(*name);
+                                //     }
+                                // });
                             });
                     });
             });

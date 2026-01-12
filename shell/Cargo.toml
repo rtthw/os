@@ -8,6 +8,7 @@ anyhow = "1"
 drm = "0.14.1"
 egui = "0.33"
 egui_glow = "0.33"
+egui-phosphor = { version = "0.11", features = ["fill"] }
 evdev = "0.13"
 gbm = "0.18.0"
 glow = "0.16"
