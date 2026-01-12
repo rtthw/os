@@ -660,30 +660,57 @@ impl Shell {
         };
 
         let full_output = self.output.renderer.egui_ctx.run(raw_input, |ctx| {
+            egui::TopBottomPanel::top("menubar")
+                .show_separator_line(false)
+                .default_height(30.0)
+                .show(ctx, |ui| {
+                    let layout_ltr = egui::Layout::left_to_right(egui::Align::Center);
+                    let layout_rtl = egui::Layout::right_to_left(egui::Align::Center);
+
+                    ui.with_layout(layout_ltr, |ui| {
+                        ui.with_layout(layout_rtl, |ui| {
+                            if ui.button("Exit").clicked() {
+                                println!("TODO");
+                            }
+                        });
+                    });
+                });
             egui::SidePanel::left("sidebar")
+                .show_separator_line(false)
                 .default_width(200.0)
                 .resizable(true)
                 .show(ctx, |ui| {
                     egui::ScrollArea::vertical()
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            if ui.button("TEST").on_hover_text("TESTING...").clicked() {
-                                println!("CLICK");
-                            }
+                            ui.collapsing("Drivers", |ui| {
+                                if ui.button(egui::RichText::new("Terminal").weak()).clicked() {
+                                    println!("TODO");
+                                }
+                            });
                         });
                 });
             egui::CentralPanel::default().show(ctx, |ui| {
-                egui::ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.heading("OS");
-                        ui.separator();
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::menu(&ctx.style()))
+                    .show_inside(ui, |ui| {
+                        egui::ScrollArea::vertical()
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.heading("OS");
+                                ui.separator();
 
-                        let resp = ui.text_edit_singleline(&mut self.input_buffer);
-                        if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                            let line: String = self.input_buffer.drain(..).collect();
-                            println!("{}", line);
-                        }
+                                let resp = ui.add(
+                                    egui::TextEdit::singleline(&mut self.input_buffer)
+                                        .hint_text("Enter a command..."),
+                                );
+                                if resp.lost_focus()
+                                    && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                                {
+                                    let line: String = self.input_buffer.drain(..).collect();
+                                    println!("{}", line);
+                                }
+                            });
                     });
             });
         });
