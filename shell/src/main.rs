@@ -91,11 +91,9 @@ fn main() -> Result<()> {
     .expect("no available GL configs");
 
     let context_attributes = glutin::context::ContextAttributesBuilder::new().build(None);
-
     let fallback_context_attributes = glutin::context::ContextAttributesBuilder::new()
         .with_context_api(glutin::context::ContextApi::Gles(None))
         .build(None);
-
     let context = unsafe {
         display
             .create_context(&config, &context_attributes)
@@ -110,10 +108,8 @@ fn main() -> Result<()> {
 
     gpu.set_client_capability(drm::ClientCapability::UniversalPlanes, true)
         .expect("unable to request gpu.UniversalPlanes capability");
-
     gpu.set_client_capability(drm::ClientCapability::Atomic, true)
         .expect("unable to request gpu.Atomic capability");
-
     gpu.set_client_capability(drm::ClientCapability::CursorPlaneHotspot, true)
         .expect("unable to request gpu.Atomic capability");
 
@@ -132,15 +128,11 @@ fn main() -> Result<()> {
     let cursor_width = gpu
         .get_driver_capability(drm::DriverCapability::CursorWidth)
         .unwrap_or(64);
-
     let cursor_height = gpu
         .get_driver_capability(drm::DriverCapability::CursorHeight)
         .unwrap_or(64);
-
     let cursor_hotspot;
-
     let mut cursor_data = HashMap::new();
-
     #[allow(deprecated)]
     let cursor_buffer = {
         let data = cursor_data
@@ -206,7 +198,6 @@ fn main() -> Result<()> {
     let this_obj = unsafe { Object::open_this().expect("should be able to open shell binary") };
 
     let stdin = std::io::stdin();
-
     unsafe {
         assert_ne!(
             libc::fcntl(stdin.as_raw_fd(), libc::F_SETFL, libc::O_NONBLOCK),
@@ -368,11 +359,21 @@ fn main() -> Result<()> {
                         }
 
                         other => {
+                            let pressed = input_event.value() == 1;
+                            if pressed {
+                                let shift = shell.input_state.key_modifiers.shift;
+                                if let Some(ch) = evdev_keycode_to_char(other, shift) {
+                                    shell
+                                        .input_state
+                                        .events
+                                        .push(egui::Event::Text(ch.to_string()));
+                                }
+                            }
                             if let Some(key) = evdev_keycode_to_egui_key(other) {
                                 shell.input_state.events.push(egui::Event::Key {
                                     key,
                                     physical_key: Some(key),
-                                    pressed: input_event.value() == 1,
+                                    pressed,
                                     repeat: false,
                                     modifiers: shell.input_state.key_modifiers,
                                 });
@@ -403,6 +404,7 @@ fn main() -> Result<()> {
             events: Vec::with_capacity(2),
             key_modifiers: egui::Modifiers::NONE,
         },
+        input_buffer: String::new(),
         cursor_width,
         cursor_hotspot,
         cursor_icon: CursorIcon::Default,
@@ -597,6 +599,7 @@ pub struct Shell {
     current_dir: String,
     output: Output,
     input_state: InputState,
+    input_buffer: String,
     cursor_width: u64,
     cursor_hotspot: (i32, i32),
     cursor_icon: CursorIcon,
@@ -621,18 +624,40 @@ impl Shell {
         )?;
 
         let (width, height) = self.output.mode.size();
+        let size = vec2(width as _, height as _);
+        let rect = Rect::from_min_size(Pos2::ZERO, size);
 
-        let mut raw_input = egui::RawInput::default();
-        raw_input.viewport_id = egui::ViewportId::ROOT;
-        raw_input.system_theme = Some(egui::Theme::Dark);
-        raw_input.focused = true;
-        raw_input.modifiers = self.input_state.key_modifiers;
-        raw_input.time = Some(self.startup_time.elapsed().as_secs_f64());
-        raw_input.events = self.input_state.events.drain(..).collect();
-        raw_input.screen_rect = Some(Rect::from_min_size(
-            Pos2::ZERO,
-            vec2(width as _, height as _),
-        ));
+        let raw_input = egui::RawInput {
+            viewport_id: egui::ViewportId::ROOT,
+            viewports: std::iter::once((
+                egui::ViewportId::ROOT,
+                egui::ViewportInfo {
+                    parent: None,
+                    title: None,
+                    events: Vec::new(),
+                    native_pixels_per_point: Some(1.0),
+                    monitor_size: Some(size),
+                    inner_rect: Some(rect),
+                    outer_rect: Some(rect),
+                    minimized: Some(false),
+                    maximized: Some(true),
+                    fullscreen: Some(true),
+                    focused: Some(true),
+                },
+            ))
+            .collect(),
+            screen_rect: Some(rect),
+            max_texture_side: None,
+            time: Some(self.startup_time.elapsed().as_secs_f64()),
+            predicted_dt: 1.0 / 60.0,
+            modifiers: self.input_state.key_modifiers,
+            events: self.input_state.events.drain(..).collect(),
+            hovered_files: Vec::new(),
+            dropped_files: Vec::new(),
+            focused: true,
+            system_theme: Some(egui::Theme::Dark),
+            safe_area_insets: None,
+        };
 
         let full_output = self.output.renderer.egui_ctx.run(raw_input, |ctx| {
             egui::SidePanel::left("sidebar")
@@ -652,8 +677,13 @@ impl Shell {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         ui.heading("OS");
-
                         ui.separator();
+
+                        let resp = ui.text_edit_singleline(&mut self.input_buffer);
+                        if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                            let line: String = self.input_buffer.drain(..).collect();
+                            println!("{}", line);
+                        }
                     });
             });
         });
@@ -791,10 +821,114 @@ struct InputState {
     key_modifiers: egui::Modifiers,
 }
 
-fn evdev_keycode_to_egui_key(code: evdev::KeyCode) -> Option<egui::Key> {
-    use {egui::Key, evdev::KeyCode};
+fn evdev_keycode_to_char(code: evdev::KeyCode, shift: bool) -> Option<char> {
+    use evdev::KeyCode;
 
     Some(match code {
+        KeyCode::KEY_0 if !shift => '0',
+        KeyCode::KEY_1 if !shift => '1',
+        KeyCode::KEY_2 if !shift => '2',
+        KeyCode::KEY_3 if !shift => '3',
+        KeyCode::KEY_4 if !shift => '4',
+        KeyCode::KEY_5 if !shift => '5',
+        KeyCode::KEY_6 if !shift => '6',
+        KeyCode::KEY_7 if !shift => '7',
+        KeyCode::KEY_8 if !shift => '8',
+        KeyCode::KEY_9 if !shift => '9',
+
+        KeyCode::KEY_0 if shift => ')',
+        KeyCode::KEY_1 if shift => '!',
+        KeyCode::KEY_2 if shift => '@',
+        KeyCode::KEY_3 if shift => '#',
+        KeyCode::KEY_4 if shift => '$',
+        KeyCode::KEY_5 if shift => '%',
+        KeyCode::KEY_6 if shift => '^',
+        KeyCode::KEY_7 if shift => '&',
+        KeyCode::KEY_8 if shift => '*',
+        KeyCode::KEY_9 if shift => '(',
+
+        KeyCode::KEY_GRAVE if !shift => '`',
+        KeyCode::KEY_GRAVE if shift => '~',
+        KeyCode::KEY_BACKSLASH if !shift => '\\',
+        KeyCode::KEY_BACKSLASH if shift => '|',
+        KeyCode::KEY_MINUS if !shift => '-',
+        KeyCode::KEY_MINUS if shift => '_',
+        KeyCode::KEY_EQUAL if !shift => '=',
+        KeyCode::KEY_EQUAL if shift => '+',
+        KeyCode::KEY_LEFTBRACE if !shift => '[',
+        KeyCode::KEY_LEFTBRACE if shift => '{',
+        KeyCode::KEY_RIGHTBRACE if !shift => ']',
+        KeyCode::KEY_RIGHTBRACE if shift => '}',
+        KeyCode::KEY_SEMICOLON if !shift => ';',
+        KeyCode::KEY_SEMICOLON if shift => ':',
+        KeyCode::KEY_APOSTROPHE if !shift => '\'',
+        KeyCode::KEY_APOSTROPHE if shift => '\"',
+        KeyCode::KEY_COMMA if !shift => ',',
+        KeyCode::KEY_COMMA if shift => '<',
+        KeyCode::KEY_DOT if !shift => '.',
+        KeyCode::KEY_DOT if shift => '>',
+        KeyCode::KEY_SLASH if !shift => '/',
+        KeyCode::KEY_SLASH if shift => '?',
+
+        KeyCode::KEY_SPACE => ' ',
+
+        other => {
+            let letter = match other {
+                KeyCode::KEY_A => 'a',
+                KeyCode::KEY_B => 'b',
+                KeyCode::KEY_C => 'c',
+                KeyCode::KEY_D => 'd',
+                KeyCode::KEY_E => 'e',
+                KeyCode::KEY_F => 'f',
+                KeyCode::KEY_G => 'g',
+                KeyCode::KEY_H => 'h',
+                KeyCode::KEY_I => 'i',
+                KeyCode::KEY_J => 'j',
+                KeyCode::KEY_K => 'k',
+                KeyCode::KEY_L => 'l',
+                KeyCode::KEY_M => 'm',
+                KeyCode::KEY_N => 'n',
+                KeyCode::KEY_O => 'o',
+                KeyCode::KEY_P => 'p',
+                KeyCode::KEY_Q => 'q',
+                KeyCode::KEY_R => 'r',
+                KeyCode::KEY_S => 's',
+                KeyCode::KEY_T => 't',
+                KeyCode::KEY_U => 'u',
+                KeyCode::KEY_V => 'v',
+                KeyCode::KEY_W => 'w',
+                KeyCode::KEY_X => 'x',
+                KeyCode::KEY_Y => 'y',
+                KeyCode::KEY_Z => 'z',
+                _ => None?,
+            };
+            if shift {
+                letter.to_ascii_uppercase()
+            } else {
+                letter
+            }
+        }
+    })
+}
+
+fn evdev_keycode_to_egui_key(code: evdev::KeyCode) -> Option<egui::Key> {
+    use {egui::Key, evdev::KeyCode};
+    Some(match code {
+        KeyCode::KEY_LEFT => Key::ArrowLeft,
+        KeyCode::KEY_RIGHT => Key::ArrowRight,
+        KeyCode::KEY_UP => Key::ArrowUp,
+        KeyCode::KEY_DOWN => Key::ArrowDown,
+
+        KeyCode::KEY_PAGEUP => Key::PageUp,
+        KeyCode::KEY_PAGEDOWN => Key::PageDown,
+
+        KeyCode::KEY_SPACE => Key::Space,
+        KeyCode::KEY_TAB => Key::Tab,
+        KeyCode::KEY_ENTER => Key::Enter,
+        KeyCode::KEY_BACKSPACE => Key::Backspace,
+        KeyCode::KEY_DELETE => Key::Delete,
+        KeyCode::KEY_ESC => Key::Escape,
+
         KeyCode::KEY_0 => Key::Num0,
         KeyCode::KEY_1 => Key::Num1,
         KeyCode::KEY_2 => Key::Num2,
@@ -844,21 +978,6 @@ fn evdev_keycode_to_egui_key(code: evdev::KeyCode) -> Option<egui::Key> {
         KeyCode::KEY_COMMA => Key::Comma,
         KeyCode::KEY_DOT => Key::Period,
         KeyCode::KEY_SLASH => Key::Slash,
-
-        KeyCode::KEY_LEFT => Key::ArrowLeft,
-        KeyCode::KEY_RIGHT => Key::ArrowRight,
-        KeyCode::KEY_UP => Key::ArrowUp,
-        KeyCode::KEY_DOWN => Key::ArrowDown,
-
-        KeyCode::KEY_PAGEUP => Key::PageUp,
-        KeyCode::KEY_PAGEDOWN => Key::PageDown,
-
-        KeyCode::KEY_SPACE => Key::Space,
-        KeyCode::KEY_TAB => Key::Tab,
-        KeyCode::KEY_ENTER => Key::Enter,
-        KeyCode::KEY_BACKSPACE => Key::Backspace,
-        KeyCode::KEY_DELETE => Key::Delete,
-        KeyCode::KEY_ESC => Key::Escape,
 
         _ => None?,
     })
