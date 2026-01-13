@@ -418,7 +418,8 @@ fn main() -> Result<()> {
 
     std::io::stdout().flush().unwrap();
 
-    event_loop.run(&mut shell, 30, |shell| {
+    event_loop.run(&mut shell, 16, |shell| {
+        shell.render().unwrap();
         if stdin.lock().read(&mut []).is_err() {
             return;
         }
@@ -722,13 +723,12 @@ impl Shell {
                                     println!("{}", line);
                                 }
 
-                                // ui.horizontal_wrapped(|ui| {
-                                //     for (name, icon) in egl::ALL_ICONS {
-                                //         ui.label(egl::icon(*icon,
-                                // egl::IconStyle::LargeNormal))
-                                //             .on_hover_text(*name);
-                                //     }
-                                // });
+                                ui.horizontal_wrapped(|ui| {
+                                    for (name, icon) in egl::ALL_ICONS {
+                                        ui.label(egl::icon(*icon, egl::IconStyle::LargeNormal))
+                                            .on_hover_text(*name);
+                                    }
+                                });
                             });
                     });
             });
@@ -823,14 +823,14 @@ impl Shell {
             self.gpu.page_flip(
                 self.output.crtc,
                 fb,
-                drm::control::PageFlipFlags::EVENT,
+                drm::control::PageFlipFlags::empty(),
                 None,
             )?;
         } else {
             self.gpu.page_flip(
                 self.output.crtc,
                 fb,
-                drm::control::PageFlipFlags::EVENT,
+                drm::control::PageFlipFlags::empty(),
                 None,
             )?;
         }
