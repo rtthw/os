@@ -5,6 +5,7 @@
 #[cfg(feature = "alloc")]
 pub extern crate alloc;
 
+pub mod elf;
 pub mod string;
 pub mod vec;
 
