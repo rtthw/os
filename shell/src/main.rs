@@ -669,7 +669,7 @@ impl Shell {
 
                     ui.with_layout(layout_ltr, |ui| {
                         if ui
-                            .button(egui_phosphor::regular::HOUSE)
+                            .button(egl::icon(egl::icons::HOUSE, egl::IconStyle::SmallNormal))
                             .on_hover_cursor(egui::CursorIcon::PointingHand)
                             .clicked()
                         {
@@ -677,7 +677,7 @@ impl Shell {
                         }
                         ui.with_layout(layout_rtl, |ui| {
                             if ui
-                                .button(egui_phosphor::regular::POWER)
+                                .button(egl::icon(egl::icons::POWER, egl::IconStyle::SmallNormal))
                                 .on_hover_cursor(egui::CursorIcon::PointingHand)
                                 .clicked()
                             {
@@ -723,10 +723,9 @@ impl Shell {
                                 }
 
                                 // ui.horizontal_wrapped(|ui| {
-                                //     for (name, icon) in
-                                // egui_phosphor::regular::ICONS {
-                                //         ui.label(egui::RichText::new(*icon).
-                                // size(30.0))
+                                //     for (name, icon) in egl::ALL_ICONS {
+                                //         ui.label(egl::icon(*icon,
+                                // egl::IconStyle::LargeNormal))
                                 //             .on_hover_text(*name);
                                 //     }
                                 // });

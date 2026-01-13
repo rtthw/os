@@ -22,9 +22,29 @@ impl Renderer {
 
         let egui_ctx = egui::Context::default();
 
-        let mut fonts = egui::FontDefinitions::default();
-        egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-        egui_ctx.set_fonts(fonts);
+        {
+            let mut fonts = egui::FontDefinitions::default();
+
+            fonts.font_data.insert(
+                "icon".into(),
+                Arc::new(egui_phosphor::Variant::Regular.font_data()),
+            );
+            fonts.families.insert(
+                egui::FontFamily::Name("icon".into()),
+                vec!["Ubuntu-Light".into(), "icon".into()],
+            );
+
+            fonts.font_data.insert(
+                "icon-fill".into(),
+                Arc::new(egui_phosphor::Variant::Fill.font_data()),
+            );
+            fonts.families.insert(
+                egui::FontFamily::Name("icon-fill".into()),
+                vec!["Ubuntu-Light".into(), "icon-fill".into()],
+            );
+
+            egui_ctx.set_fonts(fonts);
+        }
 
         egui_ctx.style_mut(|s| {
             s.visuals.interact_cursor = Some(egui::CursorIcon::PointingHand);
@@ -51,5 +71,47 @@ impl Renderer {
             egui_ctx,
             gl,
         })
+    }
+}
+
+pub use egui_phosphor::regular::ICONS as ALL_ICONS;
+
+pub mod icons {
+    pub use egui_phosphor::regular::*;
+}
+
+pub fn icon(icon: &str, style: IconStyle) -> egui::RichText {
+    egui::RichText::new(icon)
+        .family(style.font_family())
+        .size(style.size())
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IconStyle {
+    SmallNormal,
+    MediumNormal,
+    LargeNormal,
+    SmallFill,
+    MediumFill,
+    LargeFill,
+}
+
+impl IconStyle {
+    pub fn font_family(&self) -> egui::FontFamily {
+        egui::FontFamily::Name(
+            match self {
+                Self::SmallNormal | Self::MediumNormal | Self::LargeNormal => "icon",
+                Self::SmallFill | Self::MediumFill | Self::LargeFill => "icon-fill",
+            }
+            .into(),
+        )
+    }
+
+    pub const fn size(&self) -> f32 {
+        match self {
+            Self::SmallNormal | Self::SmallFill => 17.0,
+            Self::MediumNormal | Self::MediumFill => 19.0,
+            Self::LargeNormal | Self::LargeFill => 23.0,
+        }
     }
 }
