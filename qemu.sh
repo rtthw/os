@@ -13,15 +13,17 @@ cd initrd
 
     # Create the core directories.
     mkdir -p dev proc sbin sys
+    mkdir -p ../rootfs/sbin
 
     # Put the init program where the kernel can find it.
-    rm sbin/init
     cp ../../target/x86_64-unknown-linux-musl/release/init sbin/
-    cp ../../target/x86_64-unknown-linux-gnu/release/shell sbin/
-    cp -r sbin ../rootfs/
     chmod +x sbin/init
-    chmod +x sbin/shell
+    cp sbin/init ../rootfs/sbin/
     ln -s sbin/init init 2>/dev/null
+
+    # Put the shell program where the init program can find it.
+    cp ../../target/x86_64-unknown-linux-gnu/release/shell ../rootfs/sbin/
+    chmod +x ../rootfs/sbin/shell
 
     # Populate the image.
     find | cpio -o -H newc | gzip -1 -n > ../initrd.cpio

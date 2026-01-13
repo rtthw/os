@@ -6,7 +6,7 @@ use kernel::{
     file::File,
     mount::mount,
     proc::Process,
-    raw::{chdir, chroot, close, exit, fork, mkdir, setsid},
+    raw::{AT_REMOVEDIR, chdir, chroot, close, exit, fork, mkdir, setsid, unlinkat},
     signal::{Signal, SignalMask},
 };
 
@@ -68,6 +68,8 @@ fn main() {
 fn setup_mount_points() -> Result<()> {
     use kernel::mount::{MOVE, MountFlags, NODEV, NOEXEC, NOSUID};
 
+    println!("\x1b[2minit\x1b[0m: Mounting dev, proc, and sys filesystems...");
+
     _ = mkdir(c"/proc", 0);
     mount(
         c"proc",
@@ -89,16 +91,14 @@ fn setup_mount_points() -> Result<()> {
     _ = mkdir(c"/dev", 0);
     mount(c"dev", c"/dev", c"devtmpfs", NOSUID, Some(c"mode=755"))?;
 
-    // mount(c"tmpfs", c"/dev/shm", c"tmpfs",    NOSUID | NOEXEC | NODEV,
-    // Some(c"mode=1777"))?;
-
-    println!("\x1b[2minit\x1b[0m: Mounting root directory...");
+    println!("\x1b[2minit\x1b[0m: Mounting rootfs...");
 
     if mkdir(c"/rootfs", 0) < 0 {
         return Err(kernel::Error::latest());
     }
 
     mount(
+        // FIXME: This needs to be discovered dynamically, or defined during installation.
         c"/dev/sda1",
         c"/rootfs",
         c"vfat",
@@ -106,22 +106,16 @@ fn setup_mount_points() -> Result<()> {
         NULL_CSTR,
     )?;
 
-    // if umount2(c"/dev", DETACH) < 0 {
-    //     println!("FAILED DEV MOVE");
-    //     return Err(kernel::Error::latest());
-    // }
+    println!("\x1b[2minit\x1b[0m: Moving dev, proc, and sys mounts...");
 
-    println!("\x1b[2minit\x1b[0m: Moving dev...");
     _ = mkdir(c"/rootfs/dev", 0);
     mount(c"/dev", c"/rootfs/dev", c"", MOVE, NULL_CSTR)?;
-
-    println!("\x1b[2minit\x1b[0m: Moving proc...");
     _ = mkdir(c"/rootfs/proc", 0);
     mount(c"/proc", c"/rootfs/proc", c"", MOVE, NULL_CSTR)?;
-
-    println!("\x1b[2minit\x1b[0m: Moving sys...");
     _ = mkdir(c"/rootfs/sys", 0);
     mount(c"/sys", c"/rootfs/sys", c"", MOVE, NULL_CSTR)?;
+
+    println!("\x1b[2minit\x1b[0m: Setting up the new root directory...");
 
     if chdir(c"rootfs") < 0 {
         return Err(kernel::Error::latest());
@@ -129,12 +123,16 @@ fn setup_mount_points() -> Result<()> {
 
     let old_root_fd = File::open(c"/", kernel::file::O_RDONLY)?;
 
+    // Move the `rootfs` mount into place.
     mount(c"/rootfs", c"/", c"", kernel::mount::MOVE, NULL_CSTR)?;
 
+    // Change the root directory to `/rootfs`.
     if chroot(c".") < 0 {
         return Err(kernel::Error::latest());
     }
 
+    // Current directory technically no longer exists (was `/rootfs`), so change it
+    // to be what `/rootfs` now is.
     if chdir(c"/") < 0 {
         return Err(kernel::Error::latest());
     }
@@ -156,9 +154,46 @@ fn setup_mount_points() -> Result<()> {
 }
 
 fn cleanup_initramfs(old_root_fd: File) -> Result<()> {
-    let _dirfd = unsafe { old_root_fd.into_raw() };
+    let dirfd = unsafe { old_root_fd.into_raw() };
 
-    // TODO
+    if unlinkat(dirfd, c"dev", AT_REMOVEDIR) < 0 {
+        println!(
+            "\x1b[2minit\x1b[0m: Failed to unlink old dev: {}",
+            kernel::Error::latest()
+        );
+    }
+    if unlinkat(dirfd, c"proc", AT_REMOVEDIR) < 0 {
+        println!(
+            "\x1b[2minit\x1b[0m: Failed to unlink old proc: {}",
+            kernel::Error::latest()
+        );
+    }
+    if unlinkat(dirfd, c"sys", AT_REMOVEDIR) < 0 {
+        println!(
+            "\x1b[2minit\x1b[0m: Failed to unlink old sys: {}",
+            kernel::Error::latest()
+        );
+    }
+
+    if unlinkat(dirfd, c"sbin/init", 0) < 0 {
+        println!(
+            "\x1b[2minit\x1b[0m: Failed to unlink old sbin/init: {}",
+            kernel::Error::latest()
+        );
+    }
+    if unlinkat(dirfd, c"sbin", AT_REMOVEDIR) < 0 {
+        println!(
+            "\x1b[2minit\x1b[0m: Failed to unlink old sbin: {}",
+            kernel::Error::latest()
+        );
+    }
+
+    if close(dirfd) < 0 {
+        println!(
+            "\x1b[2minit\x1b[0m: Failed to close old root: {}",
+            kernel::Error::latest()
+        );
+    }
 
     Ok(())
 }

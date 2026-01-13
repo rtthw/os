@@ -2,6 +2,9 @@ use core::{ffi::CStr, ptr};
 
 
 
+pub const AT_REMOVEDIR: i32 = libc::AT_REMOVEDIR;
+
+
 pub fn errno() -> i32 {
     unsafe { *libc::__errno_location() }
 }
@@ -206,6 +209,10 @@ pub fn umount2(path: &CStr, flags: i32) -> i32 {
 
 pub fn unlink(path: &CStr) -> i32 {
     unsafe { libc::unlink(path.as_ptr()) }
+}
+
+pub fn unlinkat(dirfd: i32, path: &CStr, flags: i32) -> i32 {
+    unsafe { libc::unlinkat(dirfd, path.as_ptr(), flags) }
 }
 
 pub fn wait(status: &mut i32) -> i32 {
