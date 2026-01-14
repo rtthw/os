@@ -53,7 +53,7 @@ fn main() -> Result<()> {
 
     info!("Running test program...");
 
-    let testing_obj = unsafe { Object::open("/home/bin/libtesting.so")? };
+    let testing_obj = unsafe { Object::open("/home/bin/testing")? };
     let main_func = testing_obj
         .get::<_, extern "C" fn()>("main")
         .ok_or(anyhow::anyhow!(

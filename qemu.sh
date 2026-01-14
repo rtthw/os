@@ -32,6 +32,7 @@ cd initrd
 
     # Put the testing program where the shell can find it.
     cp ../../target/x86_64-unknown-linux-gnu/release/libtesting.so ../rootfs/home/bin/
+    mv ../rootfs/home/bin/libtesting.so ../rootfs/home/bin/testing
 
     # Populate the image.
     find | cpio -o -H newc | gzip -1 -n > ../initrd.cpio
