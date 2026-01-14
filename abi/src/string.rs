@@ -29,16 +29,28 @@ pub struct FromUtf8Error {
 
 impl String {
     #[inline]
-    pub fn as_str(&self) -> &str {
-        &*self
+    pub const fn as_str(&self) -> &str {
+        // SAFETY: `self.bytes` is guaranteed to be valid UTF-8.
+        unsafe { str::from_utf8_unchecked(self.bytes.as_slice()) }
     }
 
-    pub fn from_utf8(bytes: Vec<u8>) -> Result<Self, FromUtf8Error> {
-        if let Err(error) = str::from_utf8(&bytes) {
+    #[inline]
+    pub const fn as_str_mut(&mut self) -> &mut str {
+        // SAFETY: `self.bytes` is guaranteed to be valid UTF-8.
+        unsafe { str::from_utf8_unchecked_mut(self.bytes.as_slice_mut()) }
+    }
+
+    pub const fn from_utf8(bytes: Vec<u8>) -> Result<Self, FromUtf8Error> {
+        if let Err(error) = str::from_utf8(bytes.as_slice()) {
             Err(FromUtf8Error { bytes, error })
         } else {
             Ok(Self { bytes })
         }
+    }
+
+    #[inline]
+    pub const unsafe fn from_utf8_unchecked(bytes: Vec<u8>) -> Self {
+        Self { bytes }
     }
 }
 
@@ -50,16 +62,16 @@ unsafe impl Sync for String {}
 impl Deref for String {
     type Target = str;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
-        // SAFETY: `self.bytes` is guaranteed to be valid UTF-8.
-        unsafe { str::from_utf8_unchecked(&*self.bytes) }
+        self.as_str()
     }
 }
 
 impl DerefMut for String {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        // SAFETY: `self.bytes` is guaranteed to be valid UTF-8.
-        unsafe { str::from_utf8_unchecked_mut(&mut *self.bytes) }
+        self.as_str_mut()
     }
 }
 
