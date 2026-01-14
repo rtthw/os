@@ -27,21 +27,33 @@ pub struct Vec<T> {
     cap: usize,
 }
 
+impl<T> Vec<T> {
+    pub const fn as_slice(&self) -> &[T] {
+        // SAFETY: `self.ptr` is never null, and always valid/aligned.
+        unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
+    }
+
+    pub const fn as_slice_mut(&mut self) -> &mut [T] {
+        // SAFETY: `self.ptr` is never null, and always valid/aligned.
+        unsafe { slice::from_raw_parts_mut(self.ptr.as_mut(), self.len) }
+    }
+}
+
 
 
 impl<T> Deref for Vec<T> {
     type Target = [T];
 
+    #[inline]
     fn deref(&self) -> &[T] {
-        // SAFETY: `self.ptr` is never null, and always valid/aligned.
-        unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
+        self.as_slice()
     }
 }
 
 impl<T> DerefMut for Vec<T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut [T] {
-        // SAFETY: `self.ptr` is never null, and always valid/aligned.
-        unsafe { slice::from_raw_parts_mut(self.ptr.as_mut(), self.len) }
+        self.as_slice_mut()
     }
 }
 
