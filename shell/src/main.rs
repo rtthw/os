@@ -326,6 +326,13 @@ fn main() -> Result<()> {
                                     .events
                                     .push(egui::Event::MouseMoved(vec2(0.0, movement)));
                             }
+                            evdev::RelativeAxisCode::REL_WHEEL => {
+                                shell.input_state.events.push(egui::Event::MouseWheel {
+                                    unit: egui::MouseWheelUnit::Line,
+                                    delta: vec2(0.0, input_event.value() as f32),
+                                    modifiers: shell.input_state.key_modifiers,
+                                });
+                            }
                             _ => {}
                         }
                     }
