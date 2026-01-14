@@ -713,6 +713,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 name = "shell"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "anyhow",
  "drm",
  "egui",
@@ -772,6 +773,9 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 [[package]]
 name = "testing"
 version = "0.1.0"
+dependencies = [
+ "abi",
+]
 
 [[package]]
 name = "thiserror"

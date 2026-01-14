@@ -54,12 +54,23 @@ fn main() -> Result<()> {
     info!("Running test program...");
 
     let testing_obj = unsafe { Object::open("/home/bin/testing")? };
-    let main_func = testing_obj
-        .get::<_, extern "C" fn()>("main")
-        .ok_or(anyhow::anyhow!(
-            "Could not find main function in test program"
-        ))?;
-    (main_func)();
+    let manifest = testing_obj
+        .get::<_, *mut abi::Manifest>("__MANIFEST")
+        .ok_or(anyhow::anyhow!("Could not find manifest for test program"))?;
+    'run_test_program: {
+        let man = unsafe { &**manifest };
+        if man.abi_version != abi::VERSION {
+            warn!(
+                "Test program was built for a different ABI than the one currently running: \
+                expected {}, got {}",
+                abi::VERSION,
+                man.abi_version,
+            );
+            break 'run_test_program;
+        }
+
+        (man.entry_point)();
+    }
 
     info!("Starting shell...");
 

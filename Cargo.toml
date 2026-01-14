@@ -7,4 +7,5 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
+abi = { path = "abi" }
 kernel = { path = "kernel" }

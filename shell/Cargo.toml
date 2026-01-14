@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+abi.workspace = true
 anyhow = "1"
 drm = "0.14.1"
 egui = "0.33"
