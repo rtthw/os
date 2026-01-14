@@ -6,10 +6,11 @@
 pub extern crate alloc;
 
 pub mod elf;
+pub mod path;
 pub mod string;
 pub mod vec;
 
-pub use {string::String, vec::Vec};
+pub use {path::Path, string::String, vec::Vec};
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
