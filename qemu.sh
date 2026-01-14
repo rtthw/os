@@ -5,6 +5,11 @@
 cargo build --release --target x86_64-unknown-linux-musl --bin init || exit
 cargo build --release --target x86_64-unknown-linux-gnu --bin shell || exit
 
+# Build the testing program.
+cd testing
+    cargo build --release --target x86_64-unknown-linux-gnu || exit
+cd ..
+
 cd build
 
 # Create the initial RAM disk.
@@ -13,7 +18,7 @@ cd initrd
 
     # Create the core directories.
     mkdir -p dev proc sbin sys
-    mkdir -p ../rootfs/sbin
+    mkdir -p ../rootfs/sbin ../rootfs/home/bin
 
     # Put the init program where the kernel can find it.
     cp ../../target/x86_64-unknown-linux-musl/release/init sbin/
@@ -24,6 +29,9 @@ cd initrd
     # Put the shell program where the init program can find it.
     cp ../../target/x86_64-unknown-linux-gnu/release/shell ../rootfs/sbin/
     chmod +x ../rootfs/sbin/shell
+
+    # Put the testing program where the shell can find it.
+    cp ../../target/x86_64-unknown-linux-gnu/release/libtesting.so ../rootfs/home/bin/
 
     # Populate the image.
     find | cpio -o -H newc | gzip -1 -n > ../initrd.cpio

@@ -1,0 +1,9 @@
+[package]
+name = "testing"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["dylib"]
+
+[dependencies]

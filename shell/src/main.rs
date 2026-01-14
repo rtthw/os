@@ -51,6 +51,16 @@ fn main() -> Result<()> {
 
     log::Logger::default().init()?;
 
+    info!("Running test program...");
+
+    let testing_obj = unsafe { Object::open("/home/bin/libtesting.so")? };
+    let main_func = testing_obj
+        .get::<_, extern "C" fn()>("main")
+        .ok_or(anyhow::anyhow!(
+            "Could not find main function in test program"
+        ))?;
+    (main_func)();
+
     info!("Starting shell...");
 
     std::thread::sleep(std::time::Duration::from_secs(1));
@@ -1555,4 +1565,12 @@ impl Output {
     pub fn height(&self) -> u16 {
         self.mode.size().1
     }
+}
+
+
+
+#[unsafe(export_name = "__shell_info")]
+#[allow(non_snake_case)]
+extern "Rust" fn __shell_info(text: &str) {
+    info!(target: "extern", "{text}")
 }
