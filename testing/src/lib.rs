@@ -10,12 +10,20 @@ abi::manifest! {
 
 extern "C" fn main() {
     unsafe {
-        shell::__shell_info("WORKS");
+        shell::debug("TEST");
+        shell::error("TEST");
+        shell::info("TEST");
+        shell::trace("TEST");
+        shell::warn("TEST");
     }
 }
 
-pub mod shell {
-    unsafe extern "Rust" {
-        pub fn __shell_info(text: &str);
+abi::include! {
+    mod shell {
+        fn debug(text: &str);
+        fn error(text: &str);
+        fn info(text: &str);
+        fn trace(text: &str);
+        fn warn(text: &str);
     }
 }

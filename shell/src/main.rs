@@ -1555,8 +1555,26 @@ impl Output {
 
 
 
-#[unsafe(export_name = "__shell_info")]
-#[allow(non_snake_case)]
-extern "Rust" fn __shell_info(text: &str) {
-    info!(target: "extern", "{text}")
+abi::declare! {
+    mod shell {
+        fn debug(text: &str) {
+            debug!(target: "extern", "{text}")
+        }
+
+        fn error(text: &str) {
+            error!(target: "extern", "{text}")
+        }
+
+        fn info(text: &str) {
+            info!(target: "extern", "{text}")
+        }
+
+        fn trace(text: &str) {
+            trace!(target: "extern", "{text}")
+        }
+
+        fn warn(text: &str) {
+            warn!(target: "extern", "{text}")
+        }
+    }
 }
