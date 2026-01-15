@@ -53,7 +53,7 @@ fn main() -> Result<()> {
 
     info!("Running test program...");
 
-    let testing_obj = unsafe { Object::open("/home/bin/testing")? };
+    let testing_obj = unsafe { Object::open("/bin/testing")? };
     let manifest = testing_obj
         .get::<_, *mut abi::Manifest>("__MANIFEST")
         .ok_or(anyhow::anyhow!("Could not find manifest for test program"))?;

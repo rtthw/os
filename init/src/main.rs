@@ -91,6 +91,28 @@ fn setup_mount_points() -> Result<()> {
     _ = mkdir(c"/dev", 0);
     mount(c"dev", c"/dev", c"devtmpfs", NOSUID, Some(c"mode=755"))?;
 
+    let mut names = Vec::new();
+
+    for entry in std::fs::read_dir("/dev").unwrap() {
+        let entry = entry.unwrap();
+
+        let name = entry
+            .path()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+
+        if name.contains(' ') {
+            names.push(format!("'{name}'"));
+        } else {
+            names.push(name);
+        }
+    }
+
+    println!("{}", names.join("  "));
+
     println!("\x1b[2minit\x1b[0m: Mounting rootfs...");
 
     if mkdir(c"/rootfs", 0) < 0 {
@@ -136,6 +158,15 @@ fn setup_mount_points() -> Result<()> {
     if chdir(c"/") < 0 {
         return Err(kernel::Error::latest());
     }
+
+    // Mount the home directory.
+    mount(
+        c"/dev/sdb",
+        c"/home",
+        c"ext4",
+        MountFlags::default(),
+        NULL_CSTR,
+    )?;
 
     match fork() {
         0 => {
