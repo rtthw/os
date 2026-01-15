@@ -230,7 +230,16 @@ fn cleanup_initramfs(old_root_fd: File) -> Result<()> {
 }
 
 fn print_filesystem() -> Result<()> {
-    const IGNORE: &[&str] = &["/proc", "/sys/class", "/sys/kernel/slab", "/sys/devices"];
+    const IGNORE: &[&str] = &[
+        "/dev",
+        "/home/.cargo",
+        "/home/.rustup",
+        "/proc",
+        "/sys/class",
+        "/sys/kernel/slab",
+        "/sys/devices",
+        "/usr/lib",
+    ];
 
     fn inner(dir: &str, depth: usize) -> Result<()> {
         for entry in std::fs::read_dir(dir).map_err(|_| kernel::Error::NOENT)? {

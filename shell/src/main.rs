@@ -46,6 +46,8 @@ fn main() -> Result<()> {
     let startup_time = Instant::now();
 
     unsafe {
+        std::env::set_var("HOME", "/home");
+        std::env::set_var("PATH", "/home/.cargo/bin:/usr/bin");
         std::env::set_var("RUST_BACKTRACE", "1");
     }
 
@@ -53,7 +55,7 @@ fn main() -> Result<()> {
 
     info!("Running test program...");
 
-    let testing_obj = unsafe { Object::open("/bin/testing")? };
+    let testing_obj = unsafe { Object::open("/usr/bin/testing")? };
     let manifest = testing_obj
         .get::<_, *mut abi::Manifest>("__MANIFEST")
         .ok_or(anyhow::anyhow!("Could not find manifest for test program"))?;
@@ -465,7 +467,6 @@ fn main() -> Result<()> {
         }
 
         let args = line.split(' ').collect::<Vec<_>>();
-
         let args_os: Vec<OsString> = args
             .iter()
             .map(|item| OsString::from_str(item).unwrap())
@@ -501,29 +502,6 @@ fn main() -> Result<()> {
             }
             "exit" => {
                 std::process::exit(0);
-            }
-            "ls" => {
-                let mut names = Vec::new();
-
-                for entry in std::fs::read_dir(&shell.current_dir).unwrap() {
-                    let entry = entry.unwrap();
-
-                    let name = entry
-                        .path()
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .unwrap()
-                        .to_string();
-
-                    if name.contains(' ') {
-                        names.push(format!("'{name}'"));
-                    } else {
-                        names.push(name);
-                    }
-                }
-
-                println!("{}", names.join("  "));
             }
             "sym" => {
                 // The type doesn't matter in this case (we're just printing debug info).
@@ -596,15 +574,12 @@ fn main() -> Result<()> {
             //     }
             // }
             _ => {
-                let bin_path = format!("/bin/{}", args[0]);
-
-                match std::process::Command::new(bin_path)
+                match std::process::Command::new(args[0])
                     .args(&args_os[1..])
                     .output()
                 {
                     Ok(output) => {
                         println!("{}", String::from_utf8(output.stdout).unwrap());
-
                         println!("{}", String::from_utf8(output.stderr).unwrap());
                     }
                     Err(error) => {

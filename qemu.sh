@@ -18,7 +18,7 @@ cd initrd
 
     # Create the core directories.
     mkdir -p dev proc sbin sys
-    mkdir -p ../rootfs/sbin ../rootfs/bin
+    mkdir -p ../rootfs/sbin ../rootfs/usr/bin
 
     # Put the init program where the kernel can find it.
     cp ../../target/x86_64-unknown-linux-musl/release/init sbin/
@@ -31,8 +31,8 @@ cd initrd
     chmod +x ../rootfs/sbin/shell
 
     # Put the testing program where the shell can find it.
-    cp ../../target/x86_64-unknown-linux-gnu/release/libtesting.so ../rootfs/bin/
-    mv ../rootfs/bin/libtesting.so ../rootfs/bin/testing
+    cp ../../target/x86_64-unknown-linux-gnu/release/libtesting.so ../rootfs/usr/bin/
+    mv ../rootfs/usr/bin/libtesting.so ../rootfs/usr/bin/testing
 
     # Populate the image.
     find | cpio -o -H newc | gzip -1 -n > ../initrd.cpio
