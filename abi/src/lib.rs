@@ -6,6 +6,7 @@
 pub extern crate alloc;
 
 pub mod elf;
+pub mod layout;
 pub mod path;
 pub mod string;
 pub mod vec;
