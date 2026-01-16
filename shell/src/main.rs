@@ -448,8 +448,9 @@ fn main() -> Result<()> {
 
     std::io::stdout().flush().unwrap();
 
-    event_loop.run(&mut shell, 16, |shell| {
+    event_loop.run(&mut shell, 0, |shell| {
         shell.render().unwrap();
+
         if stdin.lock().read(&mut []).is_err() {
             return;
         }
