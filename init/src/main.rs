@@ -55,7 +55,10 @@ fn main() {
         std::env::set_var("RUST_BACKTRACE", "1");
     }
 
-    let mut shell = match std::process::Command::new("/sbin/shell").spawn() {
+    let mut shell = match std::process::Command::new("/sbin/shell")
+        .current_dir("/home")
+        .spawn()
+    {
         Ok(child) => child,
         Err(error) => {
             println!("\x1b[31mERROR\x1b[0m \x1b[2m(init)\x1b[0m: Failed to start shell: {error}");

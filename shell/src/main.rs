@@ -63,7 +63,7 @@ fn main() -> Result<()> {
 
     compiler::run();
 
-    let doubler_obj = unsafe { Object::open("/doubler.so")? };
+    let doubler_obj = unsafe { Object::open("/home/doubler.so")? };
     let doubler_fn = doubler_obj
         .get::<_, extern "C" fn(f32) -> f32>("doubler")
         .ok_or(anyhow::anyhow!(
