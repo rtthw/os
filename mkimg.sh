@@ -8,7 +8,7 @@
 cd build
 
 # Create the disk image file.
-dd if=/dev/zero of=home.img bs=1M count=4096
+dd if=/dev/zero of=home.img bs=1M count=8192
 
 # Convert it into a filesystem (requires root privileges).
 sudo mkfs.ext4 -d homefs home.img
