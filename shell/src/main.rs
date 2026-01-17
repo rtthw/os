@@ -45,12 +45,6 @@ use crate::{
 fn main() -> Result<()> {
     let startup_time = Instant::now();
 
-    unsafe {
-        std::env::set_var("HOME", "/home");
-        std::env::set_var("PATH", "/home/.cargo/bin:/usr/bin");
-        std::env::set_var("RUST_BACKTRACE", "1");
-    }
-
     log::Logger::default().init()?;
 
     info!("Running test program...");

@@ -45,6 +45,16 @@ fn main() {
 
     println!("\x1b[2minit\x1b[0m: Starting main loop...");
 
+    unsafe {
+        std::env::set_var("HOME", "/home");
+        std::env::set_var("PATH", "/home/.cargo/bin:/usr/bin");
+        std::env::set_var(
+            "LD_LIBRARY_PATH",
+            "/home/.rustup/toolchains/nightly-2026-01-15-x86_64-unknown-linux-gnu/lib",
+        );
+        std::env::set_var("RUST_BACKTRACE", "1");
+    }
+
     let mut shell = match std::process::Command::new("/sbin/shell").spawn() {
         Ok(child) => child,
         Err(error) => {
