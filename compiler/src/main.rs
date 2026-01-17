@@ -7,20 +7,47 @@ extern crate rustc_hir as hir;
 extern crate rustc_interface as interface;
 extern crate rustc_session as session;
 extern crate rustc_span as span;
+extern crate rustc_target;
 
 
 
 fn main() {
     let config = interface::Config {
         opts: session::config::Options {
+            crate_types: vec![session::config::CrateType::Cdylib],
             incremental: None, // TODO: Use incremental compilation.
+            output_types: session::config::OutputTypes::new(&[(
+                session::config::OutputType::Exe,
+                Some(session::config::OutFileName::Real(
+                    "build/doubler.so".into(),
+                )),
+            )]),
+            cg: session::config::CodegenOptions {
+                opt_level: "2".into(),
+                panic: Some(rustc_target::spec::PanicStrategy::Abort),
+                strip: session::config::Strip::Symbols,
+                ..Default::default()
+            },
+            verbose: true,
             ..Default::default()
         },
         crate_cfg: Vec::new(),
         crate_check_cfg: Vec::new(),
         input: session::config::Input::Str {
-            name: span::FileName::Custom("lib.rs".into()),
-            input: "fn doubler(n: f32) -> f32 { n * 2.0 }".into(),
+            name: span::FileName::Custom("doubler.rs".into()),
+            input: r#"
+                #![no_std]
+
+                pub fn doubler(n: f32) -> f32 {
+                    n * 2.0
+                }
+
+                #[panic_handler]
+                fn panic(_info: &core::panic::PanicInfo) -> ! {
+                    loop {}
+                }
+                "#
+            .into(),
         },
         output_dir: None,
         output_file: None,
@@ -38,9 +65,11 @@ fn main() {
         using_internal_features: &rustc_driver::USING_INTERNAL_FEATURES,
     };
     interface::run_compiler(config, |compiler| {
-        let krate = interface::passes::parse(&compiler.sess);
+        let sess = &compiler.sess;
+        let codegen_backend = &*compiler.codegen_backend;
+        let krate = interface::passes::parse(sess);
         println!("{krate:?}\n");
-        interface::create_and_enter_global_ctxt(&compiler, krate, |tcx| {
+        let linker = interface::create_and_enter_global_ctxt(&compiler, krate, |tcx| {
             for id in tcx.hir_free_items() {
                 let item = tcx.hir_item(id);
                 match item.kind {
@@ -48,9 +77,13 @@ fn main() {
                         let ty = tcx.type_of(item.hir_id().owner.def_id);
                         println!("{ident:?}:\t{ty:?}");
                     }
-                    _ => (),
+                    _ => {}
                 }
             }
+
+            interface::Linker::codegen_and_build_linker(tcx, codegen_backend)
         });
+
+        linker.link(sess, codegen_backend);
     });
 }
