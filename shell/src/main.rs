@@ -1,3 +1,15 @@
+#![feature(rustc_private)]
+
+extern crate rustc_driver;
+extern crate rustc_error_codes;
+extern crate rustc_errors;
+extern crate rustc_hir as hir;
+extern crate rustc_interface as interface;
+extern crate rustc_session as session;
+extern crate rustc_span as span;
+extern crate rustc_target;
+
+pub mod compiler;
 pub mod cursor;
 pub mod egl;
 pub mod input;
@@ -46,6 +58,20 @@ fn main() -> Result<()> {
     let startup_time = Instant::now();
 
     log::Logger::default().init()?;
+
+    info!("Compiling 'doubler' program...");
+
+    compiler::run();
+
+    let doubler_obj = unsafe { Object::open("/doubler.so")? };
+    let doubler_fn = doubler_obj
+        .get::<_, extern "C" fn(f32) -> f32>("doubler")
+        .ok_or(anyhow::anyhow!(
+            "Could not find function for doubler program"
+        ))?;
+
+    debug!("\tdoubler(1.0) = {}", (doubler_fn)(1.0));
+    debug!("\tdoubler(3.7) = {}", (doubler_fn)(3.7));
 
     info!("Running test program...");
 

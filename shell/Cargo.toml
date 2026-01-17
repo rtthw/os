@@ -3,6 +3,9 @@ name = "shell"
 version.workspace = true
 edition.workspace = true
 
+[package.metadata.rust-analyzer]
+rustc_private = true
+
 [dependencies]
 abi.workspace = true
 anyhow = "1"

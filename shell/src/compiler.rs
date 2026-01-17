@@ -1,26 +1,15 @@
-#![feature(rustc_private)]
-
-extern crate rustc_driver;
-extern crate rustc_error_codes;
-extern crate rustc_errors;
-extern crate rustc_hir as hir;
-extern crate rustc_interface as interface;
-extern crate rustc_session as session;
-extern crate rustc_span as span;
-extern crate rustc_target;
+//! # Compiler
 
 
 
-fn main() {
+pub fn run() {
     let config = interface::Config {
         opts: session::config::Options {
             crate_types: vec![session::config::CrateType::Cdylib],
             incremental: None, // TODO: Use incremental compilation.
             output_types: session::config::OutputTypes::new(&[(
                 session::config::OutputType::Exe,
-                Some(session::config::OutFileName::Real(
-                    "build/doubler.so".into(),
-                )),
+                Some(session::config::OutFileName::Real("doubler.so".into())),
             )]),
             cg: session::config::CodegenOptions {
                 opt_level: "2".into(),
@@ -38,7 +27,8 @@ fn main() {
             input: r#"
                 #![no_std]
 
-                pub fn doubler(n: f32) -> f32 {
+                #[unsafe(no_mangle)]
+                pub extern "C" fn doubler(n: f32) -> f32 {
                     n * 2.0
                 }
 
