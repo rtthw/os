@@ -6,6 +6,24 @@ pub fn run() {
     let config = interface::Config {
         opts: session::config::Options {
             crate_types: vec![session::config::CrateType::Cdylib],
+            externs: session::config::Externs::new(
+                [(
+                    "abi".to_string(),
+                    session::config::ExternEntry {
+                        location: session::config::ExternLocation::ExactPaths(
+                            [session::utils::CanonicalizedPath::new(
+                                "/lib/libabi.rlib".into(),
+                            )]
+                            .into(),
+                        ),
+                        is_private_dep: false,
+                        add_prelude: false,
+                        nounused_dep: false,
+                        force: false,
+                    },
+                )]
+                .into(),
+            ),
             incremental: None, // TODO: Use incremental compilation.
             output_types: session::config::OutputTypes::new(&[(
                 session::config::OutputType::Exe,
@@ -25,16 +43,11 @@ pub fn run() {
         input: session::config::Input::Str {
             name: span::FileName::Custom("doubler.rs".into()),
             input: r#"
-                #![no_std]
+                extern crate abi;
 
                 #[unsafe(no_mangle)]
                 pub extern "C" fn doubler(n: f32) -> f32 {
                     n * 2.0
-                }
-
-                #[panic_handler]
-                fn panic(_info: &core::panic::PanicInfo) -> ! {
-                    loop {}
                 }
                 "#
             .into(),

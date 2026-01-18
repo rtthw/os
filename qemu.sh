@@ -1,6 +1,11 @@
 #!/bin/sh
 
 
+# Build the ABI.
+cd abi
+    cargo build --release --target x86_64-unknown-linux-gnu || exit
+cd ..
+
 # Build the init program.
 cargo build --release --target x86_64-unknown-linux-musl --bin init || exit
 cargo build --release --target x86_64-unknown-linux-gnu --bin shell || exit
@@ -33,6 +38,9 @@ cd initrd
     # Put the testing program where the shell can find it.
     cp ../../target/x86_64-unknown-linux-gnu/release/libtesting.so ../rootfs/usr/bin/
     mv ../rootfs/usr/bin/libtesting.so ../rootfs/usr/bin/testing
+
+    # Put the ABI where the compiler can find it.
+    cp ../../target/x86_64-unknown-linux-gnu/release/libabi.rlib ../rootfs/lib/
 
     # Populate the image.
     find | cpio -o -H newc | gzip -1 -n > ../initrd.cpio
