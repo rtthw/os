@@ -27,7 +27,9 @@ pub fn run() {
             incremental: None, // TODO: Use incremental compilation.
             output_types: session::config::OutputTypes::new(&[(
                 session::config::OutputType::Exe,
-                Some(session::config::OutFileName::Real("doubler.so".into())),
+                Some(session::config::OutFileName::Real(
+                    "abi_test_suite.so".into(),
+                )),
             )]),
             cg: session::config::CodegenOptions {
                 opt_level: "2".into(),
@@ -41,13 +43,18 @@ pub fn run() {
         crate_cfg: Vec::new(),
         crate_check_cfg: Vec::new(),
         input: session::config::Input::Str {
-            name: span::FileName::Custom("doubler.rs".into()),
+            name: span::FileName::Custom("abi_test_suite.rs".into()),
             input: r#"
                 extern crate abi;
 
                 #[unsafe(no_mangle)]
-                pub extern "C" fn doubler(n: f32) -> f32 {
-                    n * 2.0
+                pub extern "C" fn f32_id_as_u128() -> u128 {
+                    unsafe { std::mem::transmute(std::any::TypeId::of::<f32>()) }
+                }
+
+                #[unsafe(no_mangle)]
+                pub extern "C" fn abi_path_id_as_u128() -> u128 {
+                    unsafe { std::mem::transmute(std::any::TypeId::of::<abi::Path>()) }
                 }
                 "#
             .into(),
@@ -71,7 +78,7 @@ pub fn run() {
         let sess = &compiler.sess;
         let codegen_backend = &*compiler.codegen_backend;
         let krate = interface::passes::parse(sess);
-        println!("{krate:?}\n");
+        // println!("{krate:?}\n");
         let linker = interface::create_and_enter_global_ctxt(&compiler, krate, |tcx| {
             for id in tcx.hir_free_items() {
                 let item = tcx.hir_item(id);

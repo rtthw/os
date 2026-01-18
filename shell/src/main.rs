@@ -59,19 +59,35 @@ fn main() -> Result<()> {
 
     log::Logger::default().init()?;
 
-    info!("Compiling 'doubler' program...");
+    info!("Compiling ABI test suite...");
 
     compiler::run();
 
-    let doubler_obj = unsafe { Object::open("/home/doubler.so")? };
-    let doubler_fn = doubler_obj
-        .get::<_, extern "C" fn(f32) -> f32>("doubler")
+    info!("Running ABI test suite...");
+
+    let abi_test_suite_obj = unsafe { Object::open("/home/abi_test_suite.so")? };
+    let f32_type_id_fn = abi_test_suite_obj
+        .get::<_, extern "C" fn() -> u128>("f32_id_as_u128")
         .ok_or(anyhow::anyhow!(
-            "Could not find function for doubler program"
+            "Could not find function for abi_test_suite program"
+        ))?;
+    let path_type_id_fn = abi_test_suite_obj
+        .get::<_, extern "C" fn() -> u128>("abi_path_id_as_u128")
+        .ok_or(anyhow::anyhow!(
+            "Could not find function for abi_test_suite program"
         ))?;
 
-    debug!("\tdoubler(1.0) = {}", (doubler_fn)(1.0));
-    debug!("\tdoubler(3.7) = {}", (doubler_fn)(3.7));
+    let id_of_f32 = unsafe { std::mem::transmute::<_, u128>(std::any::TypeId::of::<f32>()) };
+    let id_of_path = unsafe { std::mem::transmute::<_, u128>(std::any::TypeId::of::<abi::Path>()) };
+
+    debug!("\tTypeId::of::<f32>() as u128 \t\t= {}", id_of_f32);
+    debug!("\tf32_id_as_u128() \t\t\t= {}", (f32_type_id_fn)());
+
+    debug!("\tTypeId::of::<abi::Path>() as u128 \t= {}", id_of_path);
+    debug!("\tabi_path_id_as_u128() \t\t\t= {}", (path_type_id_fn)());
+
+    assert_eq!(id_of_f32, (f32_type_id_fn)());
+    assert_eq!(id_of_path, (path_type_id_fn)());
 
     info!("Running test program...");
 
