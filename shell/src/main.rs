@@ -651,7 +651,6 @@ impl Shell {
         let (width, height) = self.output.mode.size();
         let size = vec2(width as _, height as _);
         let rect = Rect::from_min_size(Pos2::ZERO, size);
-
         let raw_input = egui::RawInput {
             viewport_id: egui::ViewportId::ROOT,
             viewports: std::iter::once((
@@ -683,7 +682,6 @@ impl Shell {
             system_theme: Some(egui::Theme::Dark),
             safe_area_insets: None,
         };
-
         let full_output = self.output.renderer.egui_ctx.run(raw_input, |ctx| {
             egui::TopBottomPanel::top("menubar")
                 .show_separator_line(false)
@@ -746,13 +744,6 @@ impl Shell {
                                     let line: String = self.input_buffer.drain(..).collect();
                                     println!("{}", line);
                                 }
-
-                                ui.horizontal_wrapped(|ui| {
-                                    for (name, icon) in egl::ALL_ICONS {
-                                        ui.label(egl::icon(*icon, egl::IconStyle::LargeNormal))
-                                            .on_hover_text(*name);
-                                    }
-                                });
                             });
                     });
             });
@@ -765,21 +756,16 @@ impl Shell {
 
         unsafe {
             self.output.renderer.gl.clear_color(0.1, 0.1, 0.1, 1.0);
-        }
-
-        self.output.renderer.painter.paint_and_update_textures(
-            [width as _, height as _],
-            full_output.pixels_per_point,
-            &clipped_primitives,
-            &full_output.textures_delta,
-        );
-
-        unsafe {
+            self.output.renderer.painter.paint_and_update_textures(
+                [width as _, height as _],
+                full_output.pixels_per_point,
+                &clipped_primitives,
+                &full_output.textures_delta,
+            );
             self.output.renderer.gl.finish();
         }
 
         let next_icon = CursorIcon::from(full_output.platform_output.cursor_icon);
-
         if self.cursor_icon != next_icon {
             self.cursor_icon = next_icon;
 
@@ -825,7 +811,6 @@ impl Shell {
             .unwrap();
 
         let bo = unsafe { self.output.bo.lock_front_buffer().unwrap() };
-
         let fb = if let Some(handle) = &self.output.fb {
             *handle
         } else {
@@ -833,7 +818,6 @@ impl Shell {
             self.output.fb = Some(fb);
             fb
         };
-
         if !self.output.crtc_set {
             self.output.crtc_set = true;
 
@@ -872,14 +856,6 @@ impl Shell {
             self.gpu
                 .set_cursor(self.output.crtc, Some(&self.cursor_buffer))?;
         }
-
-        // let mut req = drm::control::atomic::AtomicModeReq::new();
-        // req.add_property(output.bo, property, value);
-        // self.gpu.atomic_commit(
-        //     drm::control::AtomicCommitFlags::PAGE_FLIP_EVENT
-        //     | drm::control::AtomicCommitFlags::NONBLOCK,
-        //     req,
-        // )?;
 
         Ok(())
     }
