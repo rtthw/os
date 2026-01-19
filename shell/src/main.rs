@@ -24,7 +24,7 @@ use std::{
     os::fd::AsRawFd as _,
     ptr::NonNull,
     str::FromStr as _,
-    sync::Arc,
+    sync::{Arc, atomic::AtomicBool},
     time::Instant,
 };
 
@@ -68,21 +68,7 @@ fn main() -> Result<()> {
     info!("Compiling example program...");
 
     let example_program_text = std::fs::read_to_string("/lib/example.rs")?;
-    compiler::run(&example_program_text, "example.rs", "example.so");
-
-    info!("Loading example program...");
-
-    let example_obj = unsafe { Object::open("/home/example.so")? };
-    let render_fn = example_obj
-        .get::<_, for<'a> extern "C" fn(&'a abi::Aabb2D<f32>) -> abi::RenderPass<'a>>("render")
-        .ok_or(anyhow::anyhow!(
-            "Could not find render function for example program"
-        ))?;
-
-    let example_program = Some(Program {
-        render: render_fn,
-        _obj: example_obj,
-    });
+    let example_program = Program::load("example", example_program_text)?;
 
     let gpu = GraphicsCard::open("/dev/dri/card0")?;
 
@@ -447,8 +433,6 @@ fn main() -> Result<()> {
         cursor_data,
         cursor_buffer,
         example_program,
-        example_program_text,
-        editing_example: false,
     };
 
     shell.render()?;
@@ -619,9 +603,7 @@ pub struct Shell {
     cursor_icon: CursorIcon,
     cursor_data: HashMap<CursorIcon, CursorData>,
     cursor_buffer: gbm::BufferObject<()>,
-    example_program: Option<Program>,
-    example_program_text: String,
-    editing_example: bool,
+    example_program: Program,
 }
 
 impl Shell {
@@ -737,110 +719,9 @@ impl Shell {
                                     println!("{}", line);
                                 }
 
-                                let mut recompile_example = false;
-
-                                egui::Frame::group(ui.style()).show(ui, |ui| {
-                                    ui.set_width(ui.available_width());
-                                    ui.set_height(ui.available_height());
-
-                                    if self.editing_example {
-                                        ui.horizontal_wrapped(|ui| {
-                                            if ui.button("Cancel").clicked() {
-                                                self.editing_example = false;
-                                            }
-                                            if ui.button("Confirm").clicked() {
-                                                self.editing_example = false;
-                                                recompile_example = true;
-                                            }
-                                        });
-                                        ui.add(
-                                            egui::TextEdit::multiline(
-                                                &mut self.example_program_text,
-                                            )
-                                            .font(egui::FontId::monospace(20.0))
-                                            .desired_width(ui.available_width()),
-                                        );
-                                        return;
-                                    }
-                                    if ui.button("Edit").clicked() {
-                                        self.editing_example = true;
-                                    }
-
-                                    let rect = ui.available_rect_before_wrap();
-                                    let area_bounds = abi::Aabb2D {
-                                        x_min: rect.min.x,
-                                        x_max: rect.max.x,
-                                        y_min: rect.min.y,
-                                        y_max: rect.max.y,
-                                    };
-                                    let pass = (self.example_program.as_ref().unwrap().render)(
-                                        &area_bounds,
-                                    );
-                                    let painter = ui.painter_at(rect);
-                                    for layer in Into::<Vec<_>>::into(pass.layers) {
-                                        for object in Into::<Vec<_>>::into(layer.objects) {
-                                            match object {
-                                                abi::RenderObject::Quad { bounds, color } => {
-                                                    painter.rect(
-                                                        aabb2d_to_rect(bounds),
-                                                        0,
-                                                        rgba_to_color32(color),
-                                                        egui::Stroke::NONE,
-                                                        egui::StrokeKind::Middle,
-                                                    );
-                                                }
-                                                abi::RenderObject::Text {
-                                                    text,
-                                                    bounds,
-                                                    color,
-                                                    font_size,
-                                                } => {
-                                                    painter.text(
-                                                        pos2(bounds.x_min, bounds.y_min),
-                                                        egui::Align2::CENTER_CENTER,
-                                                        text,
-                                                        egui::FontId::proportional(font_size),
-                                                        rgba_to_color32(color),
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                });
-
-                                if recompile_example {
-                                    compiler::run(
-                                        &self.example_program_text,
-                                        "example.rs",
-                                        "example.so",
-                                    );
-
-                                    // We need to drop the previous shared object before reloading
-                                    // because `dlopen` won't load the new version if there are
-                                    // references to the old one.
-                                    drop(self.example_program.take());
-
-                                    let example_obj = unsafe {
-                                        Object::open("/home/example.so")
-                                            .expect("failed to open example program object")
-                                    };
-                                    let render_fn = example_obj
-                                        .get::<_, for<'a> extern "C" fn(
-                                            &'a abi::Aabb2D<f32>,
-                                        )
-                                            -> abi::RenderPass<'a>>(
-                                            "render"
-                                        )
-                                        .ok_or(anyhow::anyhow!(
-                                            "Could not find render function for example program"
-                                        ))
-                                        .unwrap();
-
-                                    self.example_program = Some(Program {
-                                        render: render_fn,
-                                        _obj: example_obj,
-                                    });
-                                }
+                                self.example_program
+                                    .update(ui)
+                                    .expect("failed to update example program");
                             });
                     });
             });
@@ -1724,8 +1605,155 @@ fn run_abi_tests() -> Result<()> {
 
 
 struct Program {
+    name: &'static str,
+    object: Option<ProgramObject>,
+    editing: bool,
+    waiting_on_recompile: bool,
+    compiling_flag: Arc<AtomicBool>,
+    text: String,
+}
+
+impl Program {
+    fn load(name: &'static str, text: String) -> Result<Self> {
+        let mut this = Self {
+            name,
+            object: None,
+            editing: false,
+            waiting_on_recompile: false,
+            compiling_flag: Arc::new(AtomicBool::new(false)),
+            text,
+        };
+
+        this.start_compiling();
+
+        Ok(this)
+    }
+
+    fn start_compiling(&mut self) {
+        self.waiting_on_recompile = true;
+        self.compiling_flag
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        let compiling_flag = self.compiling_flag.clone();
+        let content = self.text.clone();
+        let input_filename = format!("{}.rs", self.name);
+        let output_filename = format!("{}.so", self.name);
+
+        std::thread::spawn(move || {
+            compiler::run(&content, &input_filename, &output_filename);
+            compiling_flag.swap(false, std::sync::atomic::Ordering::SeqCst);
+        });
+    }
+
+    fn reload(&mut self) -> Result<()> {
+        // We need to drop the previous shared object before reloading because `dlopen`
+        // won't load the new version if there are existing references to the old one.
+        drop(self.object.take());
+
+        let handle = unsafe { Object::open(format!("/home/{}.so", self.name).as_str())? };
+        let render_fn = handle
+            .get::<_, for<'a> extern "C" fn(&'a abi::Aabb2D<f32>) -> abi::RenderPass<'a>>("render")
+            .ok_or(anyhow::anyhow!(
+                "Could not find render function for example program"
+            ))?;
+
+        self.object = Some(ProgramObject {
+            render: render_fn,
+            _handle: handle,
+        });
+
+        Ok(())
+    }
+
+    fn update(&mut self, ui: &mut egui::Ui) -> Result<()> {
+        if self
+            .compiling_flag
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            ui.centered_and_justified(|ui| {
+                ui.spinner();
+            });
+
+            return Ok(());
+        }
+
+        if self.waiting_on_recompile {
+            self.waiting_on_recompile = false;
+            self.reload()?;
+        }
+
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.set_height(ui.available_height());
+
+            if self.editing {
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.editing = false;
+                    }
+                    if ui.button("Confirm").clicked() {
+                        self.editing = false;
+                        self.start_compiling();
+                    }
+                });
+                ui.add(
+                    egui::TextEdit::multiline(&mut self.text)
+                        .font(egui::FontId::monospace(20.0))
+                        .desired_width(ui.available_width()),
+                );
+                return;
+            }
+            if ui.button("Edit").clicked() {
+                self.editing = true;
+            }
+
+            let rect = ui.available_rect_before_wrap();
+            let area_bounds = abi::Aabb2D {
+                x_min: rect.min.x,
+                x_max: rect.max.x,
+                y_min: rect.min.y,
+                y_max: rect.max.y,
+            };
+            let pass = (self.object.as_ref().unwrap().render)(&area_bounds);
+            let painter = ui.painter_at(rect);
+            for layer in Into::<Vec<_>>::into(pass.layers) {
+                for object in Into::<Vec<_>>::into(layer.objects) {
+                    match object {
+                        abi::RenderObject::Quad { bounds, color } => {
+                            painter.rect(
+                                aabb2d_to_rect(bounds),
+                                0,
+                                rgba_to_color32(color),
+                                egui::Stroke::NONE,
+                                egui::StrokeKind::Middle,
+                            );
+                        }
+                        abi::RenderObject::Text {
+                            text,
+                            bounds,
+                            color,
+                            font_size,
+                        } => {
+                            painter.text(
+                                pos2(bounds.x_min, bounds.y_min),
+                                egui::Align2::CENTER_CENTER,
+                                text,
+                                egui::FontId::proportional(font_size),
+                                rgba_to_color32(color),
+                            );
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+}
+
+struct ProgramObject {
     render: object::Ptr<for<'a> extern "C" fn(&'a abi::Aabb2D<f32>) -> abi::RenderPass<'a>>,
-    _obj: Object,
+    _handle: Object,
 }
 
 
