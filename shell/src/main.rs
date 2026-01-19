@@ -30,7 +30,7 @@ use std::{
 
 use {
     ::log::{debug, error, info, trace, warn},
-    anyhow::{Result, bail},
+    anyhow::{Context as _, Result, bail},
     drm::{Device, control::Device as ControlDevice},
     egui::{Pos2, Rect, pos2, vec2},
     gbm::AsRaw as _,
@@ -59,35 +59,7 @@ fn main() -> Result<()> {
 
     log::Logger::default().init()?;
 
-    info!("Compiling ABI tests...");
-
-    compiler::run("/lib/abi_tests.rs", "abi_tests.so");
-
-    info!("Running ABI tests...");
-
-    let abi_tests_obj = unsafe { Object::open("/home/abi_tests.so")? };
-    let f32_type_id_fn = abi_tests_obj
-        .get::<_, extern "C" fn() -> u128>("f32_id_as_u128")
-        .ok_or(anyhow::anyhow!(
-            "Could not find function for abi_tests program"
-        ))?;
-    let path_type_id_fn = abi_tests_obj
-        .get::<_, extern "C" fn() -> u128>("abi_path_id_as_u128")
-        .ok_or(anyhow::anyhow!(
-            "Could not find function for abi_tests program"
-        ))?;
-
-    let id_of_f32 = unsafe { std::mem::transmute::<_, u128>(std::any::TypeId::of::<f32>()) };
-    let id_of_path = unsafe { std::mem::transmute::<_, u128>(std::any::TypeId::of::<abi::Path>()) };
-
-    debug!("\tTypeId::of::<f32>() as u128 \t\t= {}", id_of_f32);
-    debug!("\tf32_id_as_u128() \t\t\t= {}", (f32_type_id_fn)());
-
-    debug!("\tTypeId::of::<abi::Path>() as u128 \t= {}", id_of_path);
-    debug!("\tabi_path_id_as_u128() \t\t\t= {}", (path_type_id_fn)());
-
-    assert_eq!(id_of_f32, (f32_type_id_fn)());
-    assert_eq!(id_of_path, (path_type_id_fn)());
+    run_abi_tests().context("failed to run ABI tests")?;
 
     info!("Starting shell...");
 
@@ -1569,4 +1541,48 @@ abi::declare! {
             warn!(target: "extern", "{text}")
         }
     }
+}
+
+fn run_abi_tests() -> Result<()> {
+    info!("Compiling ABI tests...");
+
+    compiler::run("/lib/abi_tests.rs", "abi_tests.so");
+
+    info!("Running ABI tests...");
+
+    let abi_tests_obj = unsafe { Object::open("/home/abi_tests.so")? };
+    let f32_type_id_fn = abi_tests_obj
+        .get::<_, extern "C" fn() -> u128>("f32_id_as_u128")
+        .ok_or(anyhow::anyhow!(
+            "Could not find function for abi_tests program"
+        ))?;
+    let path_type_id_fn = abi_tests_obj
+        .get::<_, extern "C" fn() -> u128>("abi_path_id_as_u128")
+        .ok_or(anyhow::anyhow!(
+            "Could not find function for abi_tests program"
+        ))?;
+
+    let real_f32_id = unsafe { std::mem::transmute::<_, u128>(std::any::TypeId::of::<f32>()) };
+    let real_path_id =
+        unsafe { std::mem::transmute::<_, u128>(std::any::TypeId::of::<abi::Path>()) };
+
+    let abi_f32_id = (path_type_id_fn)();
+    let abi_path_id = (f32_type_id_fn)();
+
+    debug!("\tTypeId::of::<f32>() \t= {}", real_f32_id);
+    debug!("\tabi_f32_id \t\t= {}", abi_f32_id);
+
+    debug!("\tTypeId::of::<abi::Path>() \t= {}", real_path_id);
+    debug!("\tabi_path_id \t\t= {}", abi_path_id);
+
+    if real_f32_id != abi_f32_id {
+        bail!("Cannot agree on `f32` type");
+    }
+    if real_path_id != abi_path_id {
+        bail!("Cannot agree on `abi::Path` type");
+    }
+
+    info!("All ABI tests passed");
+
+    Ok(())
 }
