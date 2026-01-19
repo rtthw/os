@@ -105,20 +105,26 @@ pub struct Rgba<V> {
 
 
 #[repr(C)]
-pub struct RenderPass {
+pub struct RenderPass<'a> {
     pub bounds: Aabb2D<f32>,
-    pub layers: Vec<RenderLayer>,
+    pub layers: Vec<RenderLayer<'a>>,
 }
 
 #[repr(C)]
-pub struct RenderLayer {
-    pub objects: Vec<RenderObject>,
+pub struct RenderLayer<'a> {
+    pub objects: Vec<RenderObject<'a>>,
 }
 
 #[repr(C)]
-pub enum RenderObject {
+pub enum RenderObject<'a> {
     Quad {
         bounds: Aabb2D<f32>,
         color: Rgba<u8>,
+    },
+    Text {
+        text: alloc::borrow::Cow<'a, str>,
+        bounds: Aabb2D<f32>,
+        color: Rgba<u8>,
+        font_size: f32,
     },
 }

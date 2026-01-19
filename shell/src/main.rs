@@ -73,7 +73,7 @@ fn main() -> Result<()> {
 
     let example_obj = unsafe { Object::open("/home/example.so")? };
     let render_fn = example_obj
-        .get::<_, extern "C" fn(abi::Aabb2D<f32>) -> abi::RenderPass>("render")
+        .get::<_, for<'a> extern "C" fn(&'a abi::Aabb2D<f32>) -> abi::RenderPass<'a>>("render")
         .ok_or(anyhow::anyhow!(
             "Could not find render function for example program"
         ))?;
@@ -732,33 +732,42 @@ impl Shell {
                                     println!("{}", line);
                                 }
 
-                                egui::Frame::new().show(ui, |ui| {
+                                egui::Frame::group(ui.style()).show(ui, |ui| {
                                     ui.set_width(ui.available_width());
                                     ui.set_height(ui.available_height());
                                     let rect = ui.available_rect_before_wrap();
-                                    let bounds = abi::Aabb2D {
+                                    let area_bounds = abi::Aabb2D {
                                         x_min: rect.min.x,
                                         x_max: rect.max.x,
                                         y_min: rect.min.y,
                                         y_max: rect.max.y,
                                     };
-                                    let pass = (self.example_program.render)(bounds);
+                                    let pass = (self.example_program.render)(&area_bounds);
                                     let painter = ui.painter_at(rect);
-                                    for layer in pass.layers.into_iter() {
-                                        for object in layer.objects.into_iter() {
+                                    for layer in Into::<Vec<_>>::into(pass.layers) {
+                                        for object in Into::<Vec<_>>::into(layer.objects) {
                                             match object {
                                                 abi::RenderObject::Quad { bounds, color } => {
                                                     painter.rect(
-                                                        Rect::from_min_max(
-                                                            pos2(bounds.x_min, bounds.y_min),
-                                                            pos2(bounds.x_max, bounds.y_max),
-                                                        ),
+                                                        aabb2d_to_rect(bounds),
                                                         0,
-                                                        egui::Color32::from_rgba_premultiplied(
-                                                            color.r, color.g, color.b, color.a,
-                                                        ),
+                                                        rgba_to_color32(color),
                                                         egui::Stroke::NONE,
                                                         egui::StrokeKind::Middle,
+                                                    );
+                                                }
+                                                abi::RenderObject::Text {
+                                                    text,
+                                                    bounds,
+                                                    color,
+                                                    font_size,
+                                                } => {
+                                                    painter.text(
+                                                        pos2(bounds.x_min, bounds.y_min),
+                                                        egui::Align2::CENTER_CENTER,
+                                                        text,
+                                                        egui::FontId::proportional(font_size),
+                                                        rgba_to_color32(color),
                                                     );
                                                 }
                                             }
@@ -1644,6 +1653,19 @@ fn run_abi_tests() -> Result<()> {
 
 
 struct Program {
-    render: object::Ptr<extern "C" fn(abi::Aabb2D<f32>) -> abi::RenderPass>,
+    render: object::Ptr<for<'a> extern "C" fn(&'a abi::Aabb2D<f32>) -> abi::RenderPass<'a>>,
     _obj: Object,
+}
+
+
+
+fn rgba_to_color32(color: abi::Rgba<u8>) -> egui::Color32 {
+    egui::Color32::from_rgba_premultiplied(color.r, color.g, color.b, color.a)
+}
+
+fn aabb2d_to_rect(bounds: abi::Aabb2D<f32>) -> Rect {
+    Rect::from_min_max(
+        pos2(bounds.x_min, bounds.y_min),
+        pos2(bounds.x_max, bounds.y_max),
+    )
 }
