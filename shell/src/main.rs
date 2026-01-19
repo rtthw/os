@@ -67,7 +67,8 @@ fn main() -> Result<()> {
 
     info!("Compiling example program...");
 
-    compiler::run("/lib/example.rs", "example.so");
+    let example_program_text = std::fs::read_to_string("/lib/example.rs")?;
+    compiler::run(&example_program_text, "example.rs", "example.so");
 
     info!("Loading example program...");
 
@@ -78,10 +79,10 @@ fn main() -> Result<()> {
             "Could not find render function for example program"
         ))?;
 
-    let example_program = Program {
+    let example_program = Some(Program {
         render: render_fn,
         _obj: example_obj,
-    };
+    });
 
     let gpu = GraphicsCard::open("/dev/dri/card0")?;
 
@@ -446,6 +447,8 @@ fn main() -> Result<()> {
         cursor_data,
         cursor_buffer,
         example_program,
+        example_program_text,
+        editing_example: false,
     };
 
     shell.render()?;
@@ -616,7 +619,9 @@ pub struct Shell {
     cursor_icon: CursorIcon,
     cursor_data: HashMap<CursorIcon, CursorData>,
     cursor_buffer: gbm::BufferObject<()>,
-    example_program: Program,
+    example_program: Option<Program>,
+    example_program_text: String,
+    editing_example: bool,
 }
 
 impl Shell {
@@ -732,9 +737,35 @@ impl Shell {
                                     println!("{}", line);
                                 }
 
+                                let mut recompile_example = false;
+
                                 egui::Frame::group(ui.style()).show(ui, |ui| {
                                     ui.set_width(ui.available_width());
                                     ui.set_height(ui.available_height());
+
+                                    if self.editing_example {
+                                        ui.horizontal_wrapped(|ui| {
+                                            if ui.button("Cancel").clicked() {
+                                                self.editing_example = false;
+                                            }
+                                            if ui.button("Confirm").clicked() {
+                                                self.editing_example = false;
+                                                recompile_example = true;
+                                            }
+                                        });
+                                        ui.add(
+                                            egui::TextEdit::multiline(
+                                                &mut self.example_program_text,
+                                            )
+                                            .font(egui::FontId::monospace(20.0))
+                                            .desired_width(ui.available_width()),
+                                        );
+                                        return;
+                                    }
+                                    if ui.button("Edit").clicked() {
+                                        self.editing_example = true;
+                                    }
+
                                     let rect = ui.available_rect_before_wrap();
                                     let area_bounds = abi::Aabb2D {
                                         x_min: rect.min.x,
@@ -742,7 +773,9 @@ impl Shell {
                                         y_min: rect.min.y,
                                         y_max: rect.max.y,
                                     };
-                                    let pass = (self.example_program.render)(&area_bounds);
+                                    let pass = (self.example_program.as_ref().unwrap().render)(
+                                        &area_bounds,
+                                    );
                                     let painter = ui.painter_at(rect);
                                     for layer in Into::<Vec<_>>::into(pass.layers) {
                                         for object in Into::<Vec<_>>::into(layer.objects) {
@@ -774,6 +807,40 @@ impl Shell {
                                         }
                                     }
                                 });
+
+                                if recompile_example {
+                                    compiler::run(
+                                        &self.example_program_text,
+                                        "example.rs",
+                                        "example.so",
+                                    );
+
+                                    // We need to drop the previous shared object before reloading
+                                    // because `dlopen` won't load the new version if there are
+                                    // references to the old one.
+                                    drop(self.example_program.take());
+
+                                    let example_obj = unsafe {
+                                        Object::open("/home/example.so")
+                                            .expect("failed to open example program object")
+                                    };
+                                    let render_fn = example_obj
+                                        .get::<_, for<'a> extern "C" fn(
+                                            &'a abi::Aabb2D<f32>,
+                                        )
+                                            -> abi::RenderPass<'a>>(
+                                            "render"
+                                        )
+                                        .ok_or(anyhow::anyhow!(
+                                            "Could not find render function for example program"
+                                        ))
+                                        .unwrap();
+
+                                    self.example_program = Some(Program {
+                                        render: render_fn,
+                                        _obj: example_obj,
+                                    });
+                                }
                             });
                     });
             });
@@ -1609,7 +1676,11 @@ abi::declare! {
 fn run_abi_tests() -> Result<()> {
     info!("Compiling ABI tests...");
 
-    compiler::run("/lib/abi_tests.rs", "abi_tests.so");
+    compiler::run(
+        &std::fs::read_to_string("/lib/abi_tests.rs")?,
+        "abi_tests.rs",
+        "abi_tests.so",
+    );
 
     info!("Running ABI tests...");
 

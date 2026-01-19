@@ -2,7 +2,7 @@
 
 
 
-pub fn run(path: &str, output_filename: &str) {
+pub fn run(content: &str, input_filename: &str, output_filename: &str) {
     let config = interface::Config {
         opts: session::config::Options {
             crate_types: vec![session::config::CrateType::Cdylib],
@@ -40,7 +40,10 @@ pub fn run(path: &str, output_filename: &str) {
         },
         crate_cfg: Vec::new(),
         crate_check_cfg: Vec::new(),
-        input: session::config::Input::File(path.into()),
+        input: session::config::Input::Str {
+            name: span::FileName::Custom(input_filename.into()),
+            input: content.into(),
+        },
         output_dir: None,
         output_file: None,
         file_loader: None,
