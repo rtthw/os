@@ -10,11 +10,6 @@ cd ..
 cargo build --release --target x86_64-unknown-linux-musl --bin init || exit
 cargo build --release --target x86_64-unknown-linux-gnu --bin shell || exit
 
-# Build the testing program.
-cd testing
-    cargo build --release --target x86_64-unknown-linux-gnu || exit
-cd ..
-
 cd build
 
 # Create the initial RAM disk.
@@ -35,12 +30,9 @@ cd initrd
     cp ../../target/x86_64-unknown-linux-gnu/release/shell ../rootfs/sbin/
     chmod +x ../rootfs/sbin/shell
 
-    # Put the testing program where the shell can find it.
-    cp ../../target/x86_64-unknown-linux-gnu/release/libtesting.so ../rootfs/usr/bin/
-    mv ../rootfs/usr/bin/libtesting.so ../rootfs/usr/bin/testing
-
     # Put the ABI where the compiler can find it.
     cp ../../target/x86_64-unknown-linux-gnu/release/libabi.rlib ../rootfs/lib/
+    cp ../../abi-tests/src/abi_tests.rs ../rootfs/lib/
 
     # Populate the image.
     find | cpio -o -H newc | gzip -1 -n > ../initrd.cpio

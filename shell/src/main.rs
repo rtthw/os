@@ -59,22 +59,22 @@ fn main() -> Result<()> {
 
     log::Logger::default().init()?;
 
-    info!("Compiling ABI test suite...");
+    info!("Compiling ABI tests...");
 
-    compiler::run();
+    compiler::run("/lib/abi_tests.rs", "abi_tests.so");
 
-    info!("Running ABI test suite...");
+    info!("Running ABI tests...");
 
-    let abi_test_suite_obj = unsafe { Object::open("/home/abi_test_suite.so")? };
-    let f32_type_id_fn = abi_test_suite_obj
+    let abi_tests_obj = unsafe { Object::open("/home/abi_tests.so")? };
+    let f32_type_id_fn = abi_tests_obj
         .get::<_, extern "C" fn() -> u128>("f32_id_as_u128")
         .ok_or(anyhow::anyhow!(
-            "Could not find function for abi_test_suite program"
+            "Could not find function for abi_tests program"
         ))?;
-    let path_type_id_fn = abi_test_suite_obj
+    let path_type_id_fn = abi_tests_obj
         .get::<_, extern "C" fn() -> u128>("abi_path_id_as_u128")
         .ok_or(anyhow::anyhow!(
-            "Could not find function for abi_test_suite program"
+            "Could not find function for abi_tests program"
         ))?;
 
     let id_of_f32 = unsafe { std::mem::transmute::<_, u128>(std::any::TypeId::of::<f32>()) };
@@ -88,27 +88,6 @@ fn main() -> Result<()> {
 
     assert_eq!(id_of_f32, (f32_type_id_fn)());
     assert_eq!(id_of_path, (path_type_id_fn)());
-
-    info!("Running test program...");
-
-    let testing_obj = unsafe { Object::open("/usr/bin/testing")? };
-    let manifest = testing_obj
-        .get::<_, *mut abi::Manifest>("__MANIFEST")
-        .ok_or(anyhow::anyhow!("Could not find manifest for test program"))?;
-    'run_test_program: {
-        let man = unsafe { &**manifest };
-        if man.abi_version != abi::VERSION {
-            warn!(
-                "Test program was built for a different ABI than the one currently running: \
-                expected {}, got {}",
-                abi::VERSION,
-                man.abi_version,
-            );
-            break 'run_test_program;
-        }
-
-        (man.entry_point)();
-    }
 
     info!("Starting shell...");
 

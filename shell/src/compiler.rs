@@ -2,7 +2,7 @@
 
 
 
-pub fn run() {
+pub fn run(path: &str, output_filename: &str) {
     let config = interface::Config {
         opts: session::config::Options {
             crate_types: vec![session::config::CrateType::Cdylib],
@@ -27,9 +27,7 @@ pub fn run() {
             incremental: None, // TODO: Use incremental compilation.
             output_types: session::config::OutputTypes::new(&[(
                 session::config::OutputType::Exe,
-                Some(session::config::OutFileName::Real(
-                    "abi_test_suite.so".into(),
-                )),
+                Some(session::config::OutFileName::Real(output_filename.into())),
             )]),
             cg: session::config::CodegenOptions {
                 opt_level: "2".into(),
@@ -42,23 +40,7 @@ pub fn run() {
         },
         crate_cfg: Vec::new(),
         crate_check_cfg: Vec::new(),
-        input: session::config::Input::Str {
-            name: span::FileName::Custom("abi_test_suite.rs".into()),
-            input: r#"
-                extern crate abi;
-
-                #[unsafe(no_mangle)]
-                pub extern "C" fn f32_id_as_u128() -> u128 {
-                    unsafe { std::mem::transmute(std::any::TypeId::of::<f32>()) }
-                }
-
-                #[unsafe(no_mangle)]
-                pub extern "C" fn abi_path_id_as_u128() -> u128 {
-                    unsafe { std::mem::transmute(std::any::TypeId::of::<abi::Path>()) }
-                }
-                "#
-            .into(),
-        },
+        input: session::config::Input::File(path.into()),
         output_dir: None,
         output_file: None,
         file_loader: None,
@@ -83,10 +65,6 @@ pub fn run() {
             for id in tcx.hir_free_items() {
                 let item = tcx.hir_item(id);
                 match item.kind {
-                    hir::ItemKind::Fn { ident, .. } => {
-                        let ty = tcx.type_of(item.hir_id().owner.def_id);
-                        println!("{ident:?}:\t{ty:?}");
-                    }
                     _ => {}
                 }
             }
