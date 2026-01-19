@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["abi", "abi-tests", "init", "kernel", "shell"]
+members = ["abi", "abi-tests", "example", "init", "kernel", "shell"]
 
 [workspace.package]
 version = "0.1.0"

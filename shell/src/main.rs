@@ -65,6 +65,24 @@ fn main() -> Result<()> {
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 
+    info!("Compiling example program...");
+
+    compiler::run("/lib/example.rs", "example.so");
+
+    info!("Loading example program...");
+
+    let example_obj = unsafe { Object::open("/home/example.so")? };
+    let render_fn = example_obj
+        .get::<_, extern "C" fn(abi::Aabb2D<f32>) -> abi::RenderPass>("render")
+        .ok_or(anyhow::anyhow!(
+            "Could not find render function for example program"
+        ))?;
+
+    let example_program = Program {
+        render: render_fn,
+        _obj: example_obj,
+    };
+
     let gpu = GraphicsCard::open("/dev/dri/card0")?;
 
     let display = unsafe {
@@ -427,6 +445,7 @@ fn main() -> Result<()> {
         cursor_icon: CursorIcon::Default,
         cursor_data,
         cursor_buffer,
+        example_program,
     };
 
     shell.render()?;
@@ -597,6 +616,7 @@ pub struct Shell {
     cursor_icon: CursorIcon,
     cursor_data: HashMap<CursorIcon, CursorData>,
     cursor_buffer: gbm::BufferObject<()>,
+    example_program: Program,
 }
 
 impl Shell {
@@ -711,6 +731,40 @@ impl Shell {
                                     let line: String = self.input_buffer.drain(..).collect();
                                     println!("{}", line);
                                 }
+
+                                egui::Frame::new().show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    ui.set_height(ui.available_height());
+                                    let rect = ui.available_rect_before_wrap();
+                                    let bounds = abi::Aabb2D {
+                                        x_min: rect.min.x,
+                                        x_max: rect.max.x,
+                                        y_min: rect.min.y,
+                                        y_max: rect.max.y,
+                                    };
+                                    let pass = (self.example_program.render)(bounds);
+                                    let painter = ui.painter_at(rect);
+                                    for layer in pass.layers.into_iter() {
+                                        for object in layer.objects.into_iter() {
+                                            match object {
+                                                abi::RenderObject::Quad { bounds, color } => {
+                                                    painter.rect(
+                                                        Rect::from_min_max(
+                                                            pos2(bounds.x_min, bounds.y_min),
+                                                            pos2(bounds.x_max, bounds.y_max),
+                                                        ),
+                                                        0,
+                                                        egui::Color32::from_rgba_premultiplied(
+                                                            color.r, color.g, color.b, color.a,
+                                                        ),
+                                                        egui::Stroke::NONE,
+                                                        egui::StrokeKind::Middle,
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
                             });
                     });
             });
@@ -1566,8 +1620,8 @@ fn run_abi_tests() -> Result<()> {
     let real_path_id =
         unsafe { std::mem::transmute::<_, u128>(std::any::TypeId::of::<abi::Path>()) };
 
-    let abi_f32_id = (path_type_id_fn)();
-    let abi_path_id = (f32_type_id_fn)();
+    let abi_f32_id = (f32_type_id_fn)();
+    let abi_path_id = (path_type_id_fn)();
 
     debug!("\tTypeId::of::<f32>() \t= {}", real_f32_id);
     debug!("\tabi_f32_id \t\t= {}", abi_f32_id);
@@ -1585,4 +1639,11 @@ fn run_abi_tests() -> Result<()> {
     info!("All ABI tests passed");
 
     Ok(())
+}
+
+
+
+struct Program {
+    render: object::Ptr<extern "C" fn(abi::Aabb2D<f32>) -> abi::RenderPass>,
+    _obj: Object,
 }

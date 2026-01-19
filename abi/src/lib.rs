@@ -81,3 +81,44 @@ macro_rules! declare {
         )*
     };
 }
+
+
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct Aabb2D<V> {
+    pub x_min: V,
+    pub x_max: V,
+    pub y_min: V,
+    pub y_max: V,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct Rgba<V> {
+    pub r: V,
+    pub g: V,
+    pub b: V,
+    pub a: V,
+}
+
+
+
+#[repr(C)]
+pub struct RenderPass {
+    pub bounds: Aabb2D<f32>,
+    pub layers: Vec<RenderLayer>,
+}
+
+#[repr(C)]
+pub struct RenderLayer {
+    pub objects: Vec<RenderObject>,
+}
+
+#[repr(C)]
+pub enum RenderObject {
+    Quad {
+        bounds: Aabb2D<f32>,
+        color: Rgba<u8>,
+    },
+}

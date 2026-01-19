@@ -34,6 +34,9 @@ cd initrd
     cp ../../target/x86_64-unknown-linux-gnu/release/libabi.rlib ../rootfs/lib/
     cp ../../abi-tests/src/abi_tests.rs ../rootfs/lib/
 
+    # Put the example program where the compiler can find it.
+    cp ../../example/src/example.rs ../rootfs/lib/
+
     # Populate the image.
     find | cpio -o -H newc | gzip -1 -n > ../initrd.cpio
 
