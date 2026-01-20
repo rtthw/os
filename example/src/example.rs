@@ -1,10 +1,17 @@
 //! # Example Program
 
+#![forbid(unsafe_code)]
+
 extern crate abi;
 
 
 
-#[unsafe(no_mangle)]
+abi::manifest! {
+    name: "example",
+    render: render,
+    dependencies: &[],
+}
+
 pub extern "C" fn render<'a>(bounds: &'a abi::Aabb2D<f32>) -> abi::RenderPass<'a> {
     let width = bounds.x_max - bounds.x_min;
     let height = bounds.y_max - bounds.y_min;

@@ -1651,14 +1651,20 @@ impl Program {
         drop(self.object.take());
 
         let handle = unsafe { Object::open(format!("/home/{}.so", self.name).as_str())? };
-        let render_fn = handle
-            .get::<_, for<'a> extern "C" fn(&'a abi::Aabb2D<f32>) -> abi::RenderPass<'a>>("render")
-            .ok_or(anyhow::anyhow!(
-                "Could not find render function for example program"
-            ))?;
+        let manifest = handle.get("__MANIFEST").ok_or(anyhow::anyhow!(
+            "Could not find manifest for program '{}'",
+            self.name,
+        ))?;
+        // let render_fn = handle
+        //     .get::<_, for<'a> extern "C" fn(&'a abi::Aabb2D<f32>) ->
+        // abi::RenderPass<'a>>("render")     .ok_or(anyhow::anyhow!(
+        //         "Could not find manifest for program '{}'",
+        //         self.name,
+        //     ))?;
 
         self.object = Some(ProgramObject {
-            render: render_fn,
+            manifest,
+            // render: render_fn,
             _handle: handle,
         });
 
@@ -1714,7 +1720,8 @@ impl Program {
                 y_min: rect.min.y,
                 y_max: rect.max.y,
             };
-            let pass = (self.object.as_ref().unwrap().render)(&area_bounds);
+            let pass =
+                ((unsafe { &**self.object.as_ref().unwrap().manifest }).render)(&area_bounds);
             let painter = ui.painter_at(rect);
             for layer in Into::<Vec<_>>::into(pass.layers) {
                 for object in Into::<Vec<_>>::into(layer.objects) {
@@ -1752,7 +1759,8 @@ impl Program {
 }
 
 struct ProgramObject {
-    render: object::Ptr<for<'a> extern "C" fn(&'a abi::Aabb2D<f32>) -> abi::RenderPass<'a>>,
+    manifest: object::Ptr<*const abi::Manifest>,
+    // render: object::Ptr<for<'a> extern "C" fn(&'a abi::Aabb2D<f32>) -> abi::RenderPass<'a>>,
     _handle: Object,
 }
 
