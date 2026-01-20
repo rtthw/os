@@ -8,62 +8,68 @@ extern crate abi;
 
 abi::manifest! {
     name: "example",
-    render: render,
+    init: || Box::new(App { field: 2.0 }),
     dependencies: &[],
 }
 
-pub extern "C" fn render<'a>(bounds: &'a abi::Aabb2D<f32>) -> abi::RenderPass<'a> {
-    let width = bounds.x_max - bounds.x_min;
-    let height = bounds.y_max - bounds.y_min;
+struct App {
+    field: f32,
+}
 
-    let center_x = width / 2.0;
-    let center_y = height / 2.0;
+impl abi::App for App {
+    fn render(&mut self, bounds: abi::Aabb2D<f32>) -> abi::RenderPass<'_> {
+        let width = bounds.x_max - bounds.x_min;
+        let height = bounds.y_max - bounds.y_min;
 
-    abi::RenderPass {
-        bounds: *bounds,
-        layers: vec![abi::RenderLayer {
-            objects: vec![
-                abi::RenderObject::Quad {
-                    bounds: *bounds,
-                    color: abi::Rgba {
-                        r: 0x11,
-                        g: 0x11,
-                        b: 0x11,
-                        a: 0xff,
+        let center_x = width / self.field;
+        let center_y = height / self.field;
+
+        abi::RenderPass {
+            bounds: bounds,
+            layers: vec![abi::RenderLayer {
+                objects: vec![
+                    abi::RenderObject::Quad {
+                        bounds: bounds,
+                        color: abi::Rgba {
+                            r: 0x11,
+                            g: 0x11,
+                            b: 0x11,
+                            a: 0xff,
+                        },
                     },
-                },
-                abi::RenderObject::Quad {
-                    bounds: abi::Aabb2D {
-                        x_min: bounds.x_min + center_x - 40.0,
-                        x_max: bounds.x_min + center_x + 40.0,
-                        y_min: bounds.y_min + center_y - 12.0,
-                        y_max: bounds.y_min + center_y + 14.0,
+                    abi::RenderObject::Quad {
+                        bounds: abi::Aabb2D {
+                            x_min: bounds.x_min + center_x - 40.0,
+                            x_max: bounds.x_min + center_x + 40.0,
+                            y_min: bounds.y_min + center_y - 12.0,
+                            y_max: bounds.y_min + center_y + 14.0,
+                        },
+                        color: abi::Rgba {
+                            r: 0xd9,
+                            g: 0x6d,
+                            b: 0x81,
+                            a: 0xff,
+                        },
                     },
-                    color: abi::Rgba {
-                        r: 0xd9,
-                        g: 0x6d,
-                        b: 0x81,
-                        a: 0xff,
+                    abi::RenderObject::Text {
+                        text: "Example".into(),
+                        bounds: abi::Aabb2D {
+                            x_min: bounds.x_min + center_x,
+                            y_min: bounds.y_min + center_y,
+                            ..bounds
+                        },
+                        color: abi::Rgba {
+                            r: 0x1e,
+                            g: 0x1e,
+                            b: 0x22,
+                            a: 0xff,
+                        },
+                        font_size: 20.0,
                     },
-                },
-                abi::RenderObject::Text {
-                    text: "Example".into(),
-                    bounds: abi::Aabb2D {
-                        x_min: bounds.x_min + center_x,
-                        y_min: bounds.y_min + center_y,
-                        ..*bounds
-                    },
-                    color: abi::Rgba {
-                        r: 0x1e,
-                        g: 0x1e,
-                        b: 0x22,
-                        a: 0xff,
-                    },
-                    font_size: 20.0,
-                },
-            ]
+                ]
+                .into(),
+            }]
             .into(),
-        }]
-        .into(),
+        }
     }
 }

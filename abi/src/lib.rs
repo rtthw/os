@@ -17,10 +17,14 @@ pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 
 
+pub trait App {
+    fn render(&mut self, bounds: Aabb2D<f32>) -> RenderPass<'_>;
+}
+
 #[derive(Debug)]
 pub struct Manifest {
     pub name: &'static str,
-    pub render: for<'a> extern "C" fn(&'a Aabb2D<f32>) -> RenderPass<'a>,
+    pub init: fn() -> alloc::boxed::Box<dyn App>,
     pub dependencies: &'static [&'static str],
     pub abi_version: &'static str,
 }
@@ -29,13 +33,13 @@ pub struct Manifest {
 macro_rules! manifest {
     (
         name: $name_def:expr,
-        render: $render_def:expr,
+        init: $init_def:expr,
         dependencies: $dependencies_def:expr,
     ) => {
         #[unsafe(no_mangle)]
         pub static __MANIFEST: $crate::Manifest = $crate::Manifest {
             name: $name_def,
-            render: $render_def,
+            init: $init_def,
             dependencies: $dependencies_def,
             abi_version: $crate::VERSION,
         };
