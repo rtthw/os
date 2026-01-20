@@ -8,7 +8,10 @@ extern crate abi;
 
 abi::manifest! {
     name: "example",
-    init: || Box::new(App { field: 2.0 }),
+    init: || {
+        use abi::App as _;
+        App { field: 2.0 }.wrap()
+    },
     dependencies: &[],
 }
 
@@ -16,7 +19,7 @@ struct App {
     field: f32,
 }
 
-impl abi::App for App {
+impl abi::App<Update> for App {
     fn render(&mut self, bounds: abi::Aabb2D<f32>) -> abi::RenderPass<'_> {
         let width = bounds.x_max - bounds.x_min;
         let height = bounds.y_max - bounds.y_min;
@@ -66,10 +69,31 @@ impl abi::App for App {
                         },
                         font_size: 20.0,
                     },
+                    abi::RenderObject::Button {
+                        text: "Click Me".into(),
+                        on_click: || Box::new(Update::ChangeField(5.0)),
+                    },
                 ]
                 .into(),
             }]
             .into(),
         }
     }
+
+    fn update(&mut self, update: Update) -> Result<(), &'static str> {
+        match update {
+            Update::ChangeField(value) => {
+                if value == 0.0 {
+                    return Err("cannot divide by zero");
+                }
+                self.field = value;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+enum Update {
+    ChangeField(f32),
 }

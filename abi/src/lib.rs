@@ -13,18 +13,66 @@ pub mod vec;
 
 pub use {path::Path, string::String, vec::Vec};
 
+use {alloc::boxed::Box, core::any::Any};
+
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 
 
-pub trait App {
+pub trait App<U: Any> {
     fn render(&mut self, bounds: Aabb2D<f32>) -> RenderPass<'_>;
+
+    fn update(&mut self, update: U) -> Result<(), &'static str>;
+
+    /// Convert this concrete application instance into a [`WrappedApp`] for
+    /// passing across ABI boundaries.
+    fn wrap(self) -> Box<dyn WrappedApp>
+    where
+        Self: Sized + 'static,
+    {
+        struct Wrapper<A: App<U>, U: Any> {
+            app: A,
+            _update_type: core::marker::PhantomData<fn() -> U>,
+        }
+
+        impl<A: App<U>, U: Any> WrappedApp for Wrapper<A, U> {
+            fn render(&mut self, bounds: Aabb2D<f32>) -> RenderPass<'_> {
+                self.app.render(bounds)
+            }
+
+            fn update(&mut self, update: Box<dyn Any>) -> Result<(), &'static str> {
+                match update.downcast::<U>() {
+                    Ok(update) => {
+                        self.app.update(*update)?;
+                        Ok(())
+                    }
+                    Err(_value) => Err("invalid type"),
+                }
+            }
+        }
+
+        Box::new(Wrapper {
+            app: self,
+            _update_type: core::marker::PhantomData,
+        })
+    }
+}
+
+/// Wrapper type necessary for soundly interacting with generic [`App`]
+/// instances.
+///
+/// See [`App::wrap`] for implementation details.
+pub trait WrappedApp {
+    /// Transparently calls [`App::render`].
+    fn render(&mut self, bounds: Aabb2D<f32>) -> RenderPass<'_>;
+    /// Pass a type-erased update to the underlying [`App`].
+    fn update(&mut self, update: Box<dyn Any>) -> Result<(), &'static str>;
 }
 
 #[derive(Debug)]
 pub struct Manifest {
     pub name: &'static str,
-    pub init: fn() -> alloc::boxed::Box<dyn App>,
+    pub init: fn() -> Box<dyn WrappedApp>,
     pub dependencies: &'static [&'static str],
     pub abi_version: &'static str,
 }
@@ -130,5 +178,9 @@ pub enum RenderObject<'a> {
         bounds: Aabb2D<f32>,
         color: Rgba<u8>,
         font_size: f32,
+    },
+    Button {
+        text: alloc::borrow::Cow<'a, str>,
+        on_click: fn() -> Box<dyn Any>,
     },
 }

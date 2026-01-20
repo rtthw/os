@@ -26,10 +26,10 @@ pub extern "C" fn id_of_path() -> u128 {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn id_of_dyn_app() -> u128 {
-    unsafe { transmute(TypeId::of::<dyn abi::App>()) }
+    unsafe { transmute(TypeId::of::<dyn abi::WrappedApp>()) }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn id_of_box_dyn_app() -> u128 {
-    unsafe { transmute(TypeId::of::<Box<dyn abi::App>>()) }
+    unsafe { transmute(TypeId::of::<Box<dyn abi::WrappedApp>>()) }
 }

@@ -1596,8 +1596,9 @@ fn run_abi_tests() -> Result<()> {
 
     let real_f32_id = unsafe { transmute::<_, u128>(TypeId::of::<f32>()) };
     let real_path_id = unsafe { transmute::<_, u128>(TypeId::of::<abi::Path>()) };
-    let real_dyn_app_id = unsafe { transmute::<_, u128>(TypeId::of::<dyn abi::App>()) };
-    let real_box_dyn_app_id = unsafe { transmute::<_, u128>(TypeId::of::<Box<dyn abi::App>>()) };
+    let real_dyn_app_id = unsafe { transmute::<_, u128>(TypeId::of::<dyn abi::WrappedApp>()) };
+    let real_box_dyn_app_id =
+        unsafe { transmute::<_, u128>(TypeId::of::<Box<dyn abi::WrappedApp>>()) };
 
     debug!("\tTypeId::of::<f32>() \t\t\t= {}", real_f32_id);
     debug!("\tf32_id \t\t\t\t\t= {}", abi_f32_id);
@@ -1748,35 +1749,51 @@ impl Program {
                 y_min: rect.min.y,
                 y_max: rect.max.y,
             };
-            let pass = self.object.as_mut().unwrap().app.render(area_bounds);
-            let painter = ui.painter_at(rect);
-            for layer in Into::<Vec<_>>::into(pass.layers) {
-                for object in Into::<Vec<_>>::into(layer.objects) {
-                    match object {
-                        abi::RenderObject::Quad { bounds, color } => {
-                            painter.rect(
-                                aabb2d_to_rect(bounds),
-                                0,
-                                rgba_to_color32(color),
-                                egui::Stroke::NONE,
-                                egui::StrokeKind::Middle,
-                            );
-                        }
-                        abi::RenderObject::Text {
-                            text,
-                            bounds,
-                            color,
-                            font_size,
-                        } => {
-                            painter.text(
-                                pos2(bounds.x_min, bounds.y_min),
-                                egui::Align2::CENTER_CENTER,
+
+            let mut next_update: Option<Box<dyn std::any::Any>> = None;
+
+            {
+                let pass = self.object.as_mut().unwrap().app.render(area_bounds);
+                let painter = ui.painter_at(rect);
+                for layer in Into::<Vec<_>>::into(pass.layers) {
+                    for object in Into::<Vec<_>>::into(layer.objects) {
+                        match object {
+                            abi::RenderObject::Quad { bounds, color } => {
+                                painter.rect(
+                                    aabb2d_to_rect(bounds),
+                                    0,
+                                    rgba_to_color32(color),
+                                    egui::Stroke::NONE,
+                                    egui::StrokeKind::Middle,
+                                );
+                            }
+                            abi::RenderObject::Text {
                                 text,
-                                egui::FontId::proportional(font_size),
-                                rgba_to_color32(color),
-                            );
+                                bounds,
+                                color,
+                                font_size,
+                            } => {
+                                painter.text(
+                                    pos2(bounds.x_min, bounds.y_min),
+                                    egui::Align2::CENTER_CENTER,
+                                    text,
+                                    egui::FontId::proportional(font_size),
+                                    rgba_to_color32(color),
+                                );
+                            }
+                            abi::RenderObject::Button { text, on_click } => {
+                                if ui.button(text).clicked() {
+                                    next_update = Some((on_click)());
+                                }
+                            }
                         }
                     }
+                }
+            }
+
+            if let Some(update) = next_update {
+                if let Err(err) = self.object.as_mut().unwrap().app.update(update) {
+                    error!(target: "app", "{err}");
                 }
             }
         });
@@ -1786,7 +1803,7 @@ impl Program {
 }
 
 struct ProgramObject {
-    app: Box<dyn abi::App>,
+    app: Box<dyn abi::WrappedApp>,
     _manifest: object::Ptr<*const abi::Manifest>,
     _handle: Object,
 }
