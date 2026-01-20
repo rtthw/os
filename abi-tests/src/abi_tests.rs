@@ -1,7 +1,8 @@
 //! # Testing Application
 
-
 extern crate abi;
+
+use std::{any::TypeId, mem::transmute};
 
 abi::include! {
     mod shell {
@@ -14,14 +15,21 @@ abi::include! {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn f32_id_as_u128() -> u128 {
-    unsafe {
-        shell::debug("abi_test_suite::shell::debug");
-        std::mem::transmute(std::any::TypeId::of::<f32>())
-    }
+pub extern "C" fn id_of_f32() -> u128 {
+    unsafe { transmute(TypeId::of::<f32>()) }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn abi_path_id_as_u128() -> u128 {
-    unsafe { std::mem::transmute(std::any::TypeId::of::<abi::Path>()) }
+pub extern "C" fn id_of_path() -> u128 {
+    unsafe { transmute(TypeId::of::<abi::Path>()) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn id_of_dyn_app() -> u128 {
+    unsafe { transmute(TypeId::of::<dyn abi::App>()) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn id_of_box_dyn_app() -> u128 {
+    unsafe { transmute(TypeId::of::<Box<dyn abi::App>>()) }
 }
