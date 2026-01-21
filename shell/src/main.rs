@@ -1742,56 +1742,12 @@ impl Program {
                 self.editing = true;
             }
 
-            let rect = ui.available_rect_before_wrap();
-            let area_bounds = abi::Aabb2D {
-                x_min: rect.min.x,
-                x_max: rect.max.x,
-                y_min: rect.min.y,
-                y_max: rect.max.y,
+            let mut renderer = Renderer {
+                ui,
+                next_update: None,
             };
-
-            let mut next_update: Option<Box<dyn std::any::Any>> = None;
-
-            {
-                let pass = self.object.as_mut().unwrap().app.render(area_bounds);
-                let painter = ui.painter_at(rect);
-                for layer in Into::<Vec<_>>::into(pass.layers) {
-                    for object in Into::<Vec<_>>::into(layer.objects) {
-                        match object {
-                            abi::RenderObject::Quad { bounds, color } => {
-                                painter.rect(
-                                    aabb2d_to_rect(bounds),
-                                    0,
-                                    rgba_to_color32(color),
-                                    egui::Stroke::NONE,
-                                    egui::StrokeKind::Middle,
-                                );
-                            }
-                            abi::RenderObject::Text {
-                                text,
-                                bounds,
-                                color,
-                                font_size,
-                            } => {
-                                painter.text(
-                                    pos2(bounds.x_min, bounds.y_min),
-                                    egui::Align2::CENTER_CENTER,
-                                    text,
-                                    egui::FontId::proportional(font_size),
-                                    rgba_to_color32(color),
-                                );
-                            }
-                            abi::RenderObject::Button { text, on_click } => {
-                                if ui.button(text).clicked() {
-                                    next_update = Some((on_click)());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if let Some(update) = next_update {
+            self.object.as_mut().unwrap().app.view(&mut renderer);
+            if let Some(update) = renderer.next_update {
                 if let Err(err) = self.object.as_mut().unwrap().app.update(update) {
                     error!(target: "app", "{err}");
                 }
@@ -1819,4 +1775,32 @@ fn aabb2d_to_rect(bounds: abi::Aabb2D<f32>) -> Rect {
         pos2(bounds.x_min, bounds.y_min),
         pos2(bounds.x_max, bounds.y_max),
     )
+}
+
+fn rect_to_aabb2d(bounds: Rect) -> abi::Aabb2D<f32> {
+    abi::Aabb2D {
+        x_min: bounds.min.x,
+        x_max: bounds.max.x,
+        y_min: bounds.min.y,
+        y_max: bounds.max.y,
+    }
+}
+
+
+
+struct Renderer<'a> {
+    ui: &'a mut egui::Ui,
+    next_update: Option<Box<dyn std::any::Any>>,
+}
+
+impl<'a> abi::Renderer for Renderer<'a> {
+    fn bounds(&self) -> abi::Aabb2D<f32> {
+        rect_to_aabb2d(self.ui.available_rect_before_wrap())
+    }
+
+    fn label(&mut self, label: &abi::Label<'_>) {
+        self.ui.label(
+            egui::RichText::new(label.content.to_string()).color(rgba_to_color32(label.color)),
+        );
+    }
 }

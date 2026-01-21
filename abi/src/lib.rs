@@ -23,7 +23,7 @@ pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 
 pub trait App<U: Any> {
-    fn render(&mut self, bounds: Aabb2D<f32>) -> RenderPass<'_>;
+    fn view(&mut self, bounds: Aabb2D<f32>) -> ViewObject<'_, U>;
 
     fn update(&mut self, update: U) -> Result<(), &'static str>;
 
@@ -39,8 +39,8 @@ pub trait App<U: Any> {
         }
 
         impl<A: App<U>, U: Any> WrappedApp for Wrapper<A, U> {
-            fn render(&mut self, bounds: Aabb2D<f32>) -> RenderPass<'_> {
-                self.app.render(bounds)
+            fn view<'a>(&'a mut self, renderer: &mut dyn Renderer) {
+                self.app.view(renderer.bounds()).as_view().render(renderer);
             }
 
             fn update(&mut self, update: Box<dyn Any>) -> Result<(), &'static str> {
@@ -66,8 +66,7 @@ pub trait App<U: Any> {
 ///
 /// See [`App::wrap`] for implementation details.
 pub trait WrappedApp {
-    /// Transparently calls [`App::render`].
-    fn render(&mut self, bounds: Aabb2D<f32>) -> RenderPass<'_>;
+    fn view(&mut self, renderer: &mut dyn Renderer);
     /// Pass a type-erased update to the underlying [`App`].
     fn update(&mut self, update: Box<dyn Any>) -> Result<(), &'static str>;
 }
@@ -184,33 +183,9 @@ pub struct Rgba<V> {
 
 
 
-#[repr(C)]
-pub struct RenderPass<'a> {
-    pub bounds: Aabb2D<f32>,
-    pub layers: Vec<RenderLayer<'a>>,
-}
-
-#[repr(C)]
-pub struct RenderLayer<'a> {
-    pub objects: Vec<RenderObject<'a>>,
-}
-
-#[repr(C)]
-pub enum RenderObject<'a> {
-    Quad {
-        bounds: Aabb2D<f32>,
-        color: Rgba<u8>,
-    },
-    Text {
-        text: Cow<'a, str>,
-        bounds: Aabb2D<f32>,
-        color: Rgba<u8>,
-        font_size: f32,
-    },
-    Button {
-        text: Cow<'a, str>,
-        on_click: fn() -> Box<dyn Any>,
-    },
+pub trait Renderer {
+    fn bounds(&self) -> Aabb2D<f32>;
+    fn label(&mut self, label: &Label<'_>);
 }
 
 
@@ -254,13 +229,6 @@ impl<'a, U> ViewObject<'a, U> {
 }
 
 pub trait View<U> {
-    fn size(&self) -> Xy<Length>;
-
-    #[inline]
-    fn size_hint(&self) -> Xy<Length> {
-        self.size()
-    }
-
     #[allow(unused)]
     fn handle_event(
         &mut self,
@@ -271,30 +239,32 @@ pub trait View<U> {
         mouse_pos: Xy<f32>,
     ) {
     }
+
+    fn render(&self, renderer: &mut dyn Renderer);
 }
 
 pub struct Label<'a> {
     pub content: Cow<'a, str>,
-    pub width: Length,
-    pub height: Length,
+    pub color: Rgba<u8>,
 }
 
 impl<'a> Label<'a> {
     pub fn new(content: impl Into<Cow<'a, str>>) -> Self {
         Self {
             content: content.into(),
-            width: Length::Shrink,
-            height: Length::Shrink,
+            color: Rgba {
+                r: 0xff,
+                g: 0xff,
+                b: 0xff,
+                a: 0xff,
+            },
         }
     }
 }
 
 impl<'a, U> View<U> for Label<'a> {
-    fn size(&self) -> Xy<Length> {
-        Xy {
-            x: self.width,
-            y: self.height,
-        }
+    fn render(&self, renderer: &mut dyn Renderer) {
+        renderer.label(self);
     }
 }
 
@@ -302,20 +272,13 @@ impl<'a, U> View<U> for Label<'a> {
 pub struct Clickable<'a, U> {
     pub content: ViewObject<'a, U>,
     pub update: Option<fn() -> U>,
-    pub width: Length,
-    pub height: Length,
 }
 
 impl<'a, U> Clickable<'a, U> {
     pub fn new(content: impl View<U> + 'a) -> Self {
-        let content = ViewObject::new(content);
-        let size_hint = content.as_view().size_hint();
-
         Self {
-            content,
+            content: ViewObject::new(content),
             update: None,
-            width: size_hint.x,
-            height: size_hint.y,
         }
     }
 
@@ -326,13 +289,6 @@ impl<'a, U> Clickable<'a, U> {
 }
 
 impl<'a, U> View<U> for Clickable<'a, U> {
-    fn size(&self) -> Xy<Length> {
-        Xy {
-            x: self.width,
-            y: self.height,
-        }
-    }
-
     fn handle_event(
         &mut self,
         updates: &mut alloc::vec::Vec<U>,
@@ -363,6 +319,10 @@ impl<'a, U> View<U> for Clickable<'a, U> {
             }
             _ => {}
         }
+    }
+
+    fn render(&self, renderer: &mut dyn Renderer) {
+        self.content.as_view().render(renderer);
     }
 }
 
