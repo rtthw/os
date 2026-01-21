@@ -13,7 +13,10 @@ pub mod vec;
 
 pub use {path::Path, string::String, vec::Vec};
 
-use {alloc::boxed::Box, core::any::Any};
+use {
+    alloc::{borrow::Cow, boxed::Box},
+    core::any::Any,
+};
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -145,6 +148,31 @@ pub struct Aabb2D<V> {
     pub y_max: V,
 }
 
+impl Aabb2D<f32> {
+    pub const fn contains(&self, point: Xy<f32>) -> bool {
+        point.x >= self.x_min
+            && point.x <= self.x_max
+            && point.y >= self.y_min
+            && point.y <= self.y_max
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct Xy<V> {
+    pub x: V,
+    pub y: V,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub enum Length {
+    Fill,
+    Portion(u16),
+    Shrink,
+    Exact(f32),
+}
+
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct Rgba<V> {
@@ -174,13 +202,216 @@ pub enum RenderObject<'a> {
         color: Rgba<u8>,
     },
     Text {
-        text: alloc::borrow::Cow<'a, str>,
+        text: Cow<'a, str>,
         bounds: Aabb2D<f32>,
         color: Rgba<u8>,
         font_size: f32,
     },
     Button {
-        text: alloc::borrow::Cow<'a, str>,
+        text: Cow<'a, str>,
         on_click: fn() -> Box<dyn Any>,
     },
+}
+
+
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub enum InputEvent {
+    MouseButtonDown(MouseButton),
+    MouseButtonUp(MouseButton),
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub enum MouseButton {
+    Primary,
+    Secondary,
+    Middle,
+    Other(u16),
+}
+
+
+
+pub struct ViewObject<'a, U> {
+    inner: Box<dyn View<U> + 'a>,
+}
+
+impl<'a, U> ViewObject<'a, U> {
+    pub fn new(view: impl View<U> + 'a) -> Self {
+        Self {
+            inner: Box::new(view),
+        }
+    }
+
+    pub fn as_view(&self) -> &dyn View<U> {
+        self.inner.as_ref()
+    }
+
+    pub fn as_view_mut(&mut self) -> &mut dyn View<U> {
+        self.inner.as_mut()
+    }
+}
+
+pub trait View<U> {
+    fn size(&self) -> Xy<Length>;
+
+    #[inline]
+    fn size_hint(&self) -> Xy<Length> {
+        self.size()
+    }
+
+    #[allow(unused)]
+    fn handle_event(
+        &mut self,
+        updates: &mut alloc::vec::Vec<U>,
+        event: &InputEvent,
+        captured: &mut bool,
+        bounds: Aabb2D<f32>,
+        mouse_pos: Xy<f32>,
+    ) {
+    }
+}
+
+pub struct Label<'a> {
+    pub content: Cow<'a, str>,
+    pub width: Length,
+    pub height: Length,
+}
+
+impl<'a> Label<'a> {
+    pub fn new(content: impl Into<Cow<'a, str>>) -> Self {
+        Self {
+            content: content.into(),
+            width: Length::Shrink,
+            height: Length::Shrink,
+        }
+    }
+}
+
+impl<'a, U> View<U> for Label<'a> {
+    fn size(&self) -> Xy<Length> {
+        Xy {
+            x: self.width,
+            y: self.height,
+        }
+    }
+}
+
+/// Something that will trigger an update when it is clicked.
+pub struct Clickable<'a, U> {
+    pub content: ViewObject<'a, U>,
+    pub update: Option<fn() -> U>,
+    pub width: Length,
+    pub height: Length,
+}
+
+impl<'a, U> Clickable<'a, U> {
+    pub fn new(content: impl View<U> + 'a) -> Self {
+        let content = ViewObject::new(content);
+        let size_hint = content.as_view().size_hint();
+
+        Self {
+            content,
+            update: None,
+            width: size_hint.x,
+            height: size_hint.y,
+        }
+    }
+
+    pub fn on_click(mut self, update: fn() -> U) -> Self {
+        self.update = Some(update);
+        self
+    }
+}
+
+impl<'a, U> View<U> for Clickable<'a, U> {
+    fn size(&self) -> Xy<Length> {
+        Xy {
+            x: self.width,
+            y: self.height,
+        }
+    }
+
+    fn handle_event(
+        &mut self,
+        updates: &mut alloc::vec::Vec<U>,
+        event: &InputEvent,
+        captured: &mut bool,
+        bounds: Aabb2D<f32>,
+        mouse_pos: Xy<f32>,
+    ) {
+        self.content
+            .as_view_mut()
+            .handle_event(updates, event, captured, bounds, mouse_pos);
+
+        if *captured {
+            return;
+        }
+
+        match event {
+            InputEvent::MouseButtonDown(MouseButton::Primary) => {
+                if !bounds.contains(mouse_pos) {
+                    return;
+                }
+
+                *captured = true;
+
+                if let Some(update) = &self.update {
+                    updates.push(update());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+pub trait AsClickable<'a, U> {
+    fn on_click(self, update: fn() -> U) -> Clickable<'a, U>
+    where
+        Self: Sized;
+}
+
+impl<'a, T: View<U> + 'a, U> AsClickable<'a, U> for T {
+    fn on_click(self, update: fn() -> U) -> Clickable<'a, U>
+    where
+        Self: Sized,
+    {
+        Clickable::new(self).on_click(update)
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec;
+
+    use super::*;
+
+    #[test]
+    fn on_click_syntax() {
+        let _label: Clickable<'_, ()> = Label::new("Something").on_click(|| ());
+    }
+
+    #[test]
+    fn input_event_handling_basics() {
+        let mut label: Clickable<'_, u8> = Label::new("Click Me").on_click(|| 43);
+
+        let mut updates = vec![];
+        let event = InputEvent::MouseButtonDown(MouseButton::Primary);
+        let mut captured = false;
+        let bounds = Aabb2D {
+            x_min: 0.0,
+            x_max: 5.0,
+            y_min: 0.0,
+            y_max: 5.0,
+        };
+        let mouse_pos = Xy { x: 4.1, y: 3.7 };
+
+        label.handle_event(&mut updates, &event, &mut captured, bounds, mouse_pos);
+
+        assert!(captured);
+        assert!(updates.first().is_some_and(|u| *u == 43));
+    }
 }
