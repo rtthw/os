@@ -39,7 +39,7 @@ pub trait App<U: Any> {
         }
 
         impl<A: App<U>, U: Any> WrappedApp for Wrapper<A, U> {
-            fn view<'a>(&'a mut self, renderer: &mut dyn Renderer) {
+            fn render(&mut self, renderer: &mut dyn Renderer) {
                 self.app.view(renderer.bounds()).render(renderer);
             }
 
@@ -51,6 +51,30 @@ pub trait App<U: Any> {
                     }
                     Err(_value) => Err("invalid type"),
                 }
+            }
+
+            fn handle_event(
+                &mut self,
+                event: &InputEvent,
+                bounds: Aabb2D<f32>,
+                mouse_pos: Xy<f32>,
+            ) -> Result<(), &'static str> {
+                let mut updates = alloc::vec![];
+                let mut captured = false;
+
+                self.app.view(bounds).handle_input(
+                    &mut updates,
+                    event,
+                    &mut captured,
+                    bounds,
+                    mouse_pos,
+                );
+
+                for update in updates {
+                    self.app.update(update)?;
+                }
+
+                Ok(())
             }
         }
 
@@ -66,9 +90,15 @@ pub trait App<U: Any> {
 ///
 /// See [`App::wrap`] for implementation details.
 pub trait WrappedApp {
-    fn view(&mut self, renderer: &mut dyn Renderer);
+    fn render(&mut self, renderer: &mut dyn Renderer);
     /// Pass a type-erased update to the underlying [`App`].
     fn update(&mut self, update: Box<dyn Any>) -> Result<(), &'static str>;
+    fn handle_event(
+        &mut self,
+        event: &InputEvent,
+        bounds: Aabb2D<f32>,
+        mouse_pos: Xy<f32>,
+    ) -> Result<(), &'static str>;
 }
 
 #[derive(Debug)]
@@ -138,7 +168,7 @@ macro_rules! declare {
 
 
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 #[repr(C)]
 pub struct Aabb2D<V> {
     pub x_min: V,
@@ -230,7 +260,7 @@ impl<'a, U> ViewObject<'a, U> {
 
 pub trait View<U> {
     #[allow(unused)]
-    fn handle_event(
+    fn handle_input(
         &mut self,
         updates: &mut alloc::vec::Vec<U>,
         event: &InputEvent,
@@ -246,6 +276,7 @@ pub trait View<U> {
 pub struct Label<'a> {
     pub content: Cow<'a, str>,
     pub color: Rgba<u8>,
+    pub font_size: f32,
 }
 
 impl<'a> Label<'a> {
@@ -258,7 +289,13 @@ impl<'a> Label<'a> {
                 b: 0xff,
                 a: 0xff,
             },
+            font_size: 16.0,
         }
+    }
+
+    pub fn font_size(mut self, font_size: f32) -> Self {
+        self.font_size = font_size;
+        self
     }
 }
 
@@ -289,7 +326,7 @@ impl<'a, U> Clickable<'a, U> {
 }
 
 impl<'a, U> View<U> for Clickable<'a, U> {
-    fn handle_event(
+    fn handle_input(
         &mut self,
         updates: &mut alloc::vec::Vec<U>,
         event: &InputEvent,
@@ -299,7 +336,7 @@ impl<'a, U> View<U> for Clickable<'a, U> {
     ) {
         self.content
             .as_view_mut()
-            .handle_event(updates, event, captured, bounds, mouse_pos);
+            .handle_input(updates, event, captured, bounds, mouse_pos);
 
         if *captured {
             return;
@@ -369,7 +406,7 @@ mod tests {
         };
         let mouse_pos = Xy { x: 4.1, y: 3.7 };
 
-        label.handle_event(&mut updates, &event, &mut captured, bounds, mouse_pos);
+        label.handle_input(&mut updates, &event, &mut captured, bounds, mouse_pos);
 
         assert!(captured);
         assert!(updates.first().is_some_and(|u| *u == 43));

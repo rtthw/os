@@ -12,27 +12,29 @@ abi::manifest! {
     name: "example",
     init: || {
         use abi::App as _;
-        App { field: 2.0 }.wrap()
+        App { font_size: 2.0 }.wrap()
     },
     dependencies: &[],
 }
 
 struct App {
-    field: f32,
+    font_size: f32,
 }
 
 impl abi::App<Update> for App {
     fn view(&mut self, _bounds: abi::Aabb2D<f32>) -> impl abi::View<Update> {
-        abi::Label::new("Click Me").on_click(|| Update::ChangeField(7.0))
+        abi::Label::new("Click Me")
+            .font_size(self.font_size)
+            .on_click(|| Update::IncreaseFontSize(2.0))
     }
 
     fn update(&mut self, update: Update) -> Result<(), &'static str> {
         match update {
-            Update::ChangeField(value) => {
-                if value == 0.0 {
-                    return Err("cannot divide by zero");
+            Update::IncreaseFontSize(value) => {
+                if value < 0.0 {
+                    return Err("cannot decrease font size");
                 }
-                self.field = value;
+                self.font_size += value;
             }
         }
 
@@ -41,5 +43,5 @@ impl abi::App<Update> for App {
 }
 
 enum Update {
-    ChangeField(f32),
+    IncreaseFontSize(f32),
 }

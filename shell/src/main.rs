@@ -359,6 +359,17 @@ fn main() -> Result<()> {
                                 pressed: input_event.value() == 1,
                                 modifiers: shell.input_state.key_modifiers,
                             });
+                            shell.example_program.handle_input(
+                                &if input_event.value() == 1 {
+                                    abi::InputEvent::MouseButtonDown(abi::MouseButton::Primary)
+                                } else {
+                                    abi::InputEvent::MouseButtonUp(abi::MouseButton::Primary)
+                                },
+                                abi::Xy {
+                                    x: shell.input_state.mouse_pos.x,
+                                    y: shell.input_state.mouse_pos.y,
+                                },
+                            );
                         }
                         evdev::KeyCode::BTN_RIGHT => {
                             shell.input_state.events.push(egui::Event::PointerButton {
@@ -367,6 +378,17 @@ fn main() -> Result<()> {
                                 pressed: input_event.value() == 1,
                                 modifiers: shell.input_state.key_modifiers,
                             });
+                            shell.example_program.handle_input(
+                                &if input_event.value() == 1 {
+                                    abi::InputEvent::MouseButtonDown(abi::MouseButton::Secondary)
+                                } else {
+                                    abi::InputEvent::MouseButtonUp(abi::MouseButton::Secondary)
+                                },
+                                abi::Xy {
+                                    x: shell.input_state.mouse_pos.x,
+                                    y: shell.input_state.mouse_pos.y,
+                                },
+                            );
                         }
 
                         evdev::KeyCode::KEY_LEFTCTRL | evdev::KeyCode::KEY_RIGHTCTRL => {
@@ -1642,6 +1664,7 @@ struct Program {
     waiting_on_recompile: bool,
     compiling_flag: Arc<AtomicBool>,
     text: String,
+    known_bounds: abi::Aabb2D<f32>,
 }
 
 impl Program {
@@ -1653,6 +1676,7 @@ impl Program {
             waiting_on_recompile: false,
             compiling_flag: Arc::new(AtomicBool::new(false)),
             text,
+            known_bounds: abi::Aabb2D::default(),
         };
 
         this.start_compiling();
@@ -1721,6 +1745,8 @@ impl Program {
             ui.set_width(ui.available_width());
             ui.set_height(ui.available_height());
 
+            self.known_bounds = rect_to_aabb2d(ui.available_rect_before_wrap());
+
             if self.editing {
                 ui.horizontal_wrapped(|ui| {
                     if ui.button("Cancel").clicked() {
@@ -1746,7 +1772,7 @@ impl Program {
                 ui,
                 next_update: None,
             };
-            self.object.as_mut().unwrap().app.view(&mut renderer);
+            self.object.as_mut().unwrap().app.render(&mut renderer);
             if let Some(update) = renderer.next_update {
                 if let Err(err) = self.object.as_mut().unwrap().app.update(update) {
                     error!(target: "app", "{err}");
@@ -1755,6 +1781,22 @@ impl Program {
         });
 
         Ok(())
+    }
+
+    fn handle_input(&mut self, event: &abi::InputEvent, mouse_pos: abi::Xy<f32>) {
+        if self.editing {
+            return;
+        }
+
+        if let Err(err) =
+            self.object
+                .as_mut()
+                .unwrap()
+                .app
+                .handle_event(event, self.known_bounds, mouse_pos)
+        {
+            error!(target: "app", "{err}");
+        }
     }
 }
 
@@ -1800,7 +1842,9 @@ impl<'a> abi::Renderer for Renderer<'a> {
 
     fn label(&mut self, label: &abi::Label<'_>) {
         self.ui.label(
-            egui::RichText::new(label.content.to_string()).color(rgba_to_color32(label.color)),
+            egui::RichText::new(label.content.to_string())
+                .font(egui::FontId::proportional(label.font_size))
+                .color(rgba_to_color32(label.color)),
         );
     }
 }
