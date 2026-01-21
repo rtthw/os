@@ -22,8 +22,8 @@ struct App {
 }
 
 impl abi::App<Update> for App {
-    fn view(&mut self, _bounds: abi::Aabb2D<f32>) -> abi::ViewObject<'_, Update> {
-        abi::ViewObject::new(abi::Label::new("Click Me").on_click(|| Update::ChangeField(7.0)))
+    fn view(&mut self, _bounds: abi::Aabb2D<f32>) -> impl abi::View<Update> {
+        abi::Label::new("Click Me").on_click(|| Update::ChangeField(7.0))
     }
 
     fn update(&mut self, update: Update) -> Result<(), &'static str> {

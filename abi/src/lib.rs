@@ -23,7 +23,7 @@ pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 
 pub trait App<U: Any> {
-    fn view(&mut self, bounds: Aabb2D<f32>) -> ViewObject<'_, U>;
+    fn view(&mut self, bounds: Aabb2D<f32>) -> impl View<U>;
 
     fn update(&mut self, update: U) -> Result<(), &'static str>;
 
@@ -40,7 +40,7 @@ pub trait App<U: Any> {
 
         impl<A: App<U>, U: Any> WrappedApp for Wrapper<A, U> {
             fn view<'a>(&'a mut self, renderer: &mut dyn Renderer) {
-                self.app.view(renderer.bounds()).as_view().render(renderer);
+                self.app.view(renderer.bounds()).render(renderer);
             }
 
             fn update(&mut self, update: Box<dyn Any>) -> Result<(), &'static str> {
