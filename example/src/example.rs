@@ -4,7 +4,7 @@
 
 extern crate abi;
 
-use abi::AsClickable as _;
+use abi::{AsCentered as _, AsClickable as _};
 
 
 
@@ -26,6 +26,7 @@ impl abi::App<Update> for App {
         abi::Label::new("Click Me")
             .font_size(self.font_size)
             .on_click(|| Update::IncreaseFontSize(2.0))
+            .centered()
     }
 
     fn update(&mut self, update: Update) -> Result<(), &'static str> {

@@ -1768,16 +1768,8 @@ impl Program {
                 self.editing = true;
             }
 
-            let mut renderer = Renderer {
-                ui,
-                next_update: None,
-            };
+            let mut renderer = Renderer { ui };
             self.object.as_mut().unwrap().app.render(&mut renderer);
-            if let Some(update) = renderer.next_update {
-                if let Err(err) = self.object.as_mut().unwrap().app.update(update) {
-                    error!(target: "app", "{err}");
-                }
-            }
         });
 
         Ok(())
@@ -1793,7 +1785,7 @@ impl Program {
                 .as_mut()
                 .unwrap()
                 .app
-                .handle_event(event, self.known_bounds, mouse_pos)
+                .handle_input(event, self.known_bounds, mouse_pos)
         {
             error!(target: "app", "{err}");
         }
@@ -1832,7 +1824,6 @@ fn rect_to_aabb2d(bounds: Rect) -> abi::Aabb2D<f32> {
 
 struct Renderer<'a> {
     ui: &'a mut egui::Ui,
-    next_update: Option<Box<dyn std::any::Any>>,
 }
 
 impl<'a> abi::Renderer for Renderer<'a> {
@@ -1846,5 +1837,10 @@ impl<'a> abi::Renderer for Renderer<'a> {
                 .font(egui::FontId::proportional(label.font_size))
                 .color(rgba_to_color32(label.color)),
         );
+    }
+
+    fn centered(&mut self, render: &mut dyn FnMut(&mut dyn abi::Renderer)) {
+        self.ui
+            .centered_and_justified(|ui| render(&mut Renderer { ui }));
     }
 }

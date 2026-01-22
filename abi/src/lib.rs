@@ -53,7 +53,7 @@ pub trait App<U: Any> {
                 }
             }
 
-            fn handle_event(
+            fn handle_input(
                 &mut self,
                 event: &InputEvent,
                 bounds: Aabb2D<f32>,
@@ -93,7 +93,7 @@ pub trait WrappedApp {
     fn render(&mut self, renderer: &mut dyn Renderer);
     /// Pass a type-erased update to the underlying [`App`].
     fn update(&mut self, update: Box<dyn Any>) -> Result<(), &'static str>;
-    fn handle_event(
+    fn handle_input(
         &mut self,
         event: &InputEvent,
         bounds: Aabb2D<f32>,
@@ -216,6 +216,7 @@ pub struct Rgba<V> {
 pub trait Renderer {
     fn bounds(&self) -> Aabb2D<f32>;
     fn label(&mut self, label: &Label<'_>);
+    fn centered(&mut self, render: &mut dyn FnMut(&mut dyn Renderer));
 }
 
 
@@ -375,6 +376,54 @@ impl<'a, T: View<U> + 'a, U> AsClickable<'a, U> for T {
         Self: Sized,
     {
         Clickable::new(self).on_click(update)
+    }
+}
+
+pub struct Centered<'a, U> {
+    pub content: ViewObject<'a, U>,
+}
+
+impl<'a, U> Centered<'a, U> {
+    pub fn new(content: impl View<U> + 'a) -> Self {
+        Self {
+            content: ViewObject::new(content),
+        }
+    }
+}
+
+impl<'a, U> View<U> for Centered<'a, U> {
+    fn handle_input(
+        &mut self,
+        updates: &mut alloc::vec::Vec<U>,
+        event: &InputEvent,
+        captured: &mut bool,
+        bounds: Aabb2D<f32>,
+        mouse_pos: Xy<f32>,
+    ) {
+        self.content
+            .as_view_mut()
+            .handle_input(updates, event, captured, bounds, mouse_pos);
+    }
+
+    fn render(&self, renderer: &mut dyn Renderer) {
+        renderer.centered(&mut |renderer| {
+            self.content.as_view().render(renderer);
+        });
+    }
+}
+
+pub trait AsCentered<'a, U> {
+    fn centered(self) -> Centered<'a, U>
+    where
+        Self: Sized;
+}
+
+impl<'a, T: View<U> + 'a, U> AsCentered<'a, U> for T {
+    fn centered(self) -> Centered<'a, U>
+    where
+        Self: Sized,
+    {
+        Centered::new(self)
     }
 }
 
