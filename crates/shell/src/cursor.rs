@@ -47,7 +47,7 @@ pub struct CursorData {
     icons: Vec<Image>,
 }
 
-static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../../res/cursor.rgba");
+static FALLBACK_CURSOR_DATA: &[u8] = include_bytes!("../../../res/cursor.rgba");
 
 impl CursorData {
     pub fn load_or_fallback(path: &str) -> Self {

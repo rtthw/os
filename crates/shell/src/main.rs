@@ -1804,13 +1804,6 @@ fn rgba_to_color32(color: abi::Rgba<u8>) -> egui::Color32 {
     egui::Color32::from_rgba_premultiplied(color.r, color.g, color.b, color.a)
 }
 
-fn aabb2d_to_rect(bounds: abi::Aabb2D<f32>) -> Rect {
-    Rect::from_min_max(
-        pos2(bounds.x_min, bounds.y_min),
-        pos2(bounds.x_max, bounds.y_max),
-    )
-}
-
 fn rect_to_aabb2d(bounds: Rect) -> abi::Aabb2D<f32> {
     abi::Aabb2D {
         x_min: bounds.min.x,

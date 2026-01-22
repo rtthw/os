@@ -2,9 +2,9 @@
 
 
 # Build the ABI.
-cd abi
+cd crates/abi
     cargo build --release --target x86_64-unknown-linux-gnu || exit
-cd ..
+cd ../..
 
 # Build the init program.
 cargo build --release --target x86_64-unknown-linux-musl --bin init || exit

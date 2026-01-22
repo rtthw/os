@@ -1,11 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["abi", "abi-tests", "example", "init", "kernel", "shell"]
+members = ["crates/*", "example"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-abi = { path = "abi" }
-kernel = { path = "kernel" }
+abi = { path = "crates/abi" }
+kernel = { path = "crates/kernel" }
