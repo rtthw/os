@@ -359,17 +359,6 @@ fn main() -> Result<()> {
                                 pressed: input_event.value() == 1,
                                 modifiers: shell.input_state.key_modifiers,
                             });
-                            shell.example_program.handle_input(
-                                &if input_event.value() == 1 {
-                                    abi::InputEvent::MouseButtonDown(abi::MouseButton::Primary)
-                                } else {
-                                    abi::InputEvent::MouseButtonUp(abi::MouseButton::Primary)
-                                },
-                                abi::Xy {
-                                    x: shell.input_state.mouse_pos.x,
-                                    y: shell.input_state.mouse_pos.y,
-                                },
-                            );
                         }
                         evdev::KeyCode::BTN_RIGHT => {
                             shell.input_state.events.push(egui::Event::PointerButton {
@@ -378,17 +367,6 @@ fn main() -> Result<()> {
                                 pressed: input_event.value() == 1,
                                 modifiers: shell.input_state.key_modifiers,
                             });
-                            shell.example_program.handle_input(
-                                &if input_event.value() == 1 {
-                                    abi::InputEvent::MouseButtonDown(abi::MouseButton::Secondary)
-                                } else {
-                                    abi::InputEvent::MouseButtonUp(abi::MouseButton::Secondary)
-                                },
-                                abi::Xy {
-                                    x: shell.input_state.mouse_pos.x,
-                                    y: shell.input_state.mouse_pos.y,
-                                },
-                            );
                         }
 
                         evdev::KeyCode::KEY_LEFTCTRL | evdev::KeyCode::KEY_RIGHTCTRL => {
@@ -1768,27 +1746,11 @@ impl Program {
                 self.editing = true;
             }
 
-            let mut renderer = Renderer { ui };
-            self.object.as_mut().unwrap().app.render(&mut renderer);
+            // let mut renderer = Renderer { ui };
+            // self.object.as_mut().unwrap().app.render(&mut renderer);
         });
 
         Ok(())
-    }
-
-    fn handle_input(&mut self, event: &abi::InputEvent, mouse_pos: abi::Xy<f32>) {
-        if self.editing {
-            return;
-        }
-
-        if let Err(err) =
-            self.object
-                .as_mut()
-                .unwrap()
-                .app
-                .handle_input(event, self.known_bounds, mouse_pos)
-        {
-            error!(target: "app", "{err}");
-        }
     }
 }
 
@@ -1810,30 +1772,5 @@ fn rect_to_aabb2d(bounds: Rect) -> abi::Aabb2D<f32> {
         x_max: bounds.max.x,
         y_min: bounds.min.y,
         y_max: bounds.max.y,
-    }
-}
-
-
-
-struct Renderer<'a> {
-    ui: &'a mut egui::Ui,
-}
-
-impl<'a> abi::Renderer for Renderer<'a> {
-    fn bounds(&self) -> abi::Aabb2D<f32> {
-        rect_to_aabb2d(self.ui.available_rect_before_wrap())
-    }
-
-    fn label(&mut self, label: &abi::Label<'_>) {
-        self.ui.label(
-            egui::RichText::new(label.content.to_string())
-                .font(egui::FontId::proportional(label.font_size))
-                .color(rgba_to_color32(label.color)),
-        );
-    }
-
-    fn centered(&mut self, render: &mut dyn FnMut(&mut dyn abi::Renderer)) {
-        self.ui
-            .centered_and_justified(|ui| render(&mut Renderer { ui }));
     }
 }
