@@ -13,7 +13,10 @@ pub mod vec;
 
 pub use {path::Path, string::String, vec::Vec};
 
-use {alloc::boxed::Box, core::any::Any};
+use {
+    alloc::{boxed::Box, collections::vec_deque::VecDeque},
+    core::{any::Any, ops::Sub},
+};
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -146,11 +149,22 @@ impl Aabb2D<f32> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(C)]
 pub struct Xy<V> {
     pub x: V,
     pub y: V,
+}
+
+impl<V: Sub<V, Output = V>> Sub for Xy<V> {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -188,3 +202,215 @@ pub enum MouseButton {
     Middle,
     Other(u16),
 }
+
+
+
+pub struct View<T: Element = ()> {
+    settings: ViewSettings,
+
+    root: ViewNode,
+    elements: slotmap::SlotMap<ViewNode, ElementInfo<T>>,
+    children: slotmap::SecondaryMap<ViewNode, alloc::vec::Vec<ViewNode>>,
+    parents: slotmap::SecondaryMap<ViewNode, Option<ViewNode>>,
+
+    events: VecDeque<ViewEvent>,
+
+    mouse_pos: Xy<f32>,
+    mouse_over: alloc::vec::Vec<ViewNode>,
+    last_left_click_time: u64,
+    last_left_click_node: Option<ViewNode>,
+    // key_modifiers: ModifierKeyMask,
+    focus: Option<ViewNode>,
+}
+
+pub struct ViewSettings {
+    pub double_click_timeout: u64,
+}
+
+impl<T: Element> View<T> {
+    /// Apply the provided function to each element node in descending (back to
+    /// front) order.
+    pub fn for_each(&self, mut func: impl FnMut(&View<T>, ViewNode)) {
+        fn inner<T: Element>(
+            view: &View<T>,
+            node: ViewNode,
+            func: &mut impl FnMut(&View<T>, ViewNode),
+        ) {
+            func(view, node);
+            for child in view.children[node].clone() {
+                inner(view, child, func);
+            }
+        }
+
+        inner(self, self.root, &mut func);
+    }
+
+    /// Apply the provided function to each element node in descending (back to
+    /// front) order.
+    pub fn for_each_mut(&mut self, mut func: impl FnMut(&mut View<T>, ViewNode)) {
+        fn inner<T: Element>(
+            view: &mut View<T>,
+            node: ViewNode,
+            func: &mut impl FnMut(&mut View<T>, ViewNode),
+        ) {
+            func(view, node);
+            for child in view.children[node].clone() {
+                inner(view, child, func);
+            }
+        }
+
+        inner(self, self.root, &mut func);
+    }
+
+
+    pub fn handle_mouse_move(&mut self, position: Xy<f32>) {
+        if self.mouse_pos == position {
+            return;
+        }
+        self.mouse_pos = position;
+
+        let delta = position - self.mouse_pos;
+        // TODO: Setting for not reporting mouse movements to avoid clogging event
+        // queue?
+        self.events.push_back(ViewEvent::MouseMove { delta });
+
+        fn inner<T: Element>(
+            node: ViewNode,
+            position: Xy<f32>,
+            mouse_over: &mut alloc::vec::Vec<ViewNode>,
+            elements: &mut slotmap::SlotMap<ViewNode, ElementInfo<T>>,
+            children: &mut slotmap::SecondaryMap<ViewNode, alloc::vec::Vec<ViewNode>>,
+        ) {
+            if !elements[node].bounds.contains(position) {
+                return;
+            }
+            mouse_over.push(node);
+            for child in children[node].clone() {
+                inner(child, position, mouse_over, elements, children);
+            }
+        }
+
+        let mut new_mouse_over = alloc::vec::Vec::new();
+        inner(
+            self.root,
+            position,
+            &mut new_mouse_over,
+            &mut self.elements,
+            &mut self.children,
+        );
+
+        if self.mouse_over != new_mouse_over {
+            for node in &self.mouse_over {
+                if !new_mouse_over.contains(node) {
+                    self.events.push_back(ViewEvent::MouseLeave { node: *node });
+                }
+            }
+            for node in &new_mouse_over {
+                if !self.mouse_over.contains(node) {
+                    self.events.push_back(ViewEvent::MouseEnter { node: *node });
+                }
+            }
+            self.mouse_over = new_mouse_over;
+        }
+    }
+
+    pub fn handle_mouse_down(&mut self, button: MouseButton, now: u64) {
+        if self.mouse_over.is_empty() {
+            return;
+        }
+
+        if let Some(node) = self
+            .mouse_over
+            .iter()
+            .rev()
+            .find(|node| self.elements[**node].data.clickable())
+        {
+            match button {
+                MouseButton::Primary => {
+                    self.events.push_back(ViewEvent::Click { node: *node });
+                    if self
+                        .last_left_click_node
+                        .as_ref()
+                        .is_some_and(|n| n == node)
+                    {
+                        if now.saturating_sub(self.last_left_click_time)
+                            < self.settings.double_click_timeout
+                        {
+                            self.events
+                                .push_back(ViewEvent::DoubleClick { node: *node });
+                        }
+                    } else {
+                        self.last_left_click_node = Some(*node);
+                    }
+                    self.last_left_click_time = now;
+                }
+                MouseButton::Secondary => {
+                    self.events.push_back(ViewEvent::RightClick { node: *node })
+                }
+                _ => {}
+            }
+        }
+        if let Some(node) = self
+            .mouse_over
+            .iter()
+            .rev()
+            .find(|node| self.elements[**node].data.focusable())
+        {
+            if self.focus.as_ref().is_some_and(|n| n == node) {
+                return;
+            }
+            match button {
+                MouseButton::Primary | MouseButton::Secondary => {
+                    let old = self.focus.take();
+                    self.focus = Some(*node);
+                    self.events.push_back(ViewEvent::Focus { old, new: *node });
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+slotmap::new_key_type! { pub struct ViewNode; }
+
+pub enum ViewEvent {
+    MouseMove {
+        delta: Xy<f32>,
+    },
+    MouseEnter {
+        node: ViewNode,
+    },
+    MouseLeave {
+        node: ViewNode,
+    },
+    Click {
+        node: ViewNode,
+    },
+    RightClick {
+        node: ViewNode,
+    },
+    DoubleClick {
+        node: ViewNode,
+    },
+    Focus {
+        old: Option<ViewNode>,
+        new: ViewNode,
+    },
+}
+
+pub struct ElementInfo<T: Element> {
+    pub data: T,
+    pub bounds: Aabb2D<f32>,
+}
+
+pub trait Element {
+    fn clickable(&self) -> bool {
+        false
+    }
+
+    fn focusable(&self) -> bool {
+        false
+    }
+}
+
+impl Element for () {}

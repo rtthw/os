@@ -8,3 +8,4 @@ default = ["alloc"]
 alloc = []
 
 [dependencies]
+slotmap = { version = "1", default-features = false }
