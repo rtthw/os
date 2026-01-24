@@ -21,6 +21,7 @@ kernel.workspace = true
 libc = "0.2"
 log = { version = "0.4", features = ["std"] }
 raw-window-handle = "0.6"
+slotmap = { version = "1", default-features = false }
 thiserror = "2"
 xcursor = "0.3.10"
 

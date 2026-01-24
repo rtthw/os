@@ -21,9 +21,6 @@ checksum = "366ffbaa4442f4684d91e2cd7c5ea7c4ed8add41959a31447066e279e432b618"
 [[package]]
 name = "abi"
 version = "0.1.0"
-dependencies = [
- "slotmap",
-]
 
 [[package]]
 name = "abi-tests"
@@ -745,6 +742,7 @@ dependencies = [
  "libc",
  "log",
  "raw-window-handle",
+ "slotmap",
  "thiserror",
  "xcursor",
 ]

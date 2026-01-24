@@ -14,7 +14,7 @@ pub mod stable_vec;
 pub use {path::Path, stable_string::StableString, stable_vec::StableVec};
 
 use {
-    alloc::{boxed::Box, collections::vec_deque::VecDeque, vec::Vec},
+    alloc::boxed::Box,
     core::{
         any::Any,
         ops::{Deref, DerefMut, Sub},
@@ -208,188 +208,18 @@ pub enum MouseButton {
 
 
 
-pub struct View {
-    settings: ViewSettings,
-
-    root: ViewNode,
-    elements: slotmap::SlotMap<ViewNode, ElementInfo>,
-    children: slotmap::SecondaryMap<ViewNode, Vec<ViewNode>>,
-    parents: slotmap::SecondaryMap<ViewNode, Option<ViewNode>>,
-
-    events: VecDeque<ViewEvent>,
-
-    mouse_pos: Xy<f32>,
-    mouse_over: Vec<ViewNode>,
-    last_left_click_time: u64,
-    last_left_click_node: Option<ViewNode>,
-    // key_modifiers: ModifierKeyMask,
-    focus: Option<ViewNode>,
-}
-
 pub struct ViewSettings {
-    pub double_click_timeout: u64,
+    pub double_click_timeout: f64,
 }
-
-impl View {
-    /// Apply the provided function to each element node in descending (back to
-    /// front) order.
-    pub fn for_each(&self, mut func: impl FnMut(&View, ViewNode)) {
-        fn inner(view: &View, node: ViewNode, func: &mut impl FnMut(&View, ViewNode)) {
-            func(view, node);
-            for child in view.children[node].clone() {
-                inner(view, child, func);
-            }
-        }
-
-        inner(self, self.root, &mut func);
-    }
-
-    /// Apply the provided function to each element node in descending (back to
-    /// front) order.
-    pub fn for_each_mut(&mut self, mut func: impl FnMut(&mut View, ViewNode)) {
-        fn inner(view: &mut View, node: ViewNode, func: &mut impl FnMut(&mut View, ViewNode)) {
-            func(view, node);
-            for child in view.children[node].clone() {
-                inner(view, child, func);
-            }
-        }
-
-        inner(self, self.root, &mut func);
-    }
-
-    pub fn handle_mouse_move(&mut self, position: Xy<f32>) {
-        if self.mouse_pos == position {
-            return;
-        }
-        self.mouse_pos = position;
-
-        let delta = position - self.mouse_pos;
-        // TODO: Setting for not reporting mouse movements to avoid clogging event
-        // queue?
-        self.events.push_back(ViewEvent::MouseMove { delta });
-
-        fn inner(
-            node: ViewNode,
-            position: Xy<f32>,
-            mouse_over: &mut Vec<ViewNode>,
-            elements: &mut slotmap::SlotMap<ViewNode, ElementInfo>,
-            children: &mut slotmap::SecondaryMap<ViewNode, Vec<ViewNode>>,
-        ) {
-            if !elements[node].bounds.contains(position) {
-                return;
-            }
-            mouse_over.push(node);
-            for child in children[node].clone() {
-                inner(child, position, mouse_over, elements, children);
-            }
-        }
-
-        let mut new_mouse_over = Vec::new();
-        inner(
-            self.root,
-            position,
-            &mut new_mouse_over,
-            &mut self.elements,
-            &mut self.children,
-        );
-
-        if self.mouse_over != new_mouse_over {
-            for node in &self.mouse_over {
-                if !new_mouse_over.contains(node) {
-                    self.events.push_back(ViewEvent::MouseLeave { node: *node });
-                }
-            }
-            for node in &new_mouse_over {
-                if !self.mouse_over.contains(node) {
-                    self.events.push_back(ViewEvent::MouseEnter { node: *node });
-                }
-            }
-            self.mouse_over = new_mouse_over;
-        }
-    }
-
-    pub fn handle_mouse_down(&mut self, button: MouseButton, now: u64) {
-        if self.mouse_over.is_empty() {
-            return;
-        }
-
-        if let Some(node) = self
-            .mouse_over
-            .iter()
-            .rev()
-            .find(|node| self.elements[**node].clickable())
-        {
-            match button {
-                MouseButton::Primary => {
-                    self.events.push_back(ViewEvent::Click { node: *node });
-                    if self
-                        .last_left_click_node
-                        .as_ref()
-                        .is_some_and(|n| n == node)
-                    {
-                        if now.saturating_sub(self.last_left_click_time)
-                            < self.settings.double_click_timeout
-                        {
-                            self.events
-                                .push_back(ViewEvent::DoubleClick { node: *node });
-                        }
-                    } else {
-                        self.last_left_click_node = Some(*node);
-                    }
-                    self.last_left_click_time = now;
-                }
-                MouseButton::Secondary => {
-                    self.events.push_back(ViewEvent::RightClick { node: *node })
-                }
-                _ => {}
-            }
-        }
-        if let Some(node) = self
-            .mouse_over
-            .iter()
-            .rev()
-            .find(|node| self.elements[**node].focusable())
-        {
-            if self.focus.as_ref().is_some_and(|n| n == node) {
-                return;
-            }
-            match button {
-                MouseButton::Primary | MouseButton::Secondary => {
-                    let old = self.focus.take();
-                    self.focus = Some(*node);
-                    self.events.push_back(ViewEvent::Focus { old, new: *node });
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-slotmap::new_key_type! { pub struct ViewNode; }
 
 pub enum ViewEvent {
-    MouseMove {
-        delta: Xy<f32>,
-    },
-    MouseEnter {
-        node: ViewNode,
-    },
-    MouseLeave {
-        node: ViewNode,
-    },
-    Click {
-        node: ViewNode,
-    },
-    RightClick {
-        node: ViewNode,
-    },
-    DoubleClick {
-        node: ViewNode,
-    },
-    Focus {
-        old: Option<ViewNode>,
-        new: ViewNode,
-    },
+    MouseMove { delta: Xy<f32> },
+    MouseEnter { node: u64 },
+    MouseLeave { node: u64 },
+    Click { node: u64 },
+    RightClick { node: u64 },
+    DoubleClick { node: u64 },
+    Focus { old: Option<u64>, new: u64 },
 }
 
 pub trait Element {
