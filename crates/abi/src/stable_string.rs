@@ -119,21 +119,20 @@ impl Display for StableString {
 
 
 
-#[cfg(feature = "alloc")]
 mod alloc_impls {
     use super::*;
 
-    impl From<alloc::string::String> for StableString {
-        fn from(value: alloc::string::String) -> Self {
+    impl From<String> for StableString {
+        fn from(value: String) -> Self {
             Self {
                 bytes: value.into_bytes().into(),
             }
         }
     }
 
-    impl Into<alloc::string::String> for StableString {
-        fn into(self) -> alloc::string::String {
-            unsafe { alloc::string::String::from_utf8_unchecked(self.bytes.into()) }
+    impl Into<String> for StableString {
+        fn into(self) -> String {
+            unsafe { String::from_utf8_unchecked(self.bytes.into()) }
         }
     }
 }

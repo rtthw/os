@@ -1,10 +1,5 @@
 //! # Application Binary Interface (ABI)
 
-#![no_std]
-
-#[cfg(feature = "alloc")]
-pub extern crate alloc;
-
 pub mod elf;
 pub mod layout;
 pub mod path;
@@ -13,12 +8,9 @@ pub mod stable_vec;
 
 pub use {path::Path, stable_string::StableString, stable_vec::StableVec};
 
-use {
-    alloc::boxed::Box,
-    core::{
-        any::Any,
-        ops::{Deref, DerefMut, Sub},
-    },
+use core::{
+    any::Any,
+    ops::{Deref, DerefMut, Sub},
 };
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
