@@ -15,7 +15,10 @@ pub use {path::Path, string::String, vec::Vec};
 
 use {
     alloc::{boxed::Box, collections::vec_deque::VecDeque},
-    core::{any::Any, ops::Sub},
+    core::{
+        any::Any,
+        ops::{Deref, DerefMut, Sub},
+    },
 };
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -205,11 +208,11 @@ pub enum MouseButton {
 
 
 
-pub struct View<T: Element = ()> {
+pub struct View {
     settings: ViewSettings,
 
     root: ViewNode,
-    elements: slotmap::SlotMap<ViewNode, ElementInfo<T>>,
+    elements: slotmap::SlotMap<ViewNode, ElementInfo>,
     children: slotmap::SecondaryMap<ViewNode, alloc::vec::Vec<ViewNode>>,
     parents: slotmap::SecondaryMap<ViewNode, Option<ViewNode>>,
 
@@ -227,15 +230,11 @@ pub struct ViewSettings {
     pub double_click_timeout: u64,
 }
 
-impl<T: Element> View<T> {
+impl View {
     /// Apply the provided function to each element node in descending (back to
     /// front) order.
-    pub fn for_each(&self, mut func: impl FnMut(&View<T>, ViewNode)) {
-        fn inner<T: Element>(
-            view: &View<T>,
-            node: ViewNode,
-            func: &mut impl FnMut(&View<T>, ViewNode),
-        ) {
+    pub fn for_each(&self, mut func: impl FnMut(&View, ViewNode)) {
+        fn inner(view: &View, node: ViewNode, func: &mut impl FnMut(&View, ViewNode)) {
             func(view, node);
             for child in view.children[node].clone() {
                 inner(view, child, func);
@@ -247,12 +246,8 @@ impl<T: Element> View<T> {
 
     /// Apply the provided function to each element node in descending (back to
     /// front) order.
-    pub fn for_each_mut(&mut self, mut func: impl FnMut(&mut View<T>, ViewNode)) {
-        fn inner<T: Element>(
-            view: &mut View<T>,
-            node: ViewNode,
-            func: &mut impl FnMut(&mut View<T>, ViewNode),
-        ) {
+    pub fn for_each_mut(&mut self, mut func: impl FnMut(&mut View, ViewNode)) {
+        fn inner(view: &mut View, node: ViewNode, func: &mut impl FnMut(&mut View, ViewNode)) {
             func(view, node);
             for child in view.children[node].clone() {
                 inner(view, child, func);
@@ -274,11 +269,11 @@ impl<T: Element> View<T> {
         // queue?
         self.events.push_back(ViewEvent::MouseMove { delta });
 
-        fn inner<T: Element>(
+        fn inner(
             node: ViewNode,
             position: Xy<f32>,
             mouse_over: &mut alloc::vec::Vec<ViewNode>,
-            elements: &mut slotmap::SlotMap<ViewNode, ElementInfo<T>>,
+            elements: &mut slotmap::SlotMap<ViewNode, ElementInfo>,
             children: &mut slotmap::SecondaryMap<ViewNode, alloc::vec::Vec<ViewNode>>,
         ) {
             if !elements[node].bounds.contains(position) {
@@ -323,7 +318,7 @@ impl<T: Element> View<T> {
             .mouse_over
             .iter()
             .rev()
-            .find(|node| self.elements[**node].data.clickable())
+            .find(|node| self.elements[**node].clickable())
         {
             match button {
                 MouseButton::Primary => {
@@ -354,7 +349,7 @@ impl<T: Element> View<T> {
             .mouse_over
             .iter()
             .rev()
-            .find(|node| self.elements[**node].data.focusable())
+            .find(|node| self.elements[**node].focusable())
         {
             if self.focus.as_ref().is_some_and(|n| n == node) {
                 return;
@@ -398,11 +393,6 @@ pub enum ViewEvent {
     },
 }
 
-pub struct ElementInfo<T: Element> {
-    pub data: T,
-    pub bounds: Aabb2D<f32>,
-}
-
 pub trait Element {
     fn clickable(&self) -> bool {
         false
@@ -413,4 +403,23 @@ pub trait Element {
     }
 }
 
-impl Element for () {}
+pub struct ElementInfo {
+    pub element: Box<dyn Element>,
+    pub bounds: Aabb2D<f32>,
+}
+
+impl Deref for ElementInfo {
+    type Target = dyn Element;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &*self.element
+    }
+}
+
+impl DerefMut for ElementInfo {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.element
+    }
+}
