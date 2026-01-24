@@ -8,13 +8,13 @@ pub extern crate alloc;
 pub mod elf;
 pub mod layout;
 pub mod path;
-pub mod string;
-pub mod vec;
+pub mod stable_string;
+pub mod stable_vec;
 
-pub use {path::Path, string::String, vec::Vec};
+pub use {path::Path, stable_string::StableString, stable_vec::StableVec};
 
 use {
-    alloc::{boxed::Box, collections::vec_deque::VecDeque},
+    alloc::{boxed::Box, collections::vec_deque::VecDeque, vec::Vec},
     core::{
         any::Any,
         ops::{Deref, DerefMut, Sub},
@@ -213,13 +213,13 @@ pub struct View {
 
     root: ViewNode,
     elements: slotmap::SlotMap<ViewNode, ElementInfo>,
-    children: slotmap::SecondaryMap<ViewNode, alloc::vec::Vec<ViewNode>>,
+    children: slotmap::SecondaryMap<ViewNode, Vec<ViewNode>>,
     parents: slotmap::SecondaryMap<ViewNode, Option<ViewNode>>,
 
     events: VecDeque<ViewEvent>,
 
     mouse_pos: Xy<f32>,
-    mouse_over: alloc::vec::Vec<ViewNode>,
+    mouse_over: Vec<ViewNode>,
     last_left_click_time: u64,
     last_left_click_node: Option<ViewNode>,
     // key_modifiers: ModifierKeyMask,
@@ -257,7 +257,6 @@ impl View {
         inner(self, self.root, &mut func);
     }
 
-
     pub fn handle_mouse_move(&mut self, position: Xy<f32>) {
         if self.mouse_pos == position {
             return;
@@ -272,9 +271,9 @@ impl View {
         fn inner(
             node: ViewNode,
             position: Xy<f32>,
-            mouse_over: &mut alloc::vec::Vec<ViewNode>,
+            mouse_over: &mut Vec<ViewNode>,
             elements: &mut slotmap::SlotMap<ViewNode, ElementInfo>,
-            children: &mut slotmap::SecondaryMap<ViewNode, alloc::vec::Vec<ViewNode>>,
+            children: &mut slotmap::SecondaryMap<ViewNode, Vec<ViewNode>>,
         ) {
             if !elements[node].bounds.contains(position) {
                 return;
@@ -285,7 +284,7 @@ impl View {
             }
         }
 
-        let mut new_mouse_over = alloc::vec::Vec::new();
+        let mut new_mouse_over = Vec::new();
         inner(
             self.root,
             position,

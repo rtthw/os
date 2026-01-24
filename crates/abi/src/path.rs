@@ -9,7 +9,7 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use crate::{String, Vec};
+use crate::{StableString, StableVec};
 
 
 
@@ -18,11 +18,11 @@ use crate::{String, Vec};
 /// See [`crate::Vec`] for more information as to how this remains FFI-safe.
 #[repr(transparent)]
 pub struct Path {
-    bytes: Vec<u8>,
+    bytes: StableVec<u8>,
 }
 
 pub struct PathValidationError {
-    pub bytes: Vec<u8>,
+    pub bytes: StableVec<u8>,
     pub valid_up_to: usize,
 }
 
@@ -39,7 +39,7 @@ impl Path {
         unsafe { str::from_utf8_unchecked_mut(self.bytes.as_slice_mut()) }
     }
 
-    pub const fn from_bytes(bytes: Vec<u8>) -> Result<Self, PathValidationError> {
+    pub const fn from_bytes(bytes: StableVec<u8>) -> Result<Self, PathValidationError> {
         if let Err(invalid_byte) = check(bytes.as_slice()) {
             Err(PathValidationError {
                 bytes,
@@ -51,19 +51,19 @@ impl Path {
     }
 
     #[inline]
-    pub const unsafe fn from_bytes_unchecked(bytes: Vec<u8>) -> Self {
+    pub const unsafe fn from_bytes_unchecked(bytes: StableVec<u8>) -> Self {
         Self { bytes }
     }
 
     #[inline]
-    pub fn into_bytes(self) -> Vec<u8> {
+    pub fn into_bytes(self) -> StableVec<u8> {
         self.bytes
     }
 
     #[inline]
-    pub fn into_string(self) -> String {
+    pub fn into_string(self) -> StableString {
         // SAFETY: `self.bytes` is guaranteed to be valid UTF-8.
-        unsafe { String::from_utf8_unchecked(self.bytes) }
+        unsafe { StableString::from_utf8_unchecked(self.bytes) }
     }
 }
 

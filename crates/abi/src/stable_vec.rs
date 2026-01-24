@@ -1,6 +1,6 @@
 //! # ABI-Stable `Vec` Type
 //!
-//! See [`Vec`] for more information.
+//! See [`StableVec`] for more information.
 
 use core::{
     fmt::{self, Debug},
@@ -21,13 +21,13 @@ use core::{
 /// Therefore, it is perfectly safe to pass this type across FFI boundaries so
 /// long as both ends share the same address space.
 #[repr(C)]
-pub struct Vec<T> {
+pub struct StableVec<T> {
     ptr: NonNull<T>,
     len: usize,
     cap: usize,
 }
 
-impl<T> Vec<T> {
+impl<T> StableVec<T> {
     pub const fn as_slice(&self) -> &[T] {
         // SAFETY: `self.ptr` is never null, and always valid/aligned.
         unsafe { slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
@@ -41,7 +41,7 @@ impl<T> Vec<T> {
 
 
 
-impl<T> Deref for Vec<T> {
+impl<T> Deref for StableVec<T> {
     type Target = [T];
 
     #[inline]
@@ -50,14 +50,14 @@ impl<T> Deref for Vec<T> {
     }
 }
 
-impl<T> DerefMut for Vec<T> {
+impl<T> DerefMut for StableVec<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut [T] {
         self.as_slice_mut()
     }
 }
 
-impl<T: Debug> Debug for Vec<T> {
+impl<T: Debug> Debug for StableVec<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Debug::fmt(&**self, f)
     }
@@ -69,7 +69,7 @@ impl<T: Debug> Debug for Vec<T> {
 mod alloc_impls {
     use super::*;
 
-    impl<T> From<alloc::vec::Vec<T>> for Vec<T> {
+    impl<T> From<alloc::vec::Vec<T>> for StableVec<T> {
         #[inline]
         fn from(value: alloc::vec::Vec<T>) -> Self {
             let len = value.len();
@@ -84,7 +84,7 @@ mod alloc_impls {
         }
     }
 
-    impl<T> Into<alloc::vec::Vec<T>> for Vec<T> {
+    impl<T> Into<alloc::vec::Vec<T>> for StableVec<T> {
         #[inline]
         fn into(self) -> alloc::vec::Vec<T> {
             let mut this = core::mem::ManuallyDrop::new(self);
@@ -92,7 +92,7 @@ mod alloc_impls {
         }
     }
 
-    impl<T> Drop for Vec<T> {
+    impl<T> Drop for StableVec<T> {
         #[inline]
         fn drop(&mut self) {
             unsafe { drop::<alloc::vec::Vec<T>>(core::ptr::read(self).into()) }
