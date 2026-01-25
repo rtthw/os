@@ -5,6 +5,7 @@ pub mod layout;
 pub mod path;
 pub mod stable_string;
 pub mod stable_vec;
+pub mod tree;
 pub mod type_map;
 
 pub use {
