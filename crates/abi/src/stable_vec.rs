@@ -65,7 +65,6 @@ impl<T: Debug> Debug for StableVec<T> {
 
 
 
-#[cfg(feature = "alloc")]
 mod alloc_impls {
     use super::*;
 

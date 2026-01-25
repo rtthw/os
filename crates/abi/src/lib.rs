@@ -5,8 +5,14 @@ pub mod layout;
 pub mod path;
 pub mod stable_string;
 pub mod stable_vec;
+pub mod type_map;
 
-pub use {path::Path, stable_string::StableString, stable_vec::StableVec};
+pub use {
+    path::Path,
+    stable_string::StableString,
+    stable_vec::StableVec,
+    type_map::{TypeMap, TypeMapEntry},
+};
 
 use core::{
     any::Any,
