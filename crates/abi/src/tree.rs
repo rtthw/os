@@ -134,7 +134,34 @@ impl<T> Node<T> {
     }
 }
 
+impl<T> NodeRef<'_, T> {
+    pub fn id(&self) -> u64 {
+        self.leaves.branch_id.expect("NodeRef should have an ID")
+    }
+
+    pub fn leaf_ids(&self) -> impl IntoIterator<Item = u64> {
+        self.leaves.leaves.keys().copied()
+    }
+}
+
+impl<T> NodeMut<'_, T> {
+    pub fn id(&self) -> u64 {
+        self.leaves.branch_id.expect("NodeMut should have an ID")
+    }
+
+    pub fn leaf_ids(&self) -> impl IntoIterator<Item = u64> {
+        self.leaves.leaves.keys().copied()
+    }
+}
+
 impl<'tree, T> LeavesRef<'tree, T> {
+    pub fn get(&self, id: impl Into<u64>) -> Option<NodeRef<'_, T>> {
+        let id = id.into();
+        self.leaves
+            .get(&id)
+            .map(|child| child.as_ref(self.branch_id, self.branches.branches))
+    }
+
     fn _find(self, id: u64) -> Option<NodeRef<'tree, T>> {
         let branch_id = self.branches.branches.get(&id)?;
 
@@ -158,6 +185,20 @@ impl<'tree, T> LeavesRef<'tree, T> {
 }
 
 impl<'tree, T> LeavesMut<'tree, T> {
+    pub fn get(&self, id: impl Into<u64>) -> Option<NodeRef<'_, T>> {
+        let id = id.into();
+        self.leaves
+            .get(&id)
+            .map(|child| child.as_ref(self.branch_id, self.branches.branches))
+    }
+
+    pub fn get_mut(&mut self, id: impl Into<u64>) -> Option<NodeMut<'_, T>> {
+        let id = id.into();
+        self.leaves
+            .get_mut(&id)
+            .map(|child| child.as_mut(self.branch_id, self.branches.branches))
+    }
+
     pub fn insert(&mut self, leaf_id: impl Into<u64>, value: T) -> NodeMut<'_, T> {
         let leaf_id = leaf_id.into();
 
