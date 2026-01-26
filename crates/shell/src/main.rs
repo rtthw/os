@@ -1840,7 +1840,7 @@ impl View {
             elements: &mut slotmap::SlotMap<ViewNode, abi::ElementInfo>,
             children: &mut slotmap::SecondaryMap<ViewNode, Vec<ViewNode>>,
         ) {
-            if !elements[node].bounds.contains(position) {
+            if !elements[node].state.bounds.contains(position) {
                 return;
             }
             mouse_over.push(node);

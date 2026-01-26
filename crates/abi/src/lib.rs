@@ -20,7 +20,10 @@ use {
         any::Any,
         ops::{Deref, DerefMut, Sub},
     },
-    std::ops::{Add, Mul},
+    std::{
+        collections::HashMap,
+        ops::{Add, Mul},
+    },
 };
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -449,6 +452,10 @@ pub enum ViewEvent {
 }
 
 pub trait Element {
+    fn children_ids(&self) -> Vec<u64> {
+        Vec::new()
+    }
+
     fn clickable(&self) -> bool {
         false
     }
@@ -456,11 +463,15 @@ pub trait Element {
     fn focusable(&self) -> bool {
         false
     }
+
+    fn render(&mut self, pass: &mut RenderPass<'_>);
+
+    fn render_overlay(&mut self, pass: &mut RenderPass<'_>);
 }
 
 pub struct ElementInfo {
     pub element: Box<dyn Element>,
-    pub bounds: Aabb2D<f32>,
+    pub state: ElementState,
 }
 
 impl Deref for ElementInfo {
@@ -476,5 +487,175 @@ impl DerefMut for ElementInfo {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut *self.element
+    }
+}
+
+pub struct ElementState {
+    pub id: u64,
+    pub bounds: Aabb2D<f32>,
+
+    pub local_transform: Transform2D,
+    pub global_transform: Transform2D,
+
+    pub needs_render: bool,
+    pub wants_render: bool,
+    pub wants_overlay_render: bool,
+}
+
+impl ElementState {
+    fn new(id: u64) -> Self {
+        Self {
+            id,
+            bounds: Aabb2D::ZERO,
+            local_transform: Transform2D::IDENTITY,
+            global_transform: Transform2D::IDENTITY,
+            needs_render: true,
+            wants_render: true,
+            wants_overlay_render: true,
+        }
+    }
+
+    fn merge_with_child(&mut self, child_state: &Self) {
+        self.needs_render |= child_state.needs_render;
+    }
+}
+
+
+
+#[derive(Default)]
+pub struct Render {
+    pub quads: Vec<RenderQuad>,
+    pub texts: Vec<RenderText>,
+}
+
+#[derive(Clone)]
+pub struct RenderQuad {
+    pub bounds: Aabb2D<f32>,
+    pub color: Rgba<u8>,
+}
+
+#[derive(Clone)]
+pub struct RenderText {
+    pub content: String,
+    pub bounds: Aabb2D<f32>,
+    pub color: Rgba<u8>,
+}
+
+impl Render {
+    pub fn extend(&mut self, other: &Render, transform: Transform2D) {
+        self.quads
+            .extend(other.quads.iter().cloned().map(|quad| RenderQuad {
+                bounds: transform.transform_area(quad.bounds),
+                ..quad
+            }));
+        self.texts
+            .extend(other.texts.iter().cloned().map(|text| RenderText {
+                bounds: transform.transform_area(text.bounds),
+                ..text
+            }));
+    }
+}
+
+pub struct RenderPass<'view> {
+    state: &'view mut ElementState,
+    render: &'view mut Render,
+}
+
+impl RenderPass<'_> {
+    pub fn bounds(&self) -> Aabb2D<f32> {
+        self.state.bounds
+    }
+
+    pub fn fill_quad(&mut self, bounds: Aabb2D<f32>, color: Rgba<u8>) {
+        self.render.quads.push(RenderQuad { bounds, color });
+    }
+
+    pub fn fill_text(&mut self, content: impl Into<String>, bounds: Aabb2D<f32>, color: Rgba<u8>) {
+        self.render.texts.push(RenderText {
+            content: content.into(),
+            bounds,
+            color,
+        });
+    }
+}
+
+pub fn render_pass(
+    root_node: tree::NodeMut<'_, ElementInfo>,
+    render_cache: &mut HashMap<u64, (Render, Render)>,
+) -> Render {
+    let mut final_render = Render::default();
+
+    render_element(root_node, render_cache, &mut final_render);
+
+    final_render
+}
+
+pub fn render_element(
+    node: tree::NodeMut<'_, ElementInfo>,
+    render_cache: &mut HashMap<u64, (Render, Render)>,
+    final_render: &mut Render,
+) {
+    let children = node.leaves;
+    let element = &mut *node.element.element;
+    let state = &mut node.element.state;
+
+    if state.wants_render || state.wants_overlay_render {
+        let (render, overlay_render) = render_cache.entry(state.id).or_default();
+
+        if state.wants_render {
+            let mut pass = RenderPass { state, render };
+            element.render(&mut pass);
+        }
+        if state.wants_overlay_render {
+            let mut pass = RenderPass {
+                state,
+                render: overlay_render,
+            };
+            element.render_overlay(&mut pass);
+        }
+    }
+
+    state.needs_render = false;
+    state.wants_render = false;
+    state.wants_overlay_render = false;
+
+    {
+        let transform = state.global_transform;
+        let Some((render, _)) = &mut render_cache.get(&state.id) else {
+            return;
+        };
+
+        final_render.extend(render, transform);
+    }
+
+    let parent_state = &mut *state;
+    for_each_child_element(element, children, |mut node| {
+        render_element(node.reborrow_mut(), render_cache, final_render);
+        parent_state.merge_with_child(&node.element.state);
+    });
+
+    {
+        let transform = state.global_transform;
+        let Some((_, overlay_render)) = &mut render_cache.get(&state.id) else {
+            return;
+        };
+
+        final_render.extend(overlay_render, transform);
+    }
+}
+
+
+
+fn for_each_child_element(
+    element: &mut dyn Element,
+    mut children: tree::LeavesMut<'_, ElementInfo>,
+    mut callback: impl FnMut(tree::NodeMut<'_, ElementInfo>),
+) {
+    for child_id in element.children_ids() {
+        callback(
+            children
+                .get_mut(child_id)
+                .expect("Element::children_ids produced an invalid child ID"),
+        );
     }
 }

@@ -135,6 +135,14 @@ impl<T> Node<T> {
 }
 
 impl<T> NodeRef<'_, T> {
+    pub fn reborrow(&self) -> NodeRef<'_, T> {
+        NodeRef {
+            branch_id: self.branch_id,
+            element: self.element,
+            leaves: self.leaves.reborrow(),
+        }
+    }
+
     pub fn id(&self) -> u64 {
         self.leaves.branch_id.expect("NodeRef should have an ID")
     }
@@ -145,6 +153,22 @@ impl<T> NodeRef<'_, T> {
 }
 
 impl<T> NodeMut<'_, T> {
+    pub fn reborrow(&self) -> NodeRef<'_, T> {
+        NodeRef {
+            branch_id: self.branch_id,
+            element: self.element,
+            leaves: self.leaves.reborrow(),
+        }
+    }
+
+    pub fn reborrow_mut(&mut self) -> NodeMut<'_, T> {
+        NodeMut {
+            branch_id: self.branch_id,
+            element: self.element,
+            leaves: self.leaves.reborrow_mut(),
+        }
+    }
+
     pub fn id(&self) -> u64 {
         self.leaves.branch_id.expect("NodeMut should have an ID")
     }
@@ -155,6 +179,16 @@ impl<T> NodeMut<'_, T> {
 }
 
 impl<'tree, T> LeavesRef<'tree, T> {
+    pub fn reborrow(&self) -> LeavesRef<'_, T> {
+        LeavesRef {
+            branch_id: self.branch_id,
+            leaves: &*self.leaves,
+            branches: BranchesRef {
+                branches: self.branches.branches,
+            },
+        }
+    }
+
     pub fn get(&self, id: impl Into<u64>) -> Option<NodeRef<'_, T>> {
         let id = id.into();
         self.leaves
@@ -185,6 +219,26 @@ impl<'tree, T> LeavesRef<'tree, T> {
 }
 
 impl<'tree, T> LeavesMut<'tree, T> {
+    pub fn reborrow(&self) -> LeavesRef<'_, T> {
+        LeavesRef {
+            branch_id: self.branch_id,
+            leaves: &*self.leaves,
+            branches: BranchesRef {
+                branches: self.branches.branches,
+            },
+        }
+    }
+
+    pub fn reborrow_mut(&mut self) -> LeavesMut<'_, T> {
+        LeavesMut {
+            branch_id: self.branch_id,
+            leaves: &mut *self.leaves,
+            branches: BranchesMut {
+                branches: self.branches.branches,
+            },
+        }
+    }
+
     pub fn get(&self, id: impl Into<u64>) -> Option<NodeRef<'_, T>> {
         let id = id.into();
         self.leaves
