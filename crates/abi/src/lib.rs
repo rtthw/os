@@ -404,8 +404,9 @@ impl Axis {
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub enum Length {
-    Fill,
-    Shrink,
+    MaxContent,
+    MinContent,
+    FitContent(f32),
     Exact(f32),
 }
 
@@ -424,6 +425,17 @@ impl Length {
 pub enum LengthRequest {
     MaxContent,
     MinContent,
+    FitContent(f32),
+}
+
+impl Into<Length> for LengthRequest {
+    fn into(self) -> Length {
+        match self {
+            LengthRequest::MaxContent => Length::MaxContent,
+            LengthRequest::MinContent => Length::MinContent,
+            LengthRequest::FitContent(max_size) => Length::FitContent(max_size),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -458,13 +470,15 @@ pub enum MouseButton {
 pub struct View {
     tree: tree::Tree<ElementInfo>,
     root_element: ChildElement,
+    window_size: Xy<f32>,
 }
 
 impl View {
-    pub fn new<E: Element + 'static>(element: E) -> Self {
+    pub fn new<E: Element + 'static>(element: E, window_size: Xy<f32>) -> Self {
         Self {
             tree: tree::Tree::new(),
             root_element: ElementBuilder::new(element).into_child(),
+            window_size,
         }
     }
 }
@@ -650,6 +664,10 @@ pub struct Column {
 }
 
 impl Element for Column {
+    fn children_ids(&self) -> Vec<u64> {
+        self.children.iter().map(|child| child.id()).collect()
+    }
+
     fn update_children(&mut self, pass: &mut UpdatePass<'_>) {
         for child in self.children.iter_mut() {
             pass.update_child(child);
@@ -657,11 +675,21 @@ impl Element for Column {
     }
 
     fn render(&mut self, _pass: &mut RenderPass<'_>) {}
-
     fn render_overlay(&mut self, _pass: &mut RenderPass<'_>) {}
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
-        todo!()
+        let width = Length::FitContent(pass.size.x);
+        let height = Length::FitContent(pass.size.y);
+        let auto_size = Xy::new(width, height);
+
+        let mut y_offset = 0.0;
+        for child in &mut self.children {
+            let child_size = pass.resolve_size(child.id(), auto_size);
+            pass.do_layout(child, child_size);
+            pass.place_child(child, Xy::new(0.0, y_offset));
+
+            y_offset += child_size.y;
+        }
     }
 
     fn measure(
@@ -671,7 +699,24 @@ impl Element for Column {
         length_request: LengthRequest,
         cross_length: Option<f32>,
     ) -> f32 {
-        todo!()
+        let (length_request, min_result) = match length_request {
+            LengthRequest::MinContent | LengthRequest::MaxContent => (length_request, 0.0),
+            LengthRequest::FitContent(space) => (LengthRequest::MinContent, space),
+        };
+
+        let fallback_length = length_request.into();
+
+        let mut length: f32 = 0.0;
+        for child in &mut self.children {
+            let child_length =
+                context.resolve_length(child.id(), axis, fallback_length, cross_length);
+            match axis {
+                Axis::Horizontal => length = length.max(child_length),
+                Axis::Vertical => length += child_length,
+            }
+        }
+
+        min_result.max(length)
     }
 }
 
@@ -871,6 +916,27 @@ pub struct LayoutPass<'view> {
 }
 
 impl LayoutPass<'_> {
+    pub fn do_layout(&mut self, child: &mut ChildElement, size: Xy<f32>) {
+        let mut node = self
+            .children
+            .get_mut(child.id)
+            .expect("invalid child passed to LayoutPass::do_layout");
+        layout_element(node.reborrow_mut(), size);
+        self.state.merge_with_child(&node.element.state);
+    }
+
+    pub fn place_child(&mut self, child: &mut ChildElement, position: Xy<f32>) {
+        move_element(
+            &mut self
+                .children
+                .get_mut(child.id)
+                .expect("invalid child passed to LayoutPass::place_child")
+                .element
+                .state,
+            position,
+        );
+    }
+
     pub fn resolve_size(&mut self, child_id: u64, fallback_size: Xy<Length>) -> Xy<f32> {
         let node = self
             .children
@@ -881,8 +947,12 @@ impl LayoutPass<'_> {
     }
 }
 
-pub fn layout_pass(root_node: tree::NodeMut<'_, ElementInfo>, window_size: Xy<f32>) {
-    layout_element(root_node, window_size);
+pub fn layout_pass(view: &mut View) {
+    let node = view
+        .tree
+        .find_mut(view.root_element.id())
+        .expect("failed to find the view's root node");
+    layout_element(node, view.window_size);
 }
 
 pub fn layout_element(node: tree::NodeMut<'_, ElementInfo>, size: Xy<f32>) {
@@ -924,11 +994,15 @@ impl MeasureContext<'_> {
     //       state?
     pub fn resolve_length(
         &mut self,
-        child: tree::NodeMut<'_, ElementInfo>,
+        child_id: u64,
         axis: Axis,
         fallback_length: Length,
         cross_length: Option<f32>,
     ) -> f32 {
+        let child = self
+            .children
+            .get_mut(child_id)
+            .expect("invalid child ID provided to MeasureContext::resolve_length");
         let element = &mut *child.element.element;
         let state = &mut child.element.state;
         let children = child.leaves;
@@ -1002,8 +1076,9 @@ fn resolve_axis_measurement(
     cross_length: Option<f32>,
 ) -> f32 {
     let length_request = match length {
-        Length::Fill => LengthRequest::MaxContent,
-        Length::Shrink => LengthRequest::MinContent,
+        Length::MaxContent => LengthRequest::MaxContent,
+        Length::MinContent => LengthRequest::MinContent,
+        Length::FitContent(max_size) => LengthRequest::FitContent(max_size),
         Length::Exact(amount) => return amount,
     };
     element.measure(context, axis, length_request, cross_length)
