@@ -23,6 +23,7 @@ use {
     std::{
         collections::HashMap,
         ops::{Add, Mul},
+        sync::atomic::{AtomicU64, Ordering},
     },
 };
 
@@ -377,6 +378,7 @@ impl Mul<Xy<f32>> for Transform2D {
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(C)]
 pub enum Axis {
     Horizontal,
     Vertical,
@@ -420,8 +422,8 @@ impl Length {
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub enum LengthRequest {
-    Fill,
-    Shrink,
+    MaxContent,
+    MinContent,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -453,6 +455,20 @@ pub enum MouseButton {
 
 
 
+pub struct View {
+    tree: tree::Tree<ElementInfo>,
+    root_element: ChildElement,
+}
+
+impl View {
+    pub fn new<E: Element + 'static>(element: E) -> Self {
+        Self {
+            tree: tree::Tree::new(),
+            root_element: ElementBuilder::new(element).into_child(),
+        }
+    }
+}
+
 pub struct ViewSettings {
     pub double_click_timeout: f64,
 }
@@ -471,6 +487,8 @@ pub trait Element {
     fn children_ids(&self) -> Vec<u64> {
         Vec::new()
     }
+
+    fn update_children(&mut self, pass: &mut UpdatePass<'_>);
 
     fn clickable(&self) -> bool {
         false
@@ -493,6 +511,10 @@ pub trait Element {
         length_request: LengthRequest,
         cross_length: Option<f32>,
     ) -> f32;
+
+    /// Called when this element is added to the view tree.
+    #[allow(unused)]
+    fn on_build(&mut self, pass: &mut UpdatePass<'_>) {}
 }
 
 pub struct ElementInfo {
@@ -525,6 +547,9 @@ pub struct ElementState {
     pub local_transform: Transform2D,
     pub global_transform: Transform2D,
 
+    pub newly_added: bool,
+    pub children_changed: bool,
+
     pub needs_render: bool,
     pub wants_render: bool,
     pub wants_overlay_render: bool,
@@ -535,6 +560,7 @@ pub struct ElementState {
 }
 
 impl ElementState {
+    /// See [`UpdatePass::update_child`].
     fn new(id: u64) -> Self {
         Self {
             id,
@@ -542,6 +568,8 @@ impl ElementState {
             layout_size: Xy::ZERO,
             local_transform: Transform2D::IDENTITY,
             global_transform: Transform2D::IDENTITY,
+            newly_added: true,
+            children_changed: true,
             needs_render: true,
             wants_render: true,
             wants_overlay_render: true,
@@ -552,9 +580,162 @@ impl ElementState {
     }
 
     fn merge_with_child(&mut self, child_state: &Self) {
+        self.children_changed |= child_state.children_changed;
         self.needs_render |= child_state.needs_render;
         self.needs_layout |= child_state.needs_layout;
     }
+}
+
+pub struct ElementProperties {
+    pub width: Option<Length>,
+    pub height: Option<Length>,
+}
+
+pub struct ElementBuilder {
+    id: u64,
+    element: Box<dyn Element>,
+}
+
+impl ElementBuilder {
+    pub fn new<E: Element + 'static>(element: E) -> Self {
+        static NEXT_ELEMENT_ID: AtomicU64 = AtomicU64::new(1);
+        let id = NEXT_ELEMENT_ID.fetch_add(1, Ordering::Relaxed);
+
+        Self {
+            id,
+            element: Box::new(element),
+        }
+    }
+
+    pub fn into_child(self) -> ChildElement {
+        ChildElement {
+            id: self.id,
+            inner: ChildElementInner::New(self),
+        }
+    }
+}
+
+pub struct ChildElement {
+    id: u64,
+    inner: ChildElementInner,
+}
+
+impl ChildElement {
+    #[inline]
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    fn exists(&self) -> bool {
+        matches!(self.inner, ChildElementInner::Existing)
+    }
+
+    fn take_inner(&mut self) -> Option<ElementBuilder> {
+        match std::mem::replace(&mut self.inner, ChildElementInner::Existing) {
+            ChildElementInner::New(builder) => Some(builder),
+            ChildElementInner::Existing => None,
+        }
+    }
+}
+
+enum ChildElementInner {
+    Existing,
+    New(ElementBuilder),
+}
+
+
+
+pub struct Column {
+    children: Vec<ChildElement>,
+}
+
+impl Element for Column {
+    fn update_children(&mut self, pass: &mut UpdatePass<'_>) {
+        for child in self.children.iter_mut() {
+            pass.update_child(child);
+        }
+    }
+
+    fn render(&mut self, _pass: &mut RenderPass<'_>) {}
+
+    fn render_overlay(&mut self, _pass: &mut RenderPass<'_>) {}
+
+    fn layout(&mut self, pass: &mut LayoutPass<'_>) {
+        todo!()
+    }
+
+    fn measure(
+        &mut self,
+        context: &mut MeasureContext<'_>,
+        axis: Axis,
+        length_request: LengthRequest,
+        cross_length: Option<f32>,
+    ) -> f32 {
+        todo!()
+    }
+}
+
+
+
+pub struct UpdatePass<'view> {
+    children: tree::LeavesMut<'view, ElementInfo>,
+}
+
+impl UpdatePass<'_> {
+    /// See [`Element::update_children`].
+    pub fn update_child(&mut self, child: &mut ChildElement) {
+        let Some(ElementBuilder { id, element }) = child.take_inner() else {
+            return;
+        };
+
+        let state = ElementState::new(id);
+        let info = ElementInfo { element, state };
+
+        self.children.insert(id, info);
+    }
+}
+
+pub fn update_pass(view: &mut View) {
+    if !view.root_element.exists() {
+        UpdatePass {
+            children: view.tree.roots_mut(),
+        }
+        .update_child(&mut view.root_element);
+    }
+    let node = view
+        .tree
+        .find_mut(view.root_element.id())
+        .expect("failed to find the view's root node");
+    update_element_tree(node);
+}
+
+fn update_element_tree(node: tree::NodeMut<'_, ElementInfo>) {
+    let mut children = node.leaves;
+    let element = &mut *node.element.element;
+    let state = &mut node.element.state;
+
+    if !state.children_changed {
+        return;
+    }
+
+    state.children_changed = false;
+
+    element.update_children(&mut UpdatePass {
+        children: children.reborrow_mut(),
+    });
+
+    if state.newly_added {
+        state.newly_added = false;
+        element.on_build(&mut UpdatePass {
+            children: children.reborrow_mut(),
+        });
+    }
+
+    let parent_state = &mut *state;
+    for_each_child_element(element, children, |mut node| {
+        update_element_tree(node.reborrow_mut());
+        parent_state.merge_with_child(&node.element.state);
+    });
 }
 
 
@@ -805,15 +986,12 @@ fn resolve_element_size(
             &mut context,
             element,
             block_axis,
-            inline_length,
+            block_length,
             Some(inline_measurement),
         )
     });
 
-    Xy {
-        x: inline_measurement,
-        y: block_measurement,
-    }
+    Xy::new(inline_measurement, block_measurement)
 }
 
 fn resolve_axis_measurement(
@@ -824,8 +1002,8 @@ fn resolve_axis_measurement(
     cross_length: Option<f32>,
 ) -> f32 {
     let length_request = match length {
-        Length::Fill => LengthRequest::Fill,
-        Length::Shrink => LengthRequest::Shrink,
+        Length::Fill => LengthRequest::MaxContent,
+        Length::Shrink => LengthRequest::MinContent,
         Length::Exact(amount) => return amount,
     };
     element.measure(context, axis, length_request, cross_length)
