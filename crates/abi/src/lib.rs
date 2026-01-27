@@ -403,9 +403,25 @@ impl Axis {
 #[repr(C)]
 pub enum Length {
     Fill,
-    Portion(u16),
     Shrink,
     Exact(f32),
+}
+
+impl Length {
+    pub const fn exact(&self) -> Option<f32> {
+        if let Self::Exact(amount) = *self {
+            Some(amount)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub enum LengthRequest {
+    Fill,
+    Shrink,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -467,6 +483,16 @@ pub trait Element {
     fn render(&mut self, pass: &mut RenderPass<'_>);
 
     fn render_overlay(&mut self, pass: &mut RenderPass<'_>);
+
+    fn layout(&mut self, pass: &mut LayoutPass<'_>);
+
+    fn measure(
+        &mut self,
+        context: &mut MeasureContext<'_>,
+        axis: Axis,
+        length_request: LengthRequest,
+        cross_length: Option<f32>,
+    ) -> f32;
 }
 
 pub struct ElementInfo {
@@ -494,12 +520,18 @@ pub struct ElementState {
     pub id: u64,
     pub bounds: Aabb2D<f32>,
 
+    pub layout_size: Xy<f32>,
+
     pub local_transform: Transform2D,
     pub global_transform: Transform2D,
 
     pub needs_render: bool,
     pub wants_render: bool,
     pub wants_overlay_render: bool,
+
+    pub needs_layout: bool,
+    pub wants_layout: bool,
+    pub moved: bool,
 }
 
 impl ElementState {
@@ -507,16 +539,21 @@ impl ElementState {
         Self {
             id,
             bounds: Aabb2D::ZERO,
+            layout_size: Xy::ZERO,
             local_transform: Transform2D::IDENTITY,
             global_transform: Transform2D::IDENTITY,
             needs_render: true,
             wants_render: true,
             wants_overlay_render: true,
+            needs_layout: true,
+            wants_layout: true,
+            moved: true,
         }
     }
 
     fn merge_with_child(&mut self, child_state: &Self) {
         self.needs_render |= child_state.needs_render;
+        self.needs_layout |= child_state.needs_layout;
     }
 }
 
@@ -642,6 +679,156 @@ pub fn render_element(
 
         final_render.extend(overlay_render, transform);
     }
+}
+
+
+
+pub struct LayoutPass<'view> {
+    state: &'view mut ElementState,
+    children: tree::LeavesMut<'view, ElementInfo>,
+    size: Xy<f32>,
+}
+
+impl LayoutPass<'_> {
+    pub fn resolve_size(&mut self, child_id: u64, fallback_size: Xy<Length>) -> Xy<f32> {
+        let node = self
+            .children
+            .get_mut(child_id)
+            .expect("provided invalid child ID to LayoutPass::resolve_size");
+
+        resolve_element_size(node, fallback_size) // , self.size)
+    }
+}
+
+pub fn layout_pass(root_node: tree::NodeMut<'_, ElementInfo>, window_size: Xy<f32>) {
+    layout_element(root_node, window_size);
+}
+
+pub fn layout_element(node: tree::NodeMut<'_, ElementInfo>, size: Xy<f32>) {
+    let element = &mut *node.element.element;
+    let state = &mut node.element.state;
+    let children = node.leaves;
+
+    let mut pass = LayoutPass {
+        state,
+        children,
+        size,
+    };
+    element.layout(&mut pass);
+}
+
+fn move_element(state: &mut ElementState, position: Xy<f32>) {
+    let end_point = position + state.layout_size;
+
+    let position = position.round();
+    let end_point = end_point.round();
+
+    if position.x != state.bounds.x_min || position.y != state.bounds.y_min {
+        state.moved = true;
+    }
+
+    state.bounds.x_min = position.x;
+    state.bounds.y_min = position.y;
+    state.bounds.x_max = end_point.x;
+    state.bounds.y_max = end_point.y;
+}
+
+pub struct MeasureContext<'pass> {
+    state: &'pass mut ElementState,
+    children: tree::LeavesMut<'pass, ElementInfo>,
+}
+
+impl MeasureContext<'_> {
+    // TODO: Don't just default to the fallback here. Get something from the child
+    //       state?
+    pub fn resolve_length(
+        &mut self,
+        child: tree::NodeMut<'_, ElementInfo>,
+        axis: Axis,
+        fallback_length: Length,
+        cross_length: Option<f32>,
+    ) -> f32 {
+        let element = &mut *child.element.element;
+        let state = &mut child.element.state;
+        let children = child.leaves;
+
+        let mut context = MeasureContext { state, children };
+
+        fallback_length.exact().unwrap_or_else(|| {
+            resolve_axis_measurement(&mut context, element, axis, fallback_length, cross_length)
+        })
+    }
+}
+
+// TODO: Don't just default to the fallback here. Get something from the child
+//       state?
+fn resolve_element_size(
+    node: tree::NodeMut<'_, ElementInfo>,
+    fallback_size: Xy<Length>,
+) -> Xy<f32> {
+    let element = &mut *node.element.element;
+    let state = &mut node.element.state;
+    let children = node.leaves;
+
+    // TODO: Consider supporting different inline/block axes?
+
+    let inline_axis = Axis::Horizontal;
+    let block_axis = Axis::Vertical;
+
+    let inline_length = fallback_size.x;
+    let block_length = fallback_size.y;
+
+    let inline_measurement = inline_length.exact();
+    let block_measurement = block_length.exact();
+
+    // Early return.
+    if let Some(x) = inline_measurement
+        && let Some(y) = block_measurement
+    {
+        return Xy::new(x, y);
+    }
+
+    let mut context = MeasureContext { state, children };
+
+    let inline_measurement = inline_measurement.unwrap_or_else(|| {
+        resolve_axis_measurement(
+            &mut context,
+            element,
+            inline_axis,
+            inline_length,
+            block_measurement,
+        )
+    });
+
+    let block_measurement = block_measurement.unwrap_or_else(|| {
+        resolve_axis_measurement(
+            &mut context,
+            element,
+            block_axis,
+            inline_length,
+            Some(inline_measurement),
+        )
+    });
+
+    Xy {
+        x: inline_measurement,
+        y: block_measurement,
+    }
+}
+
+fn resolve_axis_measurement(
+    context: &mut MeasureContext<'_>,
+    element: &mut dyn Element,
+    axis: Axis,
+    length: Length,
+    cross_length: Option<f32>,
+) -> f32 {
+    let length_request = match length {
+        Length::Fill => LengthRequest::Fill,
+        Length::Shrink => LengthRequest::Shrink,
+        Length::Exact(amount) => return amount,
+    };
+    element.measure(context, axis, length_request, cross_length)
 }
 
 
