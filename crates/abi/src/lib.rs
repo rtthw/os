@@ -23,7 +23,10 @@ use {
     std::{
         collections::HashMap,
         ops::{Add, Mul},
-        sync::atomic::{AtomicU64, Ordering},
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
     },
 };
 
@@ -502,7 +505,8 @@ pub trait Element {
         Vec::new()
     }
 
-    fn update_children(&mut self, pass: &mut UpdatePass<'_>);
+    #[allow(unused)]
+    fn update_children(&mut self, pass: &mut UpdatePass<'_>) {}
 
     fn clickable(&self) -> bool {
         false
@@ -512,9 +516,11 @@ pub trait Element {
         false
     }
 
-    fn render(&mut self, pass: &mut RenderPass<'_>);
+    #[allow(unused)]
+    fn render(&mut self, pass: &mut RenderPass<'_>) {}
 
-    fn render_overlay(&mut self, pass: &mut RenderPass<'_>);
+    #[allow(unused)]
+    fn render_overlay(&mut self, pass: &mut RenderPass<'_>) {}
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>);
 
@@ -674,9 +680,6 @@ impl Element for Column {
         }
     }
 
-    fn render(&mut self, _pass: &mut RenderPass<'_>) {}
-    fn render_overlay(&mut self, _pass: &mut RenderPass<'_>) {}
-
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
         let width = Length::FitContent(pass.size.x);
         let height = Length::FitContent(pass.size.y);
@@ -718,6 +721,52 @@ impl Element for Column {
 
         min_result.max(length)
     }
+}
+
+
+
+pub struct Label {
+    pub text: Arc<str>,
+}
+
+impl Element for Label {
+    fn children_ids(&self) -> Vec<u64> {
+        unsafe { __ui_Label__children_ids(self) }
+    }
+
+    fn render(&mut self, pass: &mut RenderPass<'_>) {
+        unsafe { __ui_Label__render(self, pass) }
+    }
+
+    fn layout(&mut self, pass: &mut LayoutPass<'_>) {
+        unsafe { __ui_Label__layout(self, pass) }
+    }
+
+    fn measure(
+        &mut self,
+        context: &mut MeasureContext<'_>,
+        axis: Axis,
+        length_request: LengthRequest,
+        cross_length: Option<f32>,
+    ) -> f32 {
+        unsafe { __ui_Label__measure(self, context, axis, length_request, cross_length) }
+    }
+}
+
+unsafe extern "Rust" {
+    fn __ui_Label__children_ids(label: &Label) -> Vec<u64>;
+
+    fn __ui_Label__render(label: &mut Label, pass: &mut RenderPass<'_>);
+
+    fn __ui_Label__layout(label: &mut Label, pass: &mut LayoutPass<'_>);
+
+    fn __ui_Label__measure(
+        label: &mut Label,
+        context: &mut MeasureContext<'_>,
+        axis: Axis,
+        length_request: LengthRequest,
+        cross_length: Option<f32>,
+    ) -> f32;
 }
 
 
@@ -806,7 +855,7 @@ pub struct RenderQuad {
 
 #[derive(Clone)]
 pub struct RenderText {
-    pub content: String,
+    pub content: Arc<str>,
     pub bounds: Aabb2D<f32>,
     pub color: Rgba<u8>,
 }
@@ -840,7 +889,12 @@ impl RenderPass<'_> {
         self.render.quads.push(RenderQuad { bounds, color });
     }
 
-    pub fn fill_text(&mut self, content: impl Into<String>, bounds: Aabb2D<f32>, color: Rgba<u8>) {
+    pub fn fill_text(
+        &mut self,
+        content: impl Into<Arc<str>>,
+        bounds: Aabb2D<f32>,
+        color: Rgba<u8>,
+    ) {
         self.render.texts.push(RenderText {
             content: content.into(),
             bounds,

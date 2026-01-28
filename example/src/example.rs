@@ -4,12 +4,18 @@
 
 extern crate abi;
 
+use abi::Element as _;
+
 
 
 abi::manifest! {
     name: "example",
     init: || {
         use abi::App as _;
+        println!(
+            "example::Label::children_ids = {:?}",
+            abi::Label { text: "Example".into() }.children_ids(),
+        );
         App { font_size: 10.0 }.wrap()
     },
     dependencies: &[],

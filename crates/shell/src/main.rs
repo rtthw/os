@@ -1941,3 +1941,56 @@ impl View {
 }
 
 slotmap::new_key_type! { pub struct ViewNode; }
+
+
+
+use abi::*;
+
+#[allow(unused)]
+#[unsafe(export_name = "__ui_Label__children_ids")]
+pub extern "Rust" fn __label_children_ids(label: &Label) -> Vec<u64> {
+    // TODO
+    println!("shell::ui::Label::children_ids");
+    vec![43, 59, 11]
+}
+
+#[allow(unused)]
+#[unsafe(export_name = "__ui_Label__render")]
+pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>) {
+    // TODO
+    println!("shell::ui::Label::render");
+}
+
+#[allow(unused)]
+#[unsafe(export_name = "__ui_Label__layout")]
+pub extern "Rust" fn __label_layout(label: &mut Label, pass: &mut LayoutPass<'_>) {
+    // TODO
+    println!("shell::ui::Label::layout");
+}
+
+#[allow(unused)]
+#[unsafe(export_name = "__ui_Label__measure")]
+pub extern "Rust" fn __label_measure(
+    label: &mut Label,
+    context: &mut MeasureContext<'_>,
+    axis: Axis,
+    length_request: LengthRequest,
+    cross_length: Option<f32>,
+) -> f32 {
+    // TODO
+    43.0
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn label_calls() {
+        let label = abi::Label { text: "".into() };
+        // This should also print "shell::ui::Label::children_ids" twice.
+        assert_eq!(label.children_ids(), __label_children_ids(&label),);
+    }
+}
