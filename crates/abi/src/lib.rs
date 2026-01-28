@@ -723,6 +723,7 @@ impl Element for Column {
 
 
 pub struct UpdatePass<'view> {
+    state: &'view mut ElementState,
     children: tree::LeavesMut<'view, ElementInfo>,
 }
 
@@ -741,16 +742,20 @@ impl UpdatePass<'_> {
 }
 
 pub fn update_pass(view: &mut View) {
-    if !view.root_element.exists() {
-        UpdatePass {
-            children: view.tree.roots_mut(),
-        }
-        .update_child(&mut view.root_element);
-    }
-    let node = view
+    let mut node = view
         .tree
         .find_mut(view.root_element.id())
         .expect("failed to find the view's root node");
+
+    {
+        let children = node.leaves.reborrow_mut();
+        let state = &mut node.element.state;
+
+        if !view.root_element.exists() {
+            UpdatePass { state, children }.update_child(&mut view.root_element);
+        }
+    }
+
     update_element_tree(node);
 }
 
@@ -766,12 +771,14 @@ fn update_element_tree(node: tree::NodeMut<'_, ElementInfo>) {
     state.children_changed = false;
 
     element.update_children(&mut UpdatePass {
+        state,
         children: children.reborrow_mut(),
     });
 
     if state.newly_added {
         state.newly_added = false;
         element.on_build(&mut UpdatePass {
+            state,
             children: children.reborrow_mut(),
         });
     }
@@ -1082,6 +1089,35 @@ fn resolve_axis_measurement(
         Length::Exact(amount) => return amount,
     };
     element.measure(context, axis, length_request, cross_length)
+}
+
+
+
+macro_rules! multi_impl {
+    ($ty:ty, { $($item:item)+ }) => {
+        impl $ty { $($item)+ }
+    };
+    ($ty:ty, $($others:ty),+, { $($item:item)+ }) => {
+        multi_impl!($ty, { $($item)+ });
+        multi_impl!($($others),+, { $($item)+ });
+    };
+}
+
+// Types with a `state: &mut ElementState` field.
+multi_impl! {
+    LayoutPass<'_>,
+    MeasureContext<'_>,
+    RenderPass<'_>,
+    UpdatePass<'_>,
+    {
+        pub fn request_render(&mut self) {
+            self.state.wants_render = true;
+        }
+
+        pub fn request_layout(&mut self) {
+            self.state.wants_layout = true;
+        }
+    }
 }
 
 
