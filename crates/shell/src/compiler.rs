@@ -17,20 +17,24 @@ pub fn run(content: &str, input_filename: &str, output_filename: &str) {
                             .into(),
                         ),
                         is_private_dep: false,
-                        add_prelude: false,
+                        add_prelude: true,
                         nounused_dep: false,
                         force: false,
                     },
                 )]
                 .into(),
             ),
+            search_paths: vec![session::search_paths::SearchPath::new(
+                session::search_paths::PathKind::All,
+                "/lib".into(),
+            )],
             incremental: None, // TODO: Use incremental compilation.
             output_types: session::config::OutputTypes::new(&[(
                 session::config::OutputType::Exe,
                 Some(session::config::OutFileName::Real(output_filename.into())),
             )]),
             cg: session::config::CodegenOptions {
-                opt_level: "2".into(),
+                opt_level: "3".into(),
                 panic: Some(rustc_target::spec::PanicStrategy::Abort),
                 strip: session::config::Strip::Symbols,
                 ..Default::default()
