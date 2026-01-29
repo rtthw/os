@@ -922,6 +922,7 @@ dependencies = [
  "kernel",
  "libc",
  "log",
+ "parking_lot",
  "parley",
  "raw-window-handle",
  "slotmap",

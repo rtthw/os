@@ -34,7 +34,10 @@ pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 
 
+// TODO: Use the `Element` trait instead of this one?
 pub trait App<U: Any> {
+    fn view(&mut self) -> impl Element + 'static;
+
     fn update(&mut self, update: U) -> Result<(), &'static str>;
 
     /// Convert this concrete application instance into a [`WrappedApp`] for
@@ -49,6 +52,15 @@ pub trait App<U: Any> {
         }
 
         impl<A: App<U>, U: Any> WrappedApp for Wrapper<A, U> {
+            fn build_view(&mut self, fonts: Box<dyn Fonts>, window_size: Xy<f32>) -> View {
+                View {
+                    fonts,
+                    tree: tree::Tree::new(),
+                    root_element: ElementBuilder::new(self.app.view()).into_child(),
+                    window_size,
+                }
+            }
+
             fn update(&mut self, update: Box<dyn Any>) -> Result<(), &'static str> {
                 match update.downcast::<U>() {
                     Ok(update) => {
@@ -72,6 +84,7 @@ pub trait App<U: Any> {
 ///
 /// See [`App::wrap`] for implementation details.
 pub trait WrappedApp {
+    fn build_view(&mut self, fonts: Box<dyn Fonts>, window_size: Xy<f32>) -> View;
     /// Pass a type-erased update to the underlying [`App`].
     fn update(&mut self, update: Box<dyn Any>) -> Result<(), &'static str>;
 }
@@ -165,6 +178,7 @@ impl Aabb2D<f32> {
         }
     }
 
+    #[inline]
     pub const fn from_min_max(min: Xy<f32>, max: Xy<f32>) -> Self {
         Self {
             x_min: min.x,
@@ -174,6 +188,7 @@ impl Aabb2D<f32> {
         }
     }
 
+    #[inline]
     pub const fn from_size(size: Xy<f32>) -> Self {
         Self {
             x_min: 0.0,
@@ -181,6 +196,16 @@ impl Aabb2D<f32> {
             y_min: 0.0,
             y_max: size.y,
         }
+    }
+
+    #[inline]
+    pub const fn size(&self) -> Xy<f32> {
+        Xy::new(self.x_max - self.x_min, self.y_max - self.y_min)
+    }
+
+    #[inline]
+    pub const fn position(&self) -> Xy<f32> {
+        Xy::new(self.x_min, self.y_min)
     }
 
     #[inline]
@@ -538,21 +563,6 @@ pub struct View {
     window_size: Xy<f32>,
 }
 
-impl View {
-    pub fn new<F, E>(fonts: F, element: E, window_size: Xy<f32>) -> Self
-    where
-        F: Fonts + 'static,
-        E: Element + 'static,
-    {
-        Self {
-            fonts: Box::new(fonts),
-            tree: tree::Tree::new(),
-            root_element: ElementBuilder::new(element).into_child(),
-            window_size,
-        }
-    }
-}
-
 pub trait Fonts {
     fn measure_text(
         &mut self,
@@ -748,6 +758,19 @@ enum ChildElementInner {
 
 pub struct Column {
     children: Vec<ChildElement>,
+}
+
+impl Column {
+    pub fn new() -> Self {
+        Self {
+            children: Vec::new(),
+        }
+    }
+
+    pub fn with(mut self, child: impl Element + 'static) -> Self {
+        self.children.push(ElementBuilder::new(child).into_child());
+        self
+    }
 }
 
 impl Element for Column {

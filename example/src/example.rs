@@ -26,6 +26,10 @@ struct App {
 }
 
 impl abi::App<Update> for App {
+    fn view(&mut self) -> impl abi::Element + 'static {
+        abi::Column::new().with(abi::Label::new("Example"))
+    }
+
     fn update(&mut self, update: Update) -> Result<(), &'static str> {
         match update {
             Update::IncreaseFontSize(value) => {

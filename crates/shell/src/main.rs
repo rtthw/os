@@ -23,6 +23,7 @@ use std::{
     num::NonZeroU32,
     os::fd::AsRawFd as _,
     ptr::NonNull,
+    rc::Rc,
     str::FromStr as _,
     sync::{Arc, atomic::AtomicBool},
     time::Instant,
@@ -45,6 +46,7 @@ use {
         epoll::{Event, EventPoll},
         file::File,
     },
+    parking_lot::RwLock,
 };
 
 use crate::{
@@ -65,10 +67,19 @@ fn main() -> Result<()> {
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 
+    let mut font_context = parley::FontContext::new();
+    let prop_fonts = font_context
+        .collection
+        .register_fonts(DEFAULT_PROP_FONT_DATA.to_vec().into(), None);
+
+    debug!(target: "fonts", "Proportional fonts: {prop_fonts:?}");
+
+    let font_context = Rc::new(RwLock::new(font_context));
+
     info!("Compiling example program...");
 
     let example_program_text = std::fs::read_to_string("/lib/example.rs")?;
-    let example_program = Program::load("example", example_program_text)?;
+    let example_program = Program::load("example", example_program_text, Rc::clone(&font_context))?;
 
     let gpu = GraphicsCard::open("/dev/dri/card0")?;
 
@@ -433,6 +444,7 @@ fn main() -> Result<()> {
         cursor_data,
         cursor_buffer,
         example_program,
+        font_context,
     };
 
     shell.render()?;
@@ -604,6 +616,7 @@ pub struct Shell {
     cursor_data: HashMap<CursorIcon, CursorData>,
     cursor_buffer: gbm::BufferObject<()>,
     example_program: Program,
+    font_context: Rc<RwLock<parley::FontContext>>,
 }
 
 impl Shell {
@@ -1643,10 +1656,15 @@ struct Program {
     compiling_flag: Arc<AtomicBool>,
     text: String,
     known_bounds: abi::Aabb2D<f32>,
+    font_context: Rc<RwLock<parley::FontContext>>,
 }
 
 impl Program {
-    fn load(name: &'static str, text: String) -> Result<Self> {
+    fn load(
+        name: &'static str,
+        text: String,
+        font_context: Rc<RwLock<parley::FontContext>>,
+    ) -> Result<Self> {
         let mut this = Self {
             name,
             object: None,
@@ -1655,6 +1673,7 @@ impl Program {
             compiling_flag: Arc::new(AtomicBool::new(false)),
             text,
             known_bounds: abi::Aabb2D::default(),
+            font_context,
         };
 
         this.start_compiling();
@@ -1691,10 +1710,20 @@ impl Program {
                     "Could not find manifest for program '{}'",
                     self.name,
                 ))?;
-        let app = ((unsafe { &**manifest }).init)();
+        let mut app = ((unsafe { &**manifest }).init)();
+
+        let view = app.build_view(
+            Box::new(FontsImpl {
+                font_context: Rc::clone(&self.font_context),
+                layout_context: parley::LayoutContext::new(),
+                layout_cache: HashMap::new(),
+            }),
+            self.known_bounds.size(),
+        );
 
         self.object = Some(ProgramObject {
             app,
+            view,
             _manifest: manifest,
             _handle: handle,
         });
@@ -1756,6 +1785,7 @@ impl Program {
 
 struct ProgramObject {
     app: Box<dyn abi::WrappedApp>,
+    view: abi::View,
     _manifest: object::Ptr<*const abi::Manifest>,
     _handle: Object,
 }
@@ -1781,8 +1811,10 @@ use abi::*;
 
 
 
+static DEFAULT_PROP_FONT_DATA: &[u8] = include_bytes!("../../../res/NotoSans-Regular.ttf");
+
 struct FontsImpl {
-    font_context: parley::FontContext,
+    font_context: Rc<RwLock<parley::FontContext>>,
     layout_context: parley::LayoutContext,
     // FIXME: Use an actual cache implementation (with eviction) here.
     layout_cache: HashMap<u64, (parley::Layout<[u8; 4]>, TextLayoutCacheEntry)>,
@@ -1812,9 +1844,10 @@ impl Fonts for FontsImpl {
         let (layout, cached) = self.layout_cache.entry(id).or_default();
 
         if &entry != cached {
+            let mut font_context = self.font_context.write();
             let mut builder =
                 self.layout_context
-                    .ranged_builder(&mut self.font_context, text, 1.0, true);
+                    .ranged_builder(&mut *font_context, text, 1.0, true);
 
             builder.push_default(parley::StyleProperty::FontSize(font_size));
             builder.push_default(parley::StyleProperty::LineHeight(match line_height {
