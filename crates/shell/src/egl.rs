@@ -8,19 +8,20 @@ use anyhow::Result;
 
 pub struct Renderer {
     pub painter: egui_glow::Painter,
-    pub egui_ctx: egui::Context,
+    pub egui_context: egui::Context,
     pub gl: Arc<glow::Context>,
 }
 
 impl Renderer {
-    pub fn new(display: &impl glutin::display::GlDisplay) -> Result<Self> {
+    pub fn new(
+        display: &impl glutin::display::GlDisplay,
+        egui_context: egui::Context,
+    ) -> Result<Self> {
         let gl = Arc::new(unsafe {
             glow::Context::from_loader_function_cstr(|s| display.get_proc_address(s))
         });
 
         let painter = egui_glow::Painter::new(Arc::clone(&gl), "", None, true)?;
-
-        let egui_ctx = egui::Context::default();
 
         {
             let mut fonts = egui::FontDefinitions::default();
@@ -43,10 +44,10 @@ impl Renderer {
                 vec!["Ubuntu-Light".into(), "icon-fill".into()],
             );
 
-            egui_ctx.set_fonts(fonts);
+            egui_context.set_fonts(fonts);
         }
 
-        egui_ctx.style_mut(|s| {
+        egui_context.style_mut(|s| {
             s.visuals.interact_cursor = Some(egui::CursorIcon::PointingHand);
 
             s.visuals.button_frame = false;
@@ -68,7 +69,7 @@ impl Renderer {
 
         Ok(Self {
             painter,
-            egui_ctx,
+            egui_context,
             gl,
         })
     }

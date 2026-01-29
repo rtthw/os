@@ -23,7 +23,6 @@ use std::{
     num::NonZeroU32,
     os::fd::AsRawFd as _,
     ptr::NonNull,
-    rc::Rc,
     str::FromStr as _,
     sync::{Arc, atomic::AtomicBool},
     time::Instant,
@@ -46,7 +45,6 @@ use {
         epoll::{Event, EventPoll},
         file::File,
     },
-    parking_lot::RwLock,
 };
 
 use crate::{
@@ -67,19 +65,12 @@ fn main() -> Result<()> {
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 
-    let mut font_context = parley::FontContext::new();
-    let prop_fonts = font_context
-        .collection
-        .register_fonts(DEFAULT_PROP_FONT_DATA.to_vec().into(), None);
-
-    debug!(target: "fonts", "Proportional fonts: {prop_fonts:?}");
-
-    let font_context = Rc::new(RwLock::new(font_context));
+    let egui_context = egui::Context::default();
 
     info!("Compiling example program...");
 
     let example_program_text = std::fs::read_to_string("/lib/example.rs")?;
-    let example_program = Program::load("example", example_program_text, Rc::clone(&font_context))?;
+    let example_program = Program::load("example", example_program_text, egui_context.clone())?;
 
     let gpu = GraphicsCard::open("/dev/dri/card0")?;
 
@@ -141,7 +132,7 @@ fn main() -> Result<()> {
 
     trace!(target: "gpu", "Preparing outputs...");
 
-    let output = match gpu.prepare_output(&config, context) {
+    let output = match gpu.prepare_output(&config, context, egui_context.clone()) {
         Ok(output) => output,
         Err(error) => {
             bail!(
@@ -444,7 +435,7 @@ fn main() -> Result<()> {
         cursor_data,
         cursor_buffer,
         example_program,
-        font_context,
+        egui_context,
     };
 
     shell.render()?;
@@ -616,7 +607,7 @@ pub struct Shell {
     cursor_data: HashMap<CursorIcon, CursorData>,
     cursor_buffer: gbm::BufferObject<()>,
     example_program: Program,
-    font_context: Rc<RwLock<parley::FontContext>>,
+    egui_context: egui::Context,
 }
 
 impl Shell {
@@ -669,7 +660,7 @@ impl Shell {
             system_theme: Some(egui::Theme::Dark),
             safe_area_insets: None,
         };
-        let full_output = self.output.renderer.egui_ctx.run(raw_input, |ctx| {
+        let full_output = self.egui_context.run(raw_input, |ctx| {
             egui::TopBottomPanel::top("menubar")
                 .show_separator_line(false)
                 .default_height(30.0)
@@ -742,7 +733,7 @@ impl Shell {
         let clipped_primitives = self
             .output
             .renderer
-            .egui_ctx
+            .egui_context
             .tessellate(full_output.shapes, full_output.pixels_per_point);
 
         unsafe {
@@ -1406,6 +1397,7 @@ impl GraphicsCard {
         &self,
         config: &glutin::api::egl::config::Config,
         context: glutin::api::egl::context::NotCurrentContext,
+        egui_context: egui::Context,
     ) -> Result<Output> {
         let resources = self.resource_handles()?;
 
@@ -1463,7 +1455,7 @@ impl GraphicsCard {
                 glutin::surface::SwapInterval::Wait(NonZeroU32::MIN),
             )?;
 
-            let renderer = egl::Renderer::new(&context.display())?;
+            let renderer = egl::Renderer::new(&context.display(), egui_context)?;
 
             return Ok(Output {
                 bo,
@@ -1656,15 +1648,11 @@ struct Program {
     compiling_flag: Arc<AtomicBool>,
     text: String,
     known_bounds: abi::Aabb2D<f32>,
-    font_context: Rc<RwLock<parley::FontContext>>,
+    egui_context: egui::Context,
 }
 
 impl Program {
-    fn load(
-        name: &'static str,
-        text: String,
-        font_context: Rc<RwLock<parley::FontContext>>,
-    ) -> Result<Self> {
+    fn load(name: &'static str, text: String, egui_context: egui::Context) -> Result<Self> {
         let mut this = Self {
             name,
             object: None,
@@ -1673,7 +1661,7 @@ impl Program {
             compiling_flag: Arc::new(AtomicBool::new(false)),
             text,
             known_bounds: abi::Aabb2D::default(),
-            font_context,
+            egui_context,
         };
 
         this.start_compiling();
@@ -1712,14 +1700,15 @@ impl Program {
                 ))?;
         let mut app = ((unsafe { &**manifest }).init)();
 
-        let view = app.build_view(
+        let mut view = app.build_view(
             Box::new(FontsImpl {
-                font_context: Rc::clone(&self.font_context),
-                layout_context: parley::LayoutContext::new(),
-                layout_cache: HashMap::new(),
+                egui_context: self.egui_context.clone(),
+                galley_cache: HashMap::new(),
             }),
             self.known_bounds.size(),
         );
+
+        abi::update_pass(&mut view);
 
         self.object = Some(ProgramObject {
             app,
@@ -1752,8 +1741,6 @@ impl Program {
             ui.set_width(ui.available_width());
             ui.set_height(ui.available_height());
 
-            self.known_bounds = rect_to_aabb2d(ui.available_rect_before_wrap());
-
             if self.editing {
                 ui.horizontal_wrapped(|ui| {
                     if ui.button("Cancel").clicked() {
@@ -1775,8 +1762,24 @@ impl Program {
                 self.editing = true;
             }
 
-            // let mut renderer = Renderer { ui };
-            // self.object.as_mut().unwrap().app.render(&mut renderer);
+            let view = &mut self.object.as_mut().unwrap().view;
+
+            let window_bounds = rect_to_aabb2d(ui.available_rect_before_wrap());
+            if self.known_bounds != window_bounds {
+                self.known_bounds = window_bounds;
+                view.resize_window(window_bounds.size());
+            }
+
+            let render = abi::render_pass(view);
+
+            let painter = ui.painter();
+            for quad in render.quads {
+                painter.rect_filled(
+                    aabb2d_to_rect(quad.bounds.translate(self.known_bounds.position())),
+                    5,
+                    rgba_to_color32(quad.color),
+                );
+            }
         });
 
         Ok(())
@@ -1805,6 +1808,13 @@ fn rect_to_aabb2d(bounds: Rect) -> abi::Aabb2D<f32> {
     }
 }
 
+fn aabb2d_to_rect(bounds: abi::Aabb2D<f32>) -> Rect {
+    Rect::from_min_max(
+        pos2(bounds.x_min, bounds.y_min),
+        pos2(bounds.x_max, bounds.y_max),
+    )
+}
+
 
 
 use abi::*;
@@ -1814,10 +1824,8 @@ use abi::*;
 static DEFAULT_PROP_FONT_DATA: &[u8] = include_bytes!("../../../res/NotoSans-Regular.ttf");
 
 struct FontsImpl {
-    font_context: Rc<RwLock<parley::FontContext>>,
-    layout_context: parley::LayoutContext,
-    // FIXME: Use an actual cache implementation (with eviction) here.
-    layout_cache: HashMap<u64, (parley::Layout<[u8; 4]>, TextLayoutCacheEntry)>,
+    egui_context: egui::Context,
+    galley_cache: HashMap<u64, Arc<egui::text::Galley>>,
 }
 
 impl Fonts for FontsImpl {
@@ -1827,81 +1835,88 @@ impl Fonts for FontsImpl {
         text: &Arc<str>,
         max_advance: Option<f32>,
         font_size: f32,
-        line_height: LineHeight,
-        font_style: FontStyle,
+        _line_height: LineHeight,
+        _font_style: FontStyle,
         alignment: TextAlignment,
-        wrap_mode: TextWrapMode,
+        _wrap_mode: TextWrapMode,
     ) -> Xy<f32> {
-        let entry = TextLayoutCacheEntry {
-            max_advance,
-            font_size,
-            line_height,
-            font_style,
-            alignment,
-            wrap_mode,
+        let run_layout = || {
+            self.egui_context.fonts_mut(|fonts| {
+                fonts.layout_job(egui::text::LayoutJob {
+                    text: text.to_string(),
+                    sections: vec![egui::text::LayoutSection {
+                        leading_space: 0.0,
+                        byte_range: 0..text.len(),
+                        format: egui::TextFormat::simple(
+                            egui::FontId {
+                                size: font_size,
+                                family: egui::FontFamily::Proportional,
+                            },
+                            egui::Color32::WHITE,
+                        ),
+                    }],
+                    wrap: egui::text::TextWrapping {
+                        max_width: max_advance.unwrap_or(f32::INFINITY),
+                        max_rows: usize::MAX,
+                        break_anywhere: false,
+                        overflow_character: Default::default(),
+                    },
+                    first_row_min_height: 0.0,
+                    break_on_newline: true,
+                    halign: match alignment {
+                        TextAlignment::Start => egui::Align::Min,
+                        TextAlignment::End => egui::Align::Max,
+                        TextAlignment::Left => egui::Align::LEFT,
+                        TextAlignment::Center => egui::Align::Center,
+                        TextAlignment::Right => egui::Align::RIGHT,
+                        TextAlignment::Justify => egui::Align::Min,
+                    },
+                    justify: alignment == TextAlignment::Justify,
+                    round_output_to_gui: false,
+                })
+            })
         };
 
-        let (layout, cached) = self.layout_cache.entry(id).or_default();
+        let galley = self.galley_cache.entry(id).or_insert_with(|| run_layout());
 
-        if &entry != cached {
-            let mut font_context = self.font_context.write();
-            let mut builder =
-                self.layout_context
-                    .ranged_builder(&mut *font_context, text, 1.0, true);
-
-            builder.push_default(parley::StyleProperty::FontSize(font_size));
-            builder.push_default(parley::StyleProperty::LineHeight(match line_height {
-                LineHeight::Relative(v) => parley::LineHeight::MetricsRelative(v),
-                LineHeight::Absolute(v) => parley::LineHeight::Absolute(v),
-            }));
-            builder.push_default(parley::StyleProperty::FontStyle(match font_style {
-                FontStyle::Normal => parley::FontStyle::Normal,
-                FontStyle::Italic => parley::FontStyle::Italic,
-                FontStyle::Oblique => parley::FontStyle::Oblique(None),
-            }));
-
-            builder.build_into(layout, text);
-
-            *cached = entry;
+        if galley.text() != text.as_ref() {
+            *galley = run_layout();
+        }
+        if galley.job.sections.first().unwrap().format.font_id.size != font_size {
+            *galley = run_layout();
         }
 
-        Xy::new(layout.width(), layout.height())
-    }
-}
+        let rect = galley.rect;
 
-#[derive(Default, PartialEq)]
-struct TextLayoutCacheEntry {
-    max_advance: Option<f32>,
-    font_size: f32,
-    line_height: LineHeight,
-    font_style: FontStyle,
-    alignment: TextAlignment,
-    wrap_mode: TextWrapMode,
+        Xy::new(rect.width(), rect.height())
+    }
 }
 
 
 
 #[allow(unused)]
 #[unsafe(export_name = "__ui_Label__children_ids")]
-pub extern "Rust" fn __label_children_ids(label: &Label) -> Vec<u64> {
-    // TODO
-    println!("shell::ui::Label::children_ids");
-    vec![43, 59, 11]
+pub extern "Rust" fn __label_children_ids(_label: &Label) -> Vec<u64> {
+    Vec::new()
 }
 
 #[allow(unused)]
 #[unsafe(export_name = "__ui_Label__render")]
 pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>) {
-    // TODO
-    println!("shell::ui::Label::render");
+    pass.fill_quad(
+        pass.bounds(),
+        Rgba {
+            r: 177,
+            g: 177,
+            b: 177,
+            a: 255,
+        },
+    );
 }
 
 #[allow(unused)]
 #[unsafe(export_name = "__ui_Label__layout")]
-pub extern "Rust" fn __label_layout(label: &mut Label, pass: &mut LayoutPass<'_>) {
-    // TODO
-    println!("shell::ui::Label::layout");
-}
+pub extern "Rust" fn __label_layout(_label: &mut Label, _pass: &mut LayoutPass<'_>) {}
 
 #[allow(unused)]
 #[unsafe(export_name = "__ui_Label__measure")]

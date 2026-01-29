@@ -20,8 +20,6 @@ glutin = "0.32.3"
 kernel.workspace = true
 libc = "0.2"
 log = { version = "0.4", features = ["std"] }
-parking_lot = "0.12.5"
-parley = { version = "0.7.0", default-features = false, features = ["std"] }
 raw-window-handle = "0.6"
 slotmap = { version = "1", default-features = false }
 thiserror = "2"

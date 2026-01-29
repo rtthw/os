@@ -53,11 +53,26 @@ pub trait App<U: Any> {
 
         impl<A: App<U>, U: Any> WrappedApp for Wrapper<A, U> {
             fn build_view(&mut self, fonts: Box<dyn Fonts>, window_size: Xy<f32>) -> View {
+                let mut tree = tree::Tree::new();
+
+                let Some(ElementBuilder { id, element }) = ElementBuilder::new(self.app.view())
+                    .into_child()
+                    .take_inner()
+                else {
+                    unreachable!();
+                };
+
+                let state = ElementState::new(id);
+                let info = ElementInfo { element, state };
+
+                tree.roots_mut().insert(id, info);
+
                 View {
                     fonts,
-                    tree: tree::Tree::new(),
-                    root_element: ElementBuilder::new(self.app.view()).into_child(),
+                    tree,
+                    root_element_id: id,
                     window_size,
+                    render_cache: HashMap::new(),
                 }
             }
 
@@ -156,7 +171,7 @@ macro_rules! declare {
 
 
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
 pub struct Aabb2D<V> {
     pub x_min: V,
@@ -222,6 +237,12 @@ impl Aabb2D<f32> {
             x_min.max(x_max),
             y_min.max(y_max),
         )
+    }
+
+    #[inline]
+    pub fn set_size(&mut self, size: Xy<f32>) {
+        self.x_max = self.x_min + size.x;
+        self.y_max = self.y_min + size.y;
     }
 
     pub const fn translate(&self, amount: Xy<f32>) -> Self {
@@ -559,8 +580,20 @@ impl LineHeight {
 pub struct View {
     fonts: Box<dyn Fonts>,
     tree: tree::Tree<ElementInfo>,
-    root_element: ChildElement,
+    root_element_id: u64,
     window_size: Xy<f32>,
+    render_cache: HashMap<u64, (Render, Render)>,
+}
+
+impl View {
+    pub fn resize_window(&mut self, size: Xy<f32>) {
+        if self.window_size == size {
+            return;
+        }
+        self.window_size = size;
+
+        layout_pass(self);
+    }
 }
 
 pub trait Fonts {
@@ -737,7 +770,7 @@ impl ChildElement {
         self.id
     }
 
-    fn exists(&self) -> bool {
+    pub fn exists(&self) -> bool {
         matches!(self.inner, ChildElementInner::Existing)
     }
 
@@ -782,6 +815,18 @@ impl Element for Column {
         for child in self.children.iter_mut() {
             pass.update_child(child);
         }
+    }
+
+    fn render(&mut self, pass: &mut RenderPass<'_>) {
+        pass.fill_quad(
+            pass.bounds(),
+            Rgba {
+                r: 33,
+                g: 33,
+                b: 33,
+                a: 255,
+            },
+        );
     }
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
@@ -913,19 +958,10 @@ impl UpdatePass<'_> {
 }
 
 pub fn update_pass(view: &mut View) {
-    let mut node = view
+    let node = view
         .tree
-        .find_mut(view.root_element.id())
+        .find_mut(view.root_element_id)
         .expect("failed to find the view's root node");
-
-    {
-        let children = node.leaves.reborrow_mut();
-        let state = &mut node.element.state;
-
-        if !view.root_element.exists() {
-            UpdatePass { state, children }.update_child(&mut view.root_element);
-        }
-    }
 
     update_element_tree(node);
 }
@@ -1025,13 +1061,14 @@ impl RenderPass<'_> {
     }
 }
 
-pub fn render_pass(
-    root_node: tree::NodeMut<'_, ElementInfo>,
-    render_cache: &mut HashMap<u64, (Render, Render)>,
-) -> Render {
+pub fn render_pass(view: &mut View) -> Render {
     let mut final_render = Render::default();
+    let root_node = view
+        .tree
+        .find_mut(view.root_element_id)
+        .expect("failed to find the view's root node");
 
-    render_element(root_node, render_cache, &mut final_render);
+    render_element(root_node, &mut view.render_cache, &mut final_render);
 
     final_render
 }
@@ -1144,7 +1181,7 @@ impl LayoutPass<'_> {
 pub fn layout_pass(view: &mut View) {
     let node = view
         .tree
-        .find_mut(view.root_element.id())
+        .find_mut(view.root_element_id)
         .expect("failed to find the view's root node");
     layout_element(&mut *view.fonts, node, view.window_size);
 }
@@ -1153,6 +1190,8 @@ pub fn layout_element(fonts: &mut dyn Fonts, node: tree::NodeMut<'_, ElementInfo
     let element = &mut *node.element.element;
     let state = &mut node.element.state;
     let children = node.leaves;
+
+    state.bounds.set_size(size);
 
     let mut pass = LayoutPass {
         fonts,
@@ -1164,7 +1203,7 @@ pub fn layout_element(fonts: &mut dyn Fonts, node: tree::NodeMut<'_, ElementInfo
 }
 
 fn move_element(state: &mut ElementState, position: Xy<f32>) {
-    let end_point = position + state.layout_size;
+    let end_point = position + state.bounds.size();
 
     let position = position.round();
     let end_point = end_point.round();

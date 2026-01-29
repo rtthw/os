@@ -4,18 +4,12 @@
 
 extern crate abi;
 
-use abi::Element as _;
-
 
 
 abi::manifest! {
     name: "example",
     init: || {
         use abi::App as _;
-        println!(
-            "example::Label::children_ids = {:?}",
-            abi::Label::new("Example").children_ids(),
-        );
         App { font_size: 10.0 }.wrap()
     },
     dependencies: &[],
@@ -27,7 +21,9 @@ struct App {
 
 impl abi::App<Update> for App {
     fn view(&mut self) -> impl abi::Element + 'static {
-        abi::Column::new().with(abi::Label::new("Example"))
+        abi::Column::new()
+            .with(abi::Label::new("Example"))
+            .with(abi::Label::new("Example"))
     }
 
     fn update(&mut self, update: Update) -> Result<(), &'static str> {
