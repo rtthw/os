@@ -1016,6 +1016,7 @@ pub struct RenderText {
     pub content: Arc<str>,
     pub bounds: Aabb2D<f32>,
     pub color: Rgba<u8>,
+    pub font_size: f32,
 }
 
 impl Render {
@@ -1052,11 +1053,13 @@ impl RenderPass<'_> {
         content: impl Into<Arc<str>>,
         bounds: Aabb2D<f32>,
         color: Rgba<u8>,
+        font_size: f32,
     ) {
         self.render.texts.push(RenderText {
             content: content.into(),
             bounds,
             color,
+            font_size,
         });
     }
 }

@@ -1780,6 +1780,23 @@ impl Program {
                     rgba_to_color32(quad.color),
                 );
             }
+            for text in render.texts {
+                let pos = text.bounds.position() + self.known_bounds.position();
+                painter
+                    .with_clip_rect(aabb2d_to_rect(
+                        text.bounds.translate(self.known_bounds.position()),
+                    ))
+                    .text(
+                        pos2(pos.x, pos.y),
+                        egui::Align2::LEFT_TOP,
+                        text.content.to_string(),
+                        egui::FontId {
+                            size: text.font_size,
+                            family: egui::FontFamily::Proportional,
+                        },
+                        rgba_to_color32(text.color),
+                    );
+            }
         });
 
         Ok(())
@@ -1906,11 +1923,22 @@ pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>
     pass.fill_quad(
         pass.bounds(),
         Rgba {
+            r: 11,
+            g: 11,
+            b: 11,
+            a: 255,
+        },
+    );
+    pass.fill_text(
+        label.text.clone(),
+        pass.bounds(),
+        Rgba {
             r: 177,
             g: 177,
             b: 177,
             a: 255,
         },
+        label.font_size,
     );
 }
 
