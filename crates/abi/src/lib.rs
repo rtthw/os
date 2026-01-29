@@ -470,20 +470,91 @@ pub enum MouseButton {
 
 
 
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[repr(u8)]
+pub enum TextWrapMode {
+    #[default]
+    Wrap = 0,
+    NoWrap = 1,
+}
+
+/// How text content is aligned within a container.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[repr(u8)]
+pub enum TextAlignment {
+    /// Align text content to the beginning edge.
+    ///
+    /// This is equivalent to [`TextAlignment::Left`] for left-to-right text,
+    /// and [`TextAlignment::Right`] for right-to-left text.
+    #[default]
+    Start = 0,
+    /// Align text content to the ending edge.
+    ///
+    /// This is equivalent to [`TextAlignment::Right`] for left-to-right text,
+    /// and [`TextAlignment::Left`] for right-to-left text.
+    End = 1,
+    /// Align text content to the left edge.
+    Left = 2,
+    /// Align text content to the center.
+    Center = 3,
+    /// Align text content to the right edge.
+    Right = 4,
+    /// Justify text content to fill all available space, with the last line
+    /// unaffected.
+    Justify = 5,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+#[repr(u8)]
+pub enum FontStyle {
+    #[default]
+    Normal,
+    Italic,
+    Oblique,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LineHeight {
+    Relative(f32),
+    Absolute(f32),
+}
+
+impl Default for LineHeight {
+    fn default() -> Self {
+        Self::FONT_PREFERRED
+    }
+}
+
+impl LineHeight {
+    pub const FONT_PREFERRED: Self = Self::Relative(1.0);
+}
+
+
+
 pub struct View {
+    fonts: Box<dyn Fonts>,
     tree: tree::Tree<ElementInfo>,
     root_element: ChildElement,
     window_size: Xy<f32>,
 }
 
 impl View {
-    pub fn new<E: Element + 'static>(element: E, window_size: Xy<f32>) -> Self {
+    pub fn new<F, E>(fonts: F, element: E, window_size: Xy<f32>) -> Self
+    where
+        F: Fonts + 'static,
+        E: Element + 'static,
+    {
         Self {
+            fonts: Box::new(fonts),
             tree: tree::Tree::new(),
             root_element: ElementBuilder::new(element).into_child(),
             window_size,
         }
     }
+}
+
+pub trait Fonts {
+    // TODO
 }
 
 pub struct ViewSettings {
@@ -971,18 +1042,29 @@ pub fn render_element(
 
 
 pub struct LayoutPass<'view> {
+    fonts: &'view mut dyn Fonts,
     state: &'view mut ElementState,
     children: tree::LeavesMut<'view, ElementInfo>,
     size: Xy<f32>,
 }
 
 impl LayoutPass<'_> {
+    #[inline]
+    pub fn fonts(&self) -> &dyn Fonts {
+        self.fonts
+    }
+
+    #[inline]
+    pub fn fonts_mut(&mut self) -> &mut dyn Fonts {
+        self.fonts
+    }
+
     pub fn do_layout(&mut self, child: &mut ChildElement, size: Xy<f32>) {
         let mut node = self
             .children
             .get_mut(child.id)
             .expect("invalid child passed to LayoutPass::do_layout");
-        layout_element(node.reborrow_mut(), size);
+        layout_element(self.fonts, node.reborrow_mut(), size);
         self.state.merge_with_child(&node.element.state);
     }
 
@@ -1013,15 +1095,16 @@ pub fn layout_pass(view: &mut View) {
         .tree
         .find_mut(view.root_element.id())
         .expect("failed to find the view's root node");
-    layout_element(node, view.window_size);
+    layout_element(&mut *view.fonts, node, view.window_size);
 }
 
-pub fn layout_element(node: tree::NodeMut<'_, ElementInfo>, size: Xy<f32>) {
+pub fn layout_element(fonts: &mut dyn Fonts, node: tree::NodeMut<'_, ElementInfo>, size: Xy<f32>) {
     let element = &mut *node.element.element;
     let state = &mut node.element.state;
     let children = node.leaves;
 
     let mut pass = LayoutPass {
+        fonts,
         state,
         children,
         size,
