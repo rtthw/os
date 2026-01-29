@@ -554,7 +554,17 @@ impl View {
 }
 
 pub trait Fonts {
-    // TODO
+    fn measure_text(
+        &mut self,
+        id: u64,
+        text: &Arc<str>,
+        max_advance: Option<f32>,
+        font_size: f32,
+        line_height: LineHeight,
+        font_style: FontStyle,
+        alignment: TextAlignment,
+        wrap_mode: TextWrapMode,
+    ) -> Xy<f32>;
 }
 
 pub struct ViewSettings {
@@ -798,6 +808,24 @@ impl Element for Column {
 
 pub struct Label {
     pub text: Arc<str>,
+    pub font_size: f32,
+    pub line_height: LineHeight,
+    pub font_style: FontStyle,
+    pub alignment: TextAlignment,
+    pub wrap_mode: TextWrapMode,
+}
+
+impl Label {
+    pub fn new(text: impl Into<Arc<str>>) -> Self {
+        Self {
+            text: text.into(),
+            font_size: 16.0,
+            line_height: LineHeight::FONT_PREFERRED,
+            font_style: FontStyle::Normal,
+            alignment: TextAlignment::Start,
+            wrap_mode: TextWrapMode::Wrap,
+        }
+    }
 }
 
 impl Element for Label {
@@ -1086,7 +1114,7 @@ impl LayoutPass<'_> {
             .get_mut(child_id)
             .expect("provided invalid child ID to LayoutPass::resolve_size");
 
-        resolve_element_size(node, fallback_size) // , self.size)
+        resolve_element_size(self.fonts, node, fallback_size) // , self.size)
     }
 }
 
@@ -1129,11 +1157,22 @@ fn move_element(state: &mut ElementState, position: Xy<f32>) {
 }
 
 pub struct MeasureContext<'pass> {
+    fonts: &'pass mut dyn Fonts,
     state: &'pass mut ElementState,
     children: tree::LeavesMut<'pass, ElementInfo>,
 }
 
 impl MeasureContext<'_> {
+    #[inline]
+    pub fn fonts(&self) -> &dyn Fonts {
+        self.fonts
+    }
+
+    #[inline]
+    pub fn fonts_mut(&mut self) -> &mut dyn Fonts {
+        self.fonts
+    }
+
     // TODO: Don't just default to the fallback here. Get something from the child
     //       state?
     pub fn resolve_length(
@@ -1151,7 +1190,11 @@ impl MeasureContext<'_> {
         let state = &mut child.element.state;
         let children = child.leaves;
 
-        let mut context = MeasureContext { state, children };
+        let mut context = MeasureContext {
+            fonts: self.fonts,
+            state,
+            children,
+        };
 
         fallback_length.exact().unwrap_or_else(|| {
             resolve_axis_measurement(&mut context, element, axis, fallback_length, cross_length)
@@ -1162,6 +1205,7 @@ impl MeasureContext<'_> {
 // TODO: Don't just default to the fallback here. Get something from the child
 //       state?
 fn resolve_element_size(
+    fonts: &mut dyn Fonts,
     node: tree::NodeMut<'_, ElementInfo>,
     fallback_size: Xy<Length>,
 ) -> Xy<f32> {
@@ -1187,7 +1231,11 @@ fn resolve_element_size(
         return Xy::new(x, y);
     }
 
-    let mut context = MeasureContext { state, children };
+    let mut context = MeasureContext {
+        fonts,
+        state,
+        children,
+    };
 
     let inline_measurement = inline_measurement.unwrap_or_else(|| {
         resolve_axis_measurement(
@@ -1247,6 +1295,10 @@ multi_impl! {
     RenderPass<'_>,
     UpdatePass<'_>,
     {
+        pub fn id(&self) -> u64 {
+            self.state.id
+        }
+
         pub fn request_render(&mut self) {
             self.state.wants_render = true;
         }

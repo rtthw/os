@@ -14,7 +14,7 @@ abi::manifest! {
         use abi::App as _;
         println!(
             "example::Label::children_ids = {:?}",
-            abi::Label { text: "Example".into() }.children_ids(),
+            abi::Label::new("Example").children_ids(),
         );
         App { font_size: 10.0 }.wrap()
     },

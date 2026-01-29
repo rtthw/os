@@ -1781,6 +1781,73 @@ use abi::*;
 
 
 
+struct FontsImpl {
+    font_context: parley::FontContext,
+    layout_context: parley::LayoutContext,
+    // FIXME: Use an actual cache implementation (with eviction) here.
+    layout_cache: HashMap<u64, (parley::Layout<[u8; 4]>, TextLayoutCacheEntry)>,
+}
+
+impl Fonts for FontsImpl {
+    fn measure_text(
+        &mut self,
+        id: u64,
+        text: &Arc<str>,
+        max_advance: Option<f32>,
+        font_size: f32,
+        line_height: LineHeight,
+        font_style: FontStyle,
+        alignment: TextAlignment,
+        wrap_mode: TextWrapMode,
+    ) -> Xy<f32> {
+        let entry = TextLayoutCacheEntry {
+            max_advance,
+            font_size,
+            line_height,
+            font_style,
+            alignment,
+            wrap_mode,
+        };
+
+        let (layout, cached) = self.layout_cache.entry(id).or_default();
+
+        if &entry != cached {
+            let mut builder =
+                self.layout_context
+                    .ranged_builder(&mut self.font_context, text, 1.0, true);
+
+            builder.push_default(parley::StyleProperty::FontSize(font_size));
+            builder.push_default(parley::StyleProperty::LineHeight(match line_height {
+                LineHeight::Relative(v) => parley::LineHeight::MetricsRelative(v),
+                LineHeight::Absolute(v) => parley::LineHeight::Absolute(v),
+            }));
+            builder.push_default(parley::StyleProperty::FontStyle(match font_style {
+                FontStyle::Normal => parley::FontStyle::Normal,
+                FontStyle::Italic => parley::FontStyle::Italic,
+                FontStyle::Oblique => parley::FontStyle::Oblique(None),
+            }));
+
+            builder.build_into(layout, text);
+
+            *cached = entry;
+        }
+
+        Xy::new(layout.width(), layout.height())
+    }
+}
+
+#[derive(Default, PartialEq)]
+struct TextLayoutCacheEntry {
+    max_advance: Option<f32>,
+    font_size: f32,
+    line_height: LineHeight,
+    font_style: FontStyle,
+    alignment: TextAlignment,
+    wrap_mode: TextWrapMode,
+}
+
+
+
 #[allow(unused)]
 #[unsafe(export_name = "__ui_Label__children_ids")]
 pub extern "Rust" fn __label_children_ids(label: &Label) -> Vec<u64> {
@@ -1812,8 +1879,25 @@ pub extern "Rust" fn __label_measure(
     length_request: LengthRequest,
     cross_length: Option<f32>,
 ) -> f32 {
-    // TODO
-    43.0
+    let id = context.id();
+    let fonts = context.fonts_mut();
+    let max_advance = match length_request {
+        LengthRequest::MinContent => Some(0.0),
+        LengthRequest::MaxContent => None,
+        LengthRequest::FitContent(space) => Some(space /* FIXME: Subtract padding */),
+    };
+    let used_size = fonts.measure_text(
+        id,
+        &label.text,
+        max_advance,
+        label.font_size,
+        label.line_height,
+        label.font_style,
+        label.alignment,
+        label.wrap_mode,
+    );
+
+    used_size.value_for_axis(axis)
 }
 
 
@@ -1824,7 +1908,7 @@ mod tests {
 
     #[test]
     fn label_calls() {
-        let label = abi::Label { text: "".into() };
+        let label = abi::Label::new("");
         // This should also print "shell::ui::Label::children_ids" twice.
         assert_eq!(label.children_ids(), __label_children_ids(&label),);
     }
