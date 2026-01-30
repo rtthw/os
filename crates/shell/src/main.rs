@@ -1597,27 +1597,27 @@ fn run_abi_tests() -> Result<()> {
         .ok_or(anyhow::anyhow!(
             "Could not find function for abi_tests program"
         ))?;
-    let dyn_app_id_fn = abi_tests_obj
-        .get::<_, extern "C" fn() -> u128>("id_of_dyn_app")
+    let dyn_element_id_fn = abi_tests_obj
+        .get::<_, extern "C" fn() -> u128>("id_of_dyn_element")
         .ok_or(anyhow::anyhow!(
             "Could not find function for abi_tests program"
         ))?;
-    let box_dyn_app_id_fn = abi_tests_obj
-        .get::<_, extern "C" fn() -> u128>("id_of_box_dyn_app")
+    let box_dyn_element_id_fn = abi_tests_obj
+        .get::<_, extern "C" fn() -> u128>("id_of_box_dyn_element")
         .ok_or(anyhow::anyhow!(
             "Could not find function for abi_tests program"
         ))?;
 
     let abi_f32_id = (f32_id_fn)();
     let abi_path_id = (path_id_fn)();
-    let abi_dyn_app_id = (dyn_app_id_fn)();
-    let abi_box_dyn_app_id = (box_dyn_app_id_fn)();
+    let abi_dyn_element_id = (dyn_element_id_fn)();
+    let abi_box_dyn_element_id = (box_dyn_element_id_fn)();
 
     let real_f32_id = unsafe { transmute::<_, u128>(TypeId::of::<f32>()) };
     let real_path_id = unsafe { transmute::<_, u128>(TypeId::of::<abi::Path>()) };
-    let real_dyn_app_id = unsafe { transmute::<_, u128>(TypeId::of::<dyn abi::WrappedApp>()) };
-    let real_box_dyn_app_id =
-        unsafe { transmute::<_, u128>(TypeId::of::<Box<dyn abi::WrappedApp>>()) };
+    let real_dyn_element_id = unsafe { transmute::<_, u128>(TypeId::of::<dyn abi::Element>()) };
+    let real_box_dyn_element_id =
+        unsafe { transmute::<_, u128>(TypeId::of::<Box<dyn abi::Element>>()) };
 
     debug!("\tTypeId::of::<f32>() \t\t\t= {}", real_f32_id);
     debug!("\tf32_id \t\t\t\t\t= {}", abi_f32_id);
@@ -1625,14 +1625,17 @@ fn run_abi_tests() -> Result<()> {
     debug!("\tTypeId::of::<abi::Path>() \t\t= {}", real_path_id);
     debug!("\tpath_id \t\t\t\t= {}", abi_path_id);
 
-    debug!("\tTypeId::of::<dyn abi::App>() \t\t= {}", real_dyn_app_id);
-    debug!("\tdyn_app_id \t\t\t\t= {}", abi_dyn_app_id);
+    debug!(
+        "\tTypeId::of::<dyn abi::Element>() \t= {}",
+        real_dyn_element_id
+    );
+    debug!("\tdyn_element_id \t\t\t\t= {}", abi_dyn_element_id);
 
     debug!(
-        "\tTypeId::of::<Box<dyn abi::App>>() \t= {}",
-        real_box_dyn_app_id
+        "\tTypeId::of::<Box<dyn abi::Element>>() \t= {}",
+        real_box_dyn_element_id
     );
-    debug!("\tbox_dyn_app_id \t\t\t\t= {}", abi_box_dyn_app_id);
+    debug!("\tbox_dyn_element_id \t\t\t= {}", abi_box_dyn_element_id);
 
     if real_f32_id != abi_f32_id {
         bail!("Cannot agree on `f32` type");
@@ -1640,11 +1643,11 @@ fn run_abi_tests() -> Result<()> {
     if real_path_id != abi_path_id {
         bail!("Cannot agree on `abi::Path` type");
     }
-    if real_dyn_app_id != abi_dyn_app_id {
-        bail!("Cannot agree on `dyn abi::App` type");
+    if real_dyn_element_id != abi_dyn_element_id {
+        bail!("Cannot agree on `dyn abi::Element` type");
     }
-    if real_box_dyn_app_id != abi_box_dyn_app_id {
-        bail!("Cannot agree on `Box<dyn abi::App>` type");
+    if real_box_dyn_element_id != abi_box_dyn_element_id {
+        bail!("Cannot agree on `Box<dyn abi::Element>` type");
     }
 
     info!("All ABI tests passed");
@@ -1712,9 +1715,9 @@ impl Program {
                     "Could not find manifest for program '{}'",
                     self.name,
                 ))?;
-        let mut app = ((unsafe { &**manifest }).init)();
 
-        let mut view = app.build_view(
+        let mut view = abi::View::new(
+            ((unsafe { &**manifest }).init)(),
             Box::new(FontsImpl {
                 egui_context: self.egui_context.clone(),
                 galley_cache: HashMap::new(),
@@ -1725,7 +1728,6 @@ impl Program {
         abi::update_pass(&mut view);
 
         self.object = Some(ProgramObject {
-            app,
             view,
             _manifest: manifest,
             _handle: handle,
@@ -1818,7 +1820,6 @@ impl Program {
 }
 
 struct ProgramObject {
-    app: Box<dyn abi::WrappedApp>,
     view: abi::View,
     _manifest: object::Ptr<*const abi::Manifest>,
     _handle: Object,

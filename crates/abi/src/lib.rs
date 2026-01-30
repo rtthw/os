@@ -34,82 +34,10 @@ pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 
 
-// TODO: Use the `Element` trait instead of this one?
-pub trait App<U: Any> {
-    fn view(&mut self) -> impl Element + 'static;
-
-    fn update(&mut self, update: U) -> Result<(), &'static str>;
-
-    /// Convert this concrete application instance into a [`WrappedApp`] for
-    /// passing across ABI boundaries.
-    fn wrap(self) -> Box<dyn WrappedApp>
-    where
-        Self: Sized + 'static,
-    {
-        struct Wrapper<A: App<U>, U: Any> {
-            app: A,
-            _update_type: core::marker::PhantomData<fn() -> U>,
-        }
-
-        impl<A: App<U>, U: Any> WrappedApp for Wrapper<A, U> {
-            fn build_view(&mut self, fonts: Box<dyn Fonts>, window_size: Xy<f32>) -> View {
-                let mut tree = tree::Tree::new();
-
-                let Some(ElementBuilder { id, element }) = ElementBuilder::new(self.app.view())
-                    .into_child()
-                    .take_inner()
-                else {
-                    unreachable!();
-                };
-
-                let state = ElementState::new(id);
-                let info = ElementInfo { element, state };
-
-                tree.roots_mut().insert(id, info);
-
-                View {
-                    fonts,
-                    tree,
-                    root_element_id: id,
-                    window_size,
-                    render_cache: HashMap::new(),
-                    pointer_position: None,
-                    pointer_capture_target: None,
-                }
-            }
-
-            fn update(&mut self, update: Box<dyn Any>) -> Result<(), &'static str> {
-                match update.downcast::<U>() {
-                    Ok(update) => {
-                        self.app.update(*update)?;
-                        Ok(())
-                    }
-                    Err(_value) => Err("invalid type"),
-                }
-            }
-        }
-
-        Box::new(Wrapper {
-            app: self,
-            _update_type: core::marker::PhantomData,
-        })
-    }
-}
-
-/// Wrapper type necessary for soundly interacting with generic [`App`]
-/// instances.
-///
-/// See [`App::wrap`] for implementation details.
-pub trait WrappedApp {
-    fn build_view(&mut self, fonts: Box<dyn Fonts>, window_size: Xy<f32>) -> View;
-    /// Pass a type-erased update to the underlying [`App`].
-    fn update(&mut self, update: Box<dyn Any>) -> Result<(), &'static str>;
-}
-
 #[derive(Debug)]
 pub struct Manifest {
     pub name: &'static str,
-    pub init: fn() -> Box<dyn WrappedApp>,
+    pub init: fn() -> ElementBuilder,
     pub dependencies: &'static [&'static str],
     pub abi_version: &'static str,
 }
@@ -590,6 +518,29 @@ pub struct View {
 }
 
 impl View {
+    pub fn new(root_builder: ElementBuilder, fonts: Box<dyn Fonts>, window_size: Xy<f32>) -> Self {
+        let mut tree = tree::Tree::new();
+
+        let Some(ElementBuilder { id, element }) = root_builder.into_child().take_inner() else {
+            unreachable!();
+        };
+
+        let state = ElementState::new(id);
+        let info = ElementInfo { element, state };
+
+        tree.roots_mut().insert(id, info);
+
+        Self {
+            fonts,
+            tree,
+            root_element_id: id,
+            window_size,
+            render_cache: HashMap::new(),
+            pointer_position: None,
+            pointer_capture_target: None,
+        }
+    }
+
     pub fn resize_window(&mut self, size: Xy<f32>) {
         if self.window_size == size {
             return;
