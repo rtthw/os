@@ -196,6 +196,13 @@ impl<'tree, T> LeavesRef<'tree, T> {
             .map(|child| child.as_ref(self.branch_id, self.branches.branches))
     }
 
+    pub fn get_into(self, id: impl Into<u64>) -> Option<NodeRef<'tree, T>> {
+        let id = id.into();
+        self.leaves
+            .get(&id)
+            .map(|child| child.as_ref(self.branch_id, self.branches.branches))
+    }
+
     fn _find(self, id: u64) -> Option<NodeRef<'tree, T>> {
         let branch_id = self.branches.branches.get(&id)?;
 
@@ -246,7 +253,21 @@ impl<'tree, T> LeavesMut<'tree, T> {
             .map(|child| child.as_ref(self.branch_id, self.branches.branches))
     }
 
+    pub fn get_into(self, id: impl Into<u64>) -> Option<NodeRef<'tree, T>> {
+        let id = id.into();
+        self.leaves
+            .get(&id)
+            .map(|child| child.as_ref(self.branch_id, self.branches.branches))
+    }
+
     pub fn get_mut(&mut self, id: impl Into<u64>) -> Option<NodeMut<'_, T>> {
+        let id = id.into();
+        self.leaves
+            .get_mut(&id)
+            .map(|child| child.as_mut(self.branch_id, self.branches.branches))
+    }
+
+    pub fn get_mut_into(self, id: impl Into<u64>) -> Option<NodeMut<'tree, T>> {
         let id = id.into();
         self.leaves
             .get_mut(&id)
