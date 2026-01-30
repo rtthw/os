@@ -1869,7 +1869,7 @@ impl Fonts for FontsImpl {
         _line_height: LineHeight,
         _font_style: FontStyle,
         alignment: TextAlignment,
-        _wrap_mode: TextWrapMode,
+        wrap_mode: TextWrapMode,
     ) -> Xy<f32> {
         let run_layout = || {
             self.egui_context.fonts_mut(|fonts| {
@@ -1888,7 +1888,11 @@ impl Fonts for FontsImpl {
                     }],
                     wrap: egui::text::TextWrapping {
                         max_width: max_advance.unwrap_or(f32::INFINITY),
-                        max_rows: usize::MAX,
+                        max_rows: if wrap_mode == TextWrapMode::Wrap {
+                            usize::MAX
+                        } else {
+                            1
+                        },
                         break_anywhere: false,
                         overflow_character: Default::default(),
                     },
@@ -1910,10 +1914,9 @@ impl Fonts for FontsImpl {
 
         let galley = self.galley_cache.entry(id).or_insert_with(|| run_layout());
 
-        if galley.text() != text.as_ref() {
-            *galley = run_layout();
-        }
-        if galley.job.sections.first().unwrap().format.font_id.size != font_size {
+        if galley.text() != text.as_ref()
+            || galley.job.sections.first().unwrap().format.font_id.size != font_size
+        {
             *galley = run_layout();
         }
 
