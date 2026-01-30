@@ -73,6 +73,8 @@ pub trait App<U: Any> {
                     root_element_id: id,
                     window_size,
                     render_cache: HashMap::new(),
+                    pointer_position: None,
+                    pointer_capture_target: None,
                 }
             }
 
@@ -301,7 +303,7 @@ impl Aabb2D<f32> {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(C)]
 pub struct Xy<V> {
     pub x: V,
@@ -583,6 +585,8 @@ pub struct View {
     root_element_id: u64,
     window_size: Xy<f32>,
     render_cache: HashMap<u64, (Render, Render)>,
+    pointer_position: Option<Xy<f32>>,
+    pointer_capture_target: Option<u64>,
 }
 
 impl View {
@@ -593,6 +597,10 @@ impl View {
         self.window_size = size;
 
         layout_pass(self);
+    }
+
+    pub fn handle_pointer_event(&mut self, event: PointerEvent) {
+        pointer_event_pass(self, event);
     }
 }
 
@@ -632,11 +640,18 @@ pub trait Element {
     #[allow(unused)]
     fn update_children(&mut self, pass: &mut UpdatePass<'_>) {}
 
-    fn clickable(&self) -> bool {
+    /// Defaults to `true`.
+    fn accepts_pointer_events(&self) -> bool {
+        true
+    }
+
+    /// Defaults to `false`.
+    fn accepts_keyboard_events(&self) -> bool {
         false
     }
 
-    fn focusable(&self) -> bool {
+    /// Defaults to `false`.
+    fn accepts_focus_events(&self) -> bool {
         false
     }
 
@@ -659,6 +674,10 @@ pub trait Element {
     /// Called when this element is added to the view tree.
     #[allow(unused)]
     fn on_build(&mut self, pass: &mut UpdatePass<'_>) {}
+
+    /// Called when this element is interacted with by the user's pointer.
+    #[allow(unused)]
+    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>) {}
 }
 
 pub struct ElementInfo {
@@ -995,6 +1014,141 @@ fn update_element_tree(node: tree::NodeMut<'_, ElementInfo>) {
         update_element_tree(node.reborrow_mut());
         parent_state.merge_with_child(&node.element.state);
     });
+}
+
+
+
+pub struct EventPass<'view> {
+    state: &'view mut ElementState,
+    children: tree::LeavesMut<'view, ElementInfo>,
+    handled: bool,
+}
+
+impl EventPass<'_> {
+    pub fn set_handled(&mut self) {
+        self.handled = true;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(u32)] // TODO: Finish adding the extra pointer buttons (up to button 32).
+pub enum PointerButton {
+    // TODO: Nullable type?
+    Primary = 1,
+    Secondary = 1 << 1,
+    Auxiliary = 1 << 2,
+    Back = 1 << 3,
+    Forward = 1 << 4,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum PointerEvent {
+    Down { button: PointerButton },
+    Up { button: PointerButton },
+    Move { position: Xy<f32> },
+    Scroll { delta: ScrollDelta },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ScrollDelta {
+    Pixels(Xy<f32>),
+    Lines(Xy<f32>),
+}
+
+fn pointer_event_pass(view: &mut View, event: PointerEvent) {
+    // let mut pointer_entered = false;
+    if let PointerEvent::Move { position } = &event {
+        if view.pointer_position == Some(*position) {
+            return;
+        }
+        // pointer_entered = view.pointer_position.is_none();
+        view.pointer_position = Some(*position);
+    }
+    let pointer_target = get_pointer_target(&view, view.pointer_position);
+
+    let mut target_id = pointer_target;
+    let mut handled = false;
+    while let Some(node_id) = target_id {
+        let parent_id = {
+            let node = view
+                .tree
+                .find_mut(node_id)
+                .expect("invalid element ID for pointer target");
+
+            if !handled {
+                let mut pass = EventPass {
+                    state: &mut node.element.state,
+                    children: node.leaves,
+                    handled: false,
+                };
+                node.element.element.on_pointer_event(&mut pass);
+
+                handled = pass.handled;
+            }
+
+            node.branch_id
+        };
+
+        if let Some(parent_id) = parent_id {
+            let mut parent_node = view.tree.find_mut(parent_id).unwrap();
+            let node = parent_node.leaves.get_mut(node_id).unwrap();
+
+            parent_node
+                .element
+                .state
+                .merge_with_child(&node.element.state);
+        }
+
+        target_id = parent_id;
+    }
+}
+
+fn get_pointer_target(view: &View, pointer_pos: Option<Xy<f32>>) -> Option<u64> {
+    if let Some(capture_target) = view.pointer_capture_target
+        && view.tree.find(capture_target).is_some()
+    {
+        return Some(capture_target);
+    }
+
+    if let Some(pointer_pos) = pointer_pos {
+        return find_pointer_target(
+            view.tree
+                .find(view.root_element_id)
+                .expect("failed to find the view's root node"),
+            pointer_pos,
+        )
+        .map(|node| node.id());
+    }
+
+    None
+}
+
+fn find_pointer_target<'view>(
+    node: tree::NodeRef<'view, ElementInfo>,
+    position: Xy<f32>,
+) -> Option<tree::NodeRef<'view, ElementInfo>> {
+    if !node.element.state.bounds.contains(position) {
+        return None;
+    }
+
+    for child_id in node.element.element.children_ids().iter().rev() {
+        if let Some(child) = find_pointer_target(
+            node.leaves
+                .reborrow_up()
+                .get_into(*child_id)
+                .expect("passed invalid child ID to find_pointer_target"),
+            position,
+        ) {
+            return Some(child);
+        }
+    }
+
+    if node.element.element.accepts_pointer_events() {
+        // && ctx.size().to_rect().contains(local_pos) {
+        Some(node)
+    } else {
+        None
+    }
 }
 
 
@@ -1355,6 +1509,7 @@ macro_rules! multi_impl {
 
 // Types with a `state: &mut ElementState` field.
 multi_impl! {
+    EventPass<'_>,
     LayoutPass<'_>,
     MeasureContext<'_>,
     RenderPass<'_>,
@@ -1370,6 +1525,19 @@ multi_impl! {
 
         pub fn request_layout(&mut self) {
             self.state.wants_layout = true;
+        }
+    }
+}
+
+// Types with a `children: tree::LeavesMut<'_, ElementInfo>` field.
+multi_impl! {
+    EventPass<'_>,
+    LayoutPass<'_>,
+    MeasureContext<'_>,
+    UpdatePass<'_>,
+    {
+        pub fn child(&self, id: u64) -> Option<tree::NodeRef<'_, ElementInfo>> {
+            self.children.get(id)
         }
     }
 }
