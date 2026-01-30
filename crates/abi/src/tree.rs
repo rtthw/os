@@ -152,6 +152,16 @@ impl<T> NodeRef<'_, T> {
     }
 }
 
+impl<'tree, T> NodeRef<'tree, T> {
+    pub fn reborrow_up(&self) -> NodeRef<'tree, T> {
+        NodeRef {
+            branch_id: self.branch_id,
+            element: self.element,
+            leaves: self.leaves.reborrow_up(),
+        }
+    }
+}
+
 impl<T> NodeMut<'_, T> {
     pub fn reborrow(&self) -> NodeRef<'_, T> {
         NodeRef {
@@ -180,6 +190,16 @@ impl<T> NodeMut<'_, T> {
 
 impl<'tree, T> LeavesRef<'tree, T> {
     pub fn reborrow(&self) -> LeavesRef<'_, T> {
+        LeavesRef {
+            branch_id: self.branch_id,
+            leaves: &*self.leaves,
+            branches: BranchesRef {
+                branches: self.branches.branches,
+            },
+        }
+    }
+
+    pub fn reborrow_up(&self) -> LeavesRef<'tree, T> {
         LeavesRef {
             branch_id: self.branch_id,
             leaves: &*self.leaves,
