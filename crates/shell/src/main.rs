@@ -626,6 +626,20 @@ impl Shell {
             ),
         )?;
 
+        if let Some(object) = self.example_program.object.as_mut() {
+            for event in &self.input_state.events {
+                match event {
+                    egui::Event::PointerMoved(egui::Pos2 { x, y }) => {
+                        object.view.handle_pointer_event(abi::PointerEvent::Move {
+                            position: abi::Xy::new(*x, *y)
+                                - self.example_program.known_bounds.position(),
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         let (width, height) = self.output.mode.size();
         let size = vec2(width as _, height as _);
         let rect = Rect::from_min_size(Pos2::ZERO, size);

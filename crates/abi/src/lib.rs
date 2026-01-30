@@ -601,6 +601,7 @@ impl View {
 
     pub fn handle_pointer_event(&mut self, event: PointerEvent) {
         pointer_event_pass(self, event);
+        layout_pass(self);
     }
 }
 
@@ -937,6 +938,14 @@ impl Element for Label {
     ) -> f32 {
         unsafe { __ui_Label__measure(self, context, axis, length_request, cross_length) }
     }
+
+    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>) {
+        // println!("LABEL '{}' HOVERED", self.text);
+        self.font_size += 0.5;
+        pass.request_layout();
+        pass.request_render();
+        pass.set_handled();
+    }
 }
 
 unsafe extern "Rust" {
@@ -1174,6 +1183,11 @@ pub struct RenderText {
 }
 
 impl Render {
+    fn clear(&mut self) {
+        self.quads.clear();
+        self.texts.clear();
+    }
+
     pub fn extend(&mut self, other: &Render, transform: Transform2D) {
         self.quads
             .extend(other.quads.iter().cloned().map(|quad| RenderQuad {
@@ -1243,10 +1257,12 @@ pub fn render_element(
         let (render, overlay_render) = render_cache.entry(state.id).or_default();
 
         if state.wants_render {
+            render.clear();
             let mut pass = RenderPass { state, render };
             element.render(&mut pass);
         }
         if state.wants_overlay_render {
+            overlay_render.clear();
             let mut pass = RenderPass {
                 state,
                 render: overlay_render,
@@ -1357,6 +1373,9 @@ pub fn layout_element(fonts: &mut dyn Fonts, node: tree::NodeMut<'_, ElementInfo
         size,
     };
     element.layout(&mut pass);
+
+    state.needs_render = true;
+    state.wants_render = true;
 }
 
 fn move_element(state: &mut ElementState, position: Xy<f32>) {
@@ -1524,7 +1543,7 @@ multi_impl! {
         }
 
         pub fn request_layout(&mut self) {
-            self.state.wants_layout = true;
+            self.state.needs_layout = true;
         }
     }
 }

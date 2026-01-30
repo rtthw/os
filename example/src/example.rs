@@ -4,26 +4,27 @@
 
 extern crate abi;
 
+use abi::*;
 
 
-abi::manifest! {
+
+manifest! {
     name: "example",
     init: || {
-        use abi::App as _;
-        App { font_size: 10.0 }.wrap()
+        Example { font_size: 10.0 }.wrap()
     },
     dependencies: &[],
 }
 
-struct App {
+struct Example {
     font_size: f32,
 }
 
-impl abi::App<Update> for App {
-    fn view(&mut self) -> impl abi::Element + 'static {
-        abi::Column::new()
-            .with(abi::Label::new("Example"))
-            .with(abi::Label::new("Example"))
+impl App<Update> for Example {
+    fn view(&mut self) -> impl Element + 'static {
+        Column::new()
+            .with(Label::new("One"))
+            .with(Label::new("Two"))
     }
 
     fn update(&mut self, update: Update) -> Result<(), &'static str> {
