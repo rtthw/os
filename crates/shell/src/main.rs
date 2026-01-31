@@ -1853,7 +1853,8 @@ use abi::*;
 
 
 
-static DEFAULT_PROP_FONT_DATA: &[u8] = include_bytes!("../../../res/NotoSans-Regular.ttf");
+// static DEFAULT_PROP_FONT_DATA: &[u8] =
+// include_bytes!("../../../res/NotoSans-Regular.ttf");
 
 struct FontsImpl {
     egui_context: egui::Context,

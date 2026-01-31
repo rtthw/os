@@ -16,10 +16,7 @@ pub use {
 };
 
 use {
-    core::{
-        any::Any,
-        ops::{Deref, DerefMut, Sub},
-    },
+    core::ops::{Deref, DerefMut, Sub},
     std::{
         collections::HashMap,
         ops::{Add, Mul},
