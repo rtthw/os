@@ -18,7 +18,7 @@ pub use {
 use {
     core::ops::{Deref, DerefMut, Sub},
     std::{
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         ops::{Add, Mul},
         sync::{
             Arc,
@@ -512,6 +512,7 @@ pub struct View {
     render_cache: HashMap<u64, (Render, Render)>,
     pointer_position: Option<Xy<f32>>,
     pointer_capture_target: Option<u64>,
+    hovered_path: Vec<u64>,
 }
 
 impl View {
@@ -535,6 +536,7 @@ impl View {
             render_cache: HashMap::new(),
             pointer_position: None,
             pointer_capture_target: None,
+            hovered_path: Vec::new(),
         }
     }
 
@@ -549,6 +551,7 @@ impl View {
 
     pub fn handle_pointer_event(&mut self, event: PointerEvent) {
         pointer_event_pass(self, event);
+        update_pointer_pass(self);
         layout_pass(self);
     }
 }
@@ -627,6 +630,12 @@ pub trait Element {
     /// Called when this element is interacted with by the user's pointer.
     #[allow(unused)]
     fn on_pointer_event(&mut self, pass: &mut EventPass<'_>) {}
+
+    #[allow(unused)]
+    fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {}
+
+    #[allow(unused)]
+    fn on_child_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {}
 }
 
 pub struct ElementInfo {
@@ -669,6 +678,8 @@ pub struct ElementState {
     pub needs_layout: bool,
     pub wants_layout: bool,
     pub moved: bool,
+
+    pub hovered: bool,
 }
 
 impl ElementState {
@@ -688,6 +699,7 @@ impl ElementState {
             needs_layout: true,
             wants_layout: true,
             moved: true,
+            hovered: false,
         }
     }
 
@@ -759,12 +771,19 @@ enum ChildElementInner {
 
 pub struct Column {
     children: Vec<ChildElement>,
+    background_color: Rgba<u8>,
 }
 
 impl Column {
     pub fn new() -> Self {
         Self {
             children: Vec::new(),
+            background_color: Rgba {
+                r: 33,
+                g: 33,
+                b: 33,
+                a: 255,
+            },
         }
     }
 
@@ -786,15 +805,7 @@ impl Element for Column {
     }
 
     fn render(&mut self, pass: &mut RenderPass<'_>) {
-        pass.fill_quad(
-            pass.bounds(),
-            Rgba {
-                r: 33,
-                g: 33,
-                b: 33,
-                a: 255,
-            },
-        );
+        pass.fill_quad(pass.bounds(), self.background_color);
     }
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
@@ -837,6 +848,24 @@ impl Element for Column {
         }
 
         min_result.max(length)
+    }
+
+    fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
+        if hovered {
+            self.background_color.g = 44;
+        } else {
+            self.background_color.g = 33;
+        }
+        pass.request_render();
+    }
+
+    fn on_child_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
+        if hovered {
+            self.background_color.r = 44;
+        } else {
+            self.background_color.r = 33;
+        }
+        pass.request_render();
     }
 }
 
@@ -887,9 +916,12 @@ impl Element for Label {
         unsafe { __ui_Label__measure(self, context, axis, length_request, cross_length) }
     }
 
-    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>) {
-        // println!("LABEL '{}' HOVERED", self.text);
-        self.font_size += 0.5;
+    fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
+        if hovered {
+            self.font_size = 32.0;
+        } else {
+            self.font_size = 16.0;
+        }
         pass.request_layout();
         pass.request_render();
         pass.set_handled();
@@ -973,6 +1005,78 @@ fn update_element_tree(node: tree::NodeMut<'_, ElementInfo>) {
     });
 }
 
+fn update_pointer_pass(view: &mut View) {
+    let next_hovered_element = view
+        .pointer_position
+        .and_then(|pos| {
+            find_pointer_target(
+                view.tree
+                    .find(view.root_element_id)
+                    .expect("failed to find the view's root node"),
+                pos,
+            )
+        })
+        .map(|node| node.id());
+    let next_hovered_path = next_hovered_element.map_or(Vec::new(), |node_id| {
+        view.tree.branches().get_id_path(node_id, None)
+    });
+    let prev_hovered_path = std::mem::take(&mut view.hovered_path);
+    let prev_hovered_element = prev_hovered_path.first().copied();
+
+    if prev_hovered_path != next_hovered_path {
+        let mut hovered_set = HashSet::new();
+        for node_id in &next_hovered_path {
+            hovered_set.insert(*node_id);
+        }
+
+        for node_id in prev_hovered_path.iter().copied() {
+            if view
+                .tree
+                .find_mut(node_id)
+                .map(|node| node.element.state.hovered != hovered_set.contains(&node_id))
+                .unwrap_or(false)
+            {
+                let hovered = hovered_set.contains(&node_id);
+                event_pass(view, Some(node_id), |element, pass| {
+                    if pass.state.hovered != hovered {
+                        element.on_child_hover(pass, hovered);
+                    }
+                    pass.state.hovered = hovered;
+                });
+            }
+        }
+        for node_id in next_hovered_path.iter().copied() {
+            if view
+                .tree
+                .find_mut(node_id)
+                .map(|node| node.element.state.hovered != hovered_set.contains(&node_id))
+                .unwrap_or(false)
+            {
+                let hovered = hovered_set.contains(&node_id);
+                event_pass(view, Some(node_id), |element, pass| {
+                    if pass.state.hovered != hovered {
+                        element.on_child_hover(pass, hovered);
+                    }
+                    pass.state.hovered = hovered;
+                });
+            }
+        }
+    }
+
+    if prev_hovered_element != next_hovered_element {
+        single_event_pass(view, prev_hovered_element, |element, pass| {
+            pass.state.hovered = false;
+            element.on_hover(pass, false);
+        });
+        single_event_pass(view, next_hovered_element, |element, pass| {
+            pass.state.hovered = true;
+            element.on_hover(pass, true);
+        });
+    }
+
+    view.hovered_path = next_hovered_path;
+}
+
 
 
 pub struct EventPass<'view> {
@@ -1012,25 +1116,19 @@ pub enum ScrollDelta {
     Lines(Xy<f32>),
 }
 
-fn pointer_event_pass(view: &mut View, event: PointerEvent) {
-    // let mut pointer_entered = false;
-    if let PointerEvent::Move { position } = &event {
-        if view.pointer_position == Some(*position) {
-            return;
-        }
-        // pointer_entered = view.pointer_position.is_none();
-        view.pointer_position = Some(*position);
-    }
-    let pointer_target = get_pointer_target(&view, view.pointer_position);
-
-    let mut target_id = pointer_target;
+fn event_pass(
+    view: &mut View,
+    target: Option<u64>,
+    mut callback: impl FnMut(&mut dyn Element, &mut EventPass<'_>),
+) {
+    let mut target_id = target;
     let mut handled = false;
     while let Some(node_id) = target_id {
         let parent_id = {
             let node = view
                 .tree
                 .find_mut(node_id)
-                .expect("invalid element ID for pointer target");
+                .expect("invalid element ID for event target");
 
             if !handled {
                 let mut pass = EventPass {
@@ -1038,7 +1136,7 @@ fn pointer_event_pass(view: &mut View, event: PointerEvent) {
                     children: node.leaves,
                     handled: false,
                 };
-                node.element.element.on_pointer_event(&mut pass);
+                callback(&mut *node.element.element, &mut pass);
 
                 handled = pass.handled;
             }
@@ -1058,6 +1156,64 @@ fn pointer_event_pass(view: &mut View, event: PointerEvent) {
 
         target_id = parent_id;
     }
+}
+
+fn single_event_pass(
+    view: &mut View,
+    target: Option<u64>,
+    mut callback: impl FnMut(&mut dyn Element, &mut EventPass<'_>),
+) {
+    let Some(target) = target else {
+        return;
+    };
+
+    let node = view
+        .tree
+        .find_mut(target)
+        .expect("invalid element ID passed to single_event_pass");
+
+    let mut pass = EventPass {
+        state: &mut node.element.state,
+        children: node.leaves,
+        handled: false,
+    };
+    callback(&mut *node.element.element, &mut pass);
+
+    let mut current_id = Some(target);
+    while let Some(node_id) = current_id {
+        let parent_id = view
+            .tree
+            .find_mut(node_id)
+            .expect("invalid element ID for pointer target")
+            .branch_id;
+        if let Some(parent_id) = parent_id {
+            let mut parent_node = view.tree.find_mut(parent_id).unwrap();
+            let node = parent_node.leaves.get_mut(node_id).unwrap();
+
+            parent_node
+                .element
+                .state
+                .merge_with_child(&node.element.state);
+        }
+
+        current_id = parent_id;
+    }
+}
+
+fn pointer_event_pass(view: &mut View, event: PointerEvent) {
+    // let mut pointer_entered = false;
+    if let PointerEvent::Move { position } = &event {
+        if view.pointer_position == Some(*position) {
+            return;
+        }
+        // pointer_entered = view.pointer_position.is_none();
+        view.pointer_position = Some(*position);
+    }
+    let pointer_target = get_pointer_target(&view, view.pointer_position);
+
+    event_pass(view, pointer_target, |element, pass| {
+        element.on_pointer_event(pass)
+    });
 }
 
 fn get_pointer_target(view: &View, pointer_pos: Option<Xy<f32>>) -> Option<u64> {
