@@ -1579,7 +1579,7 @@ fn run_abi_tests() -> Result<()> {
         &std::fs::read_to_string("/lib/abi_tests.rs")?,
         "abi_tests.rs",
         "abi_tests.so",
-    );
+    )?;
 
     info!("Running ABI tests...");
 
@@ -1660,6 +1660,7 @@ struct Program {
     editing: bool,
     waiting_on_recompile: bool,
     compiling_flag: Arc<AtomicBool>,
+    compile_success_flag: Arc<AtomicBool>,
     text: String,
     known_bounds: abi::Aabb2D<f32>,
     egui_context: egui::Context,
@@ -1673,6 +1674,7 @@ impl Program {
             editing: false,
             waiting_on_recompile: false,
             compiling_flag: Arc::new(AtomicBool::new(false)),
+            compile_success_flag: Arc::new(AtomicBool::new(true)),
             text,
             known_bounds: abi::Aabb2D::default(),
             egui_context,
@@ -1689,12 +1691,16 @@ impl Program {
             .store(true, std::sync::atomic::Ordering::SeqCst);
 
         let compiling_flag = self.compiling_flag.clone();
+        let compile_success_flag = self.compile_success_flag.clone();
         let content = self.text.clone();
         let input_filename = format!("{}.rs", self.name);
         let output_filename = format!("{}.so", self.name);
 
         std::thread::spawn(move || {
-            compiler::run(&content, &input_filename, &output_filename);
+            compile_success_flag.swap(
+                compiler::run(&content, &input_filename, &output_filename).is_ok(),
+                std::sync::atomic::Ordering::SeqCst,
+            );
             compiling_flag.swap(false, std::sync::atomic::Ordering::SeqCst);
         });
     }
@@ -1745,7 +1751,12 @@ impl Program {
             return Ok(());
         }
 
-        if self.waiting_on_recompile {
+        let compile_success = self
+            .compile_success_flag
+            .load(std::sync::atomic::Ordering::Relaxed);
+
+
+        if self.waiting_on_recompile && compile_success {
             self.waiting_on_recompile = false;
             self.reload()?;
         }
@@ -1773,6 +1784,13 @@ impl Program {
             }
             if ui.button("Edit").clicked() {
                 self.editing = true;
+            }
+            if !compile_success {
+                ui.centered_and_justified(|ui| {
+                    ui.heading("Compilation failed, see logs");
+                });
+
+                return;
             }
 
             let view = &mut self.object.as_mut().unwrap().view;
