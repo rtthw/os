@@ -47,10 +47,7 @@ use {
     },
 };
 
-use crate::{
-    cursor::{CursorData, CursorIcon},
-    object::Object,
-};
+use crate::{cursor::CursorData, object::Object};
 
 
 
@@ -761,7 +758,7 @@ impl Shell {
             self.output.renderer.gl.finish();
         }
 
-        let next_icon = CursorIcon::from(full_output.platform_output.cursor_icon);
+        let next_icon = cursor::egui_to_abi_cursor_icon(full_output.platform_output.cursor_icon);
         if self.cursor_icon != next_icon {
             self.cursor_icon = next_icon;
 

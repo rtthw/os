@@ -1,5 +1,6 @@
 //! # Application Binary Interface (ABI)
 
+pub mod cursor_icon;
 pub mod elf;
 pub mod layout;
 pub mod path;
@@ -9,6 +10,7 @@ pub mod tree;
 pub mod type_map;
 
 pub use {
+    cursor_icon::CursorIcon,
     path::Path,
     stable_string::StableString,
     stable_vec::StableVec,
