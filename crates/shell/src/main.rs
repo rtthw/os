@@ -1790,10 +1790,12 @@ impl Program {
 
             let painter = ui.painter();
             for quad in render.quads {
-                painter.rect_filled(
+                painter.rect(
                     aabb2d_to_rect(quad.bounds.translate(self.known_bounds.position())),
-                    5,
+                    3,
                     rgba_to_color32(quad.color),
+                    egui::Stroke::new(quad.border_width, rgba_to_color32(quad.border_color)),
+                    egui::StrokeKind::Inside,
                 );
             }
             for text in render.texts {
@@ -1947,6 +1949,8 @@ pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>
             b: 11,
             a: 255,
         },
+        0.0,
+        Rgba::NONE,
     );
     pass.fill_text(
         label.text.clone(),

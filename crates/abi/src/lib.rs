@@ -423,6 +423,15 @@ pub struct Rgba<V> {
     pub a: V,
 }
 
+impl Rgba<u8> {
+    pub const NONE: Self = Self {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    };
+}
+
 
 
 #[derive(Clone, Copy, Debug)]
@@ -772,6 +781,7 @@ enum ChildElementInner {
 pub struct Column {
     children: Vec<ChildElement>,
     background_color: Rgba<u8>,
+    border_color: Rgba<u8>,
 }
 
 impl Column {
@@ -782,6 +792,12 @@ impl Column {
                 r: 33,
                 g: 33,
                 b: 33,
+                a: 255,
+            },
+            border_color: Rgba {
+                r: 111,
+                g: 111,
+                b: 111,
                 a: 255,
             },
         }
@@ -805,7 +821,7 @@ impl Element for Column {
     }
 
     fn render(&mut self, pass: &mut RenderPass<'_>) {
-        pass.fill_quad(pass.bounds(), self.background_color);
+        pass.fill_quad(pass.bounds(), self.background_color, 1.0, self.border_color);
     }
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
@@ -850,20 +866,21 @@ impl Element for Column {
         min_result.max(length)
     }
 
-    fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
-        if hovered {
-            self.background_color.g = 44;
-        } else {
-            self.background_color.g = 33;
-        }
-        pass.request_render();
-    }
-
     fn on_child_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
         if hovered {
-            self.background_color.r = 44;
+            self.border_color = Rgba {
+                r: 133,
+                g: 133,
+                b: 133,
+                a: 255,
+            };
         } else {
-            self.background_color.r = 33;
+            self.border_color = Rgba {
+                r: 111,
+                g: 111,
+                b: 111,
+                a: 255,
+            };
         }
         pass.request_render();
     }
@@ -1276,6 +1293,8 @@ pub struct Render {
 pub struct RenderQuad {
     pub bounds: Aabb2D<f32>,
     pub color: Rgba<u8>,
+    pub border_width: f32,
+    pub border_color: Rgba<u8>,
 }
 
 #[derive(Clone)]
@@ -1316,8 +1335,19 @@ impl RenderPass<'_> {
         self.state.bounds
     }
 
-    pub fn fill_quad(&mut self, bounds: Aabb2D<f32>, color: Rgba<u8>) {
-        self.render.quads.push(RenderQuad { bounds, color });
+    pub fn fill_quad(
+        &mut self,
+        bounds: Aabb2D<f32>,
+        color: Rgba<u8>,
+        border_width: f32,
+        border_color: Rgba<u8>,
+    ) {
+        self.render.quads.push(RenderQuad {
+            bounds,
+            color,
+            border_width,
+            border_color,
+        });
     }
 
     pub fn fill_text(
