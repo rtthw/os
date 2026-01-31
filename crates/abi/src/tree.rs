@@ -87,6 +87,18 @@ impl<T> Tree<T> {
         self.roots.keys().copied()
     }
 
+    pub fn branches(&self) -> BranchesRef<'_> {
+        BranchesRef {
+            branches: &self.branches,
+        }
+    }
+
+    pub fn branches_mut(&mut self) -> BranchesMut<'_> {
+        BranchesMut {
+            branches: &mut self.branches,
+        }
+    }
+
     pub fn find(&self, id: impl Into<u64>) -> Option<NodeRef<'_, T>> {
         self.roots()._find(id.into())
     }
@@ -150,6 +162,10 @@ impl<T> NodeRef<'_, T> {
     pub fn leaf_ids(&self) -> impl IntoIterator<Item = u64> {
         self.leaves.leaves.keys().copied()
     }
+
+    pub fn branches(&self) -> BranchesRef<'_> {
+        self.leaves.branches
+    }
 }
 
 impl<'tree, T> NodeRef<'tree, T> {
@@ -185,6 +201,18 @@ impl<T> NodeMut<'_, T> {
 
     pub fn leaf_ids(&self) -> impl IntoIterator<Item = u64> {
         self.leaves.leaves.keys().copied()
+    }
+
+    pub fn branches(&self) -> BranchesRef<'_> {
+        BranchesRef {
+            branches: self.leaves.branches.branches,
+        }
+    }
+
+    pub fn branches_mut(&mut self) -> BranchesMut<'_> {
+        BranchesMut {
+            branches: self.leaves.branches.branches,
+        }
     }
 }
 
