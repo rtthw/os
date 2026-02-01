@@ -1934,6 +1934,7 @@ impl Fonts for FontsImpl {
         let galley = self.galley_cache.entry(id).or_insert_with(|| run_layout());
 
         if galley.text() != text.as_ref()
+            || galley.job.wrap.max_width != max_advance.unwrap_or(f32::INFINITY)
             || galley.job.sections.first().unwrap().format.font_id.size != font_size
         {
             *galley = run_layout();
@@ -1995,10 +1996,17 @@ pub extern "Rust" fn __label_measure(
 ) -> f32 {
     let id = context.id();
     let fonts = context.fonts_mut();
-    let max_advance = match length_request {
-        LengthRequest::MinContent => Some(0.0),
-        LengthRequest::MaxContent => None,
-        LengthRequest::FitContent(space) => Some(space /* FIXME: Subtract padding */),
+    // FIXME: Account for padding.
+    let max_advance = match axis {
+        Axis::Horizontal => match length_request {
+            LengthRequest::MinContent => Some(0.0),
+            LengthRequest::MaxContent => None,
+            LengthRequest::FitContent(space) => Some(space),
+        },
+        Axis::Vertical => match length_request {
+            LengthRequest::MinContent => cross_length.or(Some(0.0)),
+            LengthRequest::MaxContent | LengthRequest::FitContent(_) => cross_length,
+        },
     };
     let used_size = fonts.measure_text(
         id,

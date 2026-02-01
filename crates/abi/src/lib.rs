@@ -810,7 +810,7 @@ impl Element for Column {
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
         let width = Length::FitContent(pass.size.x);
-        let height = Length::FitContent(pass.size.y);
+        let height = Length::MaxContent;
         let auto_size = Xy::new(width, height);
 
         let mut y_offset = 0.0;
@@ -870,6 +870,114 @@ impl Element for Column {
     }
 }
 
+pub struct Row {
+    children: Vec<ChildElement>,
+    background_color: Rgba<u8>,
+    border_color: Rgba<u8>,
+}
+
+impl Row {
+    pub fn new() -> Self {
+        Self {
+            children: Vec::new(),
+            background_color: Rgba {
+                r: 33,
+                g: 33,
+                b: 33,
+                a: 255,
+            },
+            border_color: Rgba {
+                r: 111,
+                g: 111,
+                b: 111,
+                a: 255,
+            },
+        }
+    }
+
+    pub fn with(mut self, child: impl Element + 'static) -> Self {
+        self.children.push(ElementBuilder::new(child).into_child());
+        self
+    }
+}
+
+impl Element for Row {
+    fn children_ids(&self) -> Vec<u64> {
+        self.children.iter().map(|child| child.id()).collect()
+    }
+
+    fn update_children(&mut self, pass: &mut UpdatePass<'_>) {
+        for child in self.children.iter_mut() {
+            pass.update_child(child);
+        }
+    }
+
+    fn render(&mut self, pass: &mut RenderPass<'_>) {
+        pass.fill_quad(pass.bounds(), self.background_color, 1.0, self.border_color);
+    }
+
+    fn layout(&mut self, pass: &mut LayoutPass<'_>) {
+        let width = Length::MaxContent;
+        let height = Length::FitContent(pass.size.y);
+        let auto_size = Xy::new(width, height);
+
+        let mut x_offset = 0.0;
+        for child in &mut self.children {
+            let child_size = pass.resolve_size(child.id(), auto_size);
+            pass.do_layout(child, child_size);
+            pass.place_child(child, Xy::new(x_offset, 0.0));
+
+            x_offset += child_size.x;
+        }
+    }
+
+    fn measure(
+        &mut self,
+        context: &mut MeasureContext<'_>,
+        axis: Axis,
+        length_request: LengthRequest,
+        cross_length: Option<f32>,
+    ) -> f32 {
+        let (length_request, min_result) = match length_request {
+            LengthRequest::MinContent | LengthRequest::MaxContent => (length_request, 0.0),
+            LengthRequest::FitContent(space) => (LengthRequest::MinContent, space),
+        };
+
+        let fallback_length = length_request.into();
+
+        let mut length: f32 = 0.0;
+        for child in &mut self.children {
+            let child_length =
+                context.resolve_length(child.id(), axis, fallback_length, cross_length);
+            match axis {
+                Axis::Horizontal => length += child_length,
+                Axis::Vertical => length = length.max(child_length),
+            }
+        }
+
+        min_result.max(length)
+    }
+
+    fn on_child_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
+        if hovered {
+            self.border_color = Rgba {
+                r: 133,
+                g: 133,
+                b: 133,
+                a: 255,
+            };
+        } else {
+            self.border_color = Rgba {
+                r: 111,
+                g: 111,
+                b: 111,
+                a: 255,
+            };
+        }
+        pass.request_render();
+    }
+}
+
 
 
 pub struct Label {
@@ -891,6 +999,11 @@ impl Label {
             alignment: TextAlignment::Start,
             wrap_mode: TextWrapMode::Wrap,
         }
+    }
+
+    pub fn with_font_size(mut self, font_size: f32) -> Self {
+        self.font_size = font_size;
+        self
     }
 }
 
@@ -919,9 +1032,9 @@ impl Element for Label {
 
     fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
         if hovered {
-            self.font_size = 32.0;
+            self.font_size *= 2.0;
         } else {
-            self.font_size = 16.0;
+            self.font_size /= 2.0;
         }
         pass.request_layout();
         pass.request_render();
@@ -1448,6 +1561,7 @@ impl LayoutPass<'_> {
     }
 
     pub fn place_child(&mut self, child: &mut ChildElement, position: Xy<f32>) {
+        let offset = self.state.bounds.position();
         move_element(
             &mut self
                 .children
@@ -1455,7 +1569,7 @@ impl LayoutPass<'_> {
                 .expect("invalid child passed to LayoutPass::place_child")
                 .element
                 .state,
-            position,
+            position + offset,
         );
     }
 
@@ -1477,7 +1591,7 @@ pub fn layout_pass(view: &mut View) {
     layout_element(&mut *view.fonts, node, view.window_size);
 }
 
-pub fn layout_element(fonts: &mut dyn Fonts, node: tree::NodeMut<'_, ElementInfo>, size: Xy<f32>) {
+fn layout_element(fonts: &mut dyn Fonts, node: tree::NodeMut<'_, ElementInfo>, size: Xy<f32>) {
     let element = &mut *node.element.element;
     let state = &mut node.element.state;
     let children = node.leaves;
