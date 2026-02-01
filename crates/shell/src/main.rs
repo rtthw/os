@@ -1996,16 +1996,19 @@ pub extern "Rust" fn __label_measure(
 ) -> f32 {
     let id = context.id();
     let fonts = context.fonts_mut();
-    // FIXME: Account for padding.
+    // For exact measurements, we round up so the `FontsImpl` doesn't wrap
+    // unnecessarily.
     let max_advance = match axis {
         Axis::Horizontal => match length_request {
             LengthRequest::MinContent => Some(0.0),
             LengthRequest::MaxContent => None,
-            LengthRequest::FitContent(space) => Some(space),
+            LengthRequest::FitContent(space) => Some((space + 0.5).round()),
         },
         Axis::Vertical => match length_request {
             LengthRequest::MinContent => cross_length.or(Some(0.0)),
-            LengthRequest::MaxContent | LengthRequest::FitContent(_) => cross_length,
+            LengthRequest::MaxContent | LengthRequest::FitContent(_) => {
+                cross_length.map(|l| (l + 0.5).round())
+            }
         },
     };
     let used_size = fonts.measure_text(
