@@ -4,6 +4,123 @@ use core::alloc::Layout as BlockLayout;
 
 
 
+#[derive(Debug, PartialEq)]
+pub struct TypeDecl {
+    pub name: &'static str,
+    pub size: usize,
+    pub align: usize,
+    pub fields: &'static [FieldDecl],
+}
+
+impl TypeDecl {
+    pub const UNIT: Self = Self {
+        name: "()",
+        size: size_of::<()>(),
+        align: align_of::<()>(),
+        fields: &[],
+    };
+}
+
+#[derive(Debug, PartialEq)]
+pub struct FieldDecl {
+    pub offset: usize,
+    pub decl: &'static TypeDecl,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct FunctionDecl {
+    pub name: &'static str,
+    pub input: &'static [&'static TypeDecl],
+    pub output: &'static TypeDecl,
+}
+
+pub trait Declared {
+    const DECL: &'static TypeDecl;
+
+    fn alias_for<T: Declared>() -> bool {
+        T::DECL.size == Self::DECL.size
+            && T::DECL.align == Self::DECL.align
+            && T::DECL.fields == Self::DECL.fields
+    }
+}
+
+#[macro_export]
+macro_rules! impl_declared {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl_declared!($ty {});
+        )*
+    };
+    ($ty:ty { $($field_name:ident: $field_ty:ty),* $(,)? }) => {
+        impl Declared for $ty {
+            const DECL: &'static TypeDecl = &TypeDecl {
+                name: stringify!($ty),
+                size: size_of::<$ty>(),
+                align: align_of::<$ty>(),
+                fields: &[$(
+                    FieldDecl {
+                        offset: core::mem::offset_of!($ty, $field_name),
+                        decl: <$field_ty as Declared>::DECL
+                    }
+                ),*],
+            };
+        }
+
+        impl Declared for &$ty {
+            const DECL: &'static TypeDecl = &TypeDecl {
+                name: concat!("&", stringify!($ty)),
+                size: size_of::<&$ty>(),
+                align: align_of::<&$ty>(),
+                fields: &[$(
+                    FieldDecl {
+                        offset: core::mem::offset_of!($ty, $field_name),
+                        decl: <$field_ty as Declared>::DECL
+                    }
+                ),*],
+            };
+        }
+    };
+}
+
+impl_declared!(u8, u16, u32, u64, u128);
+impl_declared!(i8, i16, i32, i64, i128);
+
+#[macro_export]
+macro_rules! declare_function {
+    (
+        @ $decl_name: ident
+        $vis:vis fn $name:ident($($param_name:ident: $param_ty:ty),* $(,)?) $(-> $return_ty:ty)? {
+            $($body:tt)*
+        }
+    ) => {
+        #[unsafe(no_mangle)]
+        $vis extern "Rust" fn $name($($param_name: $param_ty),*) $(-> $return_ty)? {
+            $($body)*
+        }
+
+        #[unsafe(no_mangle)]
+        $vis static $decl_name: FunctionDecl = FunctionDecl {
+            name: stringify!($name),
+            input: &[$(
+                <$param_ty as Declared>::DECL
+            ),*],
+            output: maybe_defined!($(<$return_ty as Declared>::DECL)? ; &TypeDecl::UNIT),
+        };
+    };
+}
+
+#[macro_export]
+macro_rules! maybe_defined {
+    ($expansion:expr ; $default:expr) => {
+        $expansion
+    };
+    (; $default:expr) => {
+        $default
+    };
+}
+
+
+
 #[derive(Debug, Eq, PartialEq)]
 #[repr(C)]
 pub enum ReferenceLayout {
@@ -176,5 +293,47 @@ mod tests {
         assert_eq!(f64::DATA_LAYOUT, u64::DATA_LAYOUT);
 
         assert_eq!(u8::SIZED_LAYOUT.to_unsized(), u8::DATA_LAYOUT);
+    }
+
+    #[test]
+    fn type_declaration_basics() {
+        struct TestType {
+            a: u8,
+            b: i32,
+        }
+
+        impl_declared! {
+            TestType {
+                a: u8,
+                b: i32,
+            }
+        }
+
+        assert_eq!(TestType::DECL.name, "TestType");
+        assert_eq!(
+            TestType::DECL.fields,
+            &[
+                FieldDecl {
+                    offset: 4, // Note the compiler's reordering.
+                    decl: u8::DECL,
+                },
+                FieldDecl {
+                    offset: 0,
+                    decl: i32::DECL,
+                },
+            ],
+        );
+    }
+
+    #[test]
+    fn function_declaration_basics() {
+        declare_function! {
+            @ ADD_ONE fn add_one(x: i32) -> i32 {
+                x + 1
+            }
+        }
+        assert_eq!(ADD_ONE.name, "add_one");
+        assert_eq!(ADD_ONE.input, &[i32::DECL]);
+        assert_eq!(ADD_ONE.output, i32::DECL);
     }
 }
