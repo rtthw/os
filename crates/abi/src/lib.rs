@@ -436,24 +436,6 @@ impl Rgba<u8> {
 
 
 
-#[derive(Clone, Copy, Debug)]
-#[repr(C)]
-pub enum InputEvent {
-    MouseButtonDown(MouseButton),
-    MouseButtonUp(MouseButton),
-}
-
-#[derive(Clone, Copy, Debug)]
-#[repr(C)]
-pub enum MouseButton {
-    Primary,
-    Secondary,
-    Middle,
-    Other(u16),
-}
-
-
-
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(u8)]
 pub enum TextWrapMode {
