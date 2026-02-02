@@ -1336,14 +1336,12 @@ fn move_element(state: &mut ElementState, position: Xy<f32>) {
     let position = position.round();
     let end_point = end_point.round();
 
-    if position.x != state.bounds.x_min || position.y != state.bounds.y_min {
+    if position != state.bounds.min {
         state.moved = true;
     }
 
-    state.bounds.x_min = position.x;
-    state.bounds.y_min = position.y;
-    state.bounds.x_max = end_point.x;
-    state.bounds.y_max = end_point.y;
+    state.bounds.min = position;
+    state.bounds.max = end_point;
 }
 
 pub struct MeasureContext<'pass> {

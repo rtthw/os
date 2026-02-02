@@ -7,10 +7,8 @@ use std::ops::{Add, Mul, Sub};
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(C)]
 pub struct Aabb2D<V> {
-    pub x_min: V,
-    pub x_max: V,
-    pub y_min: V,
-    pub y_max: V,
+    pub min: Xy<V>,
+    pub max: Xy<V>,
 }
 
 impl Aabb2D<f32> {
@@ -19,122 +17,110 @@ impl Aabb2D<f32> {
     #[inline]
     pub const fn new(min_x: f32, min_y: f32, max_x: f32, max_y: f32) -> Self {
         Self {
-            x_min: min_x,
-            x_max: max_x,
-            y_min: min_y,
-            y_max: max_y,
+            min: Xy::new(min_x, min_y),
+            max: Xy::new(max_x, max_y),
         }
     }
 
     #[inline]
     pub const fn from_min_max(min: Xy<f32>, max: Xy<f32>) -> Self {
-        Self {
-            x_min: min.x,
-            x_max: max.x,
-            y_min: min.y,
-            y_max: max.y,
-        }
+        Self { min, max }
     }
 
     #[inline]
     pub const fn from_size(size: Xy<f32>) -> Self {
         Self {
-            x_min: 0.0,
-            x_max: size.x,
-            y_min: 0.0,
-            y_max: size.y,
+            min: Xy::ZERO,
+            max: size,
         }
     }
 
     #[inline]
     pub const fn size(&self) -> Xy<f32> {
-        Xy::new(self.x_max - self.x_min, self.y_max - self.y_min)
+        Xy::new(self.max.x - self.min.x, self.max.y - self.min.y)
     }
 
     #[inline]
     pub const fn position(&self) -> Xy<f32> {
-        Xy::new(self.x_min, self.y_min)
+        Xy::new(self.min.x, self.min.y)
     }
 
     #[inline]
     pub const fn abs(&self) -> Self {
-        let Self {
-            x_min,
-            y_min,
-            x_max,
-            y_max,
-        } = *self;
+        let Self { min, max } = *self;
         Self::new(
-            x_min.min(x_max),
-            y_min.min(y_max),
-            x_min.max(x_max),
-            y_min.max(y_max),
+            min.x.min(max.x),
+            min.y.min(max.y),
+            min.x.max(max.x),
+            min.y.max(max.y),
         )
     }
 
     #[inline]
     pub fn set_size(&mut self, size: Xy<f32>) {
-        self.x_max = self.x_min + size.x;
-        self.y_max = self.y_min + size.y;
+        self.max.x = self.min.x + size.x;
+        self.max.y = self.min.y + size.y;
     }
 
+    #[inline]
     pub const fn translate(&self, amount: Xy<f32>) -> Self {
         Self {
-            x_min: self.x_min + amount.x,
-            x_max: self.x_max + amount.x,
-            y_min: self.y_min + amount.y,
-            y_max: self.y_max + amount.y,
+            min: self.min.const_add(amount),
+            max: self.max.const_add(amount),
         }
     }
 
     #[inline]
     pub const fn intersect(&self, other: Self) -> Self {
-        let x_min = self.x_min.max(other.x_min);
-        let y_min = self.y_min.max(other.y_min);
-        let x_max = self.x_max.min(other.x_max);
-        let y_max = self.y_max.min(other.y_max);
-        Self::new(x_min, y_min, x_max.max(x_min), y_max.max(y_min))
+        let min_x = self.min.x.max(other.min.x);
+        let min_y = self.min.y.max(other.min.y);
+        let max_x = self.max.x.min(other.max.x);
+        let max_y = self.max.y.min(other.max.y);
+
+        Self::new(min_x, min_y, max_x.max(min_x), max_y.max(min_y))
     }
 
     #[inline]
     pub const fn union(&self, other: Self) -> Self {
         Self::new(
-            self.x_min.min(other.x_min),
-            self.y_min.min(other.y_min),
-            self.x_max.max(other.x_max),
-            self.y_max.max(other.y_max),
+            self.min.x.min(other.min.x),
+            self.min.y.min(other.min.y),
+            self.max.x.max(other.max.x),
+            self.max.y.max(other.max.y),
         )
     }
 
     #[inline]
     pub const fn contains(&self, point: Xy<f32>) -> bool {
-        point.x >= self.x_min
-            && point.x <= self.x_max
-            && point.y >= self.y_min
-            && point.y <= self.y_max
+        point.x >= self.min.x
+            && point.x <= self.max.x
+            && point.y >= self.min.y
+            && point.y <= self.max.y
     }
 
     #[inline]
     pub const fn overlaps(&self, other: Self) -> bool {
-        self.x_min <= other.x_max
-            && self.x_max >= other.x_min
-            && self.y_min <= other.y_max
-            && self.y_max >= other.y_min
+        self.min.x <= other.max.x
+            && self.max.x >= other.min.x
+            && self.min.y <= other.max.y
+            && self.max.y >= other.min.y
     }
 
     #[inline]
     pub const fn add_insets(self, other: Self) -> Self {
         let other = other.abs();
         Self::new(
-            other.x_min - self.x_min,
-            other.y_min - self.y_min,
-            other.x_max + self.x_max,
-            other.y_max + self.y_max,
+            other.min.x - self.min.x,
+            other.min.y - self.min.y,
+            other.max.x + self.max.x,
+            other.max.y + self.max.y,
         )
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 #[repr(C)]
 pub struct Xy<V> {
     pub x: V,
@@ -164,6 +150,14 @@ impl Xy<f32> {
     pub const fn round(self) -> Self {
         Self::new(self.x.round(), self.y.round())
     }
+
+    #[inline]
+    pub const fn const_add(&self, other: Self) -> Self {
+        Self {
+            x: self.x + other.x,
+            y: self.y + other.y,
+        }
+    }
 }
 
 impl<V: Add<V, Output = V>> Add for Xy<V> {
@@ -187,6 +181,8 @@ impl<V: Sub<V, Output = V>> Sub for Xy<V> {
         }
     }
 }
+
+
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Transform2D([f32; 6]);
@@ -228,6 +224,7 @@ impl Transform2D {
 
     pub const fn inverse(self) -> Self {
         let inv_det = self.determinant().recip();
+
         Self([
             inv_det * self.0[3],
             -inv_det * self.0[1],
@@ -239,10 +236,11 @@ impl Transform2D {
     }
 
     pub fn transform_area(self, area: Aabb2D<f32>) -> Aabb2D<f32> {
-        let p00 = self * Xy::new(area.x_min, area.y_min);
-        let p01 = self * Xy::new(area.x_min, area.y_max);
-        let p10 = self * Xy::new(area.x_max, area.y_min);
-        let p11 = self * Xy::new(area.x_max, area.y_max);
+        let p00 = self * Xy::new(area.min.x, area.min.y);
+        let p01 = self * Xy::new(area.min.x, area.max.y);
+        let p10 = self * Xy::new(area.max.x, area.min.y);
+        let p11 = self * Xy::new(area.max.x, area.max.y);
+
         Aabb2D::from_min_max(p00, p01).union(Aabb2D::from_min_max(p10, p11))
     }
 }
@@ -258,6 +256,8 @@ impl Mul<Xy<f32>> for Transform2D {
         }
     }
 }
+
+
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(C)]
