@@ -758,7 +758,17 @@ impl Shell {
             self.output.renderer.gl.finish();
         }
 
-        let next_icon = cursor::egui_to_abi_cursor_icon(full_output.platform_output.cursor_icon);
+        let next_icon = if self.example_program.known_bounds.contains(Xy::new(
+            self.input_state.mouse_pos.x,
+            self.input_state.mouse_pos.y,
+        )) {
+            self.example_program
+                .object
+                .as_ref()
+                .map_or(abi::CursorIcon::Default, |obj| obj.view.cursor_icon())
+        } else {
+            cursor::egui_to_abi_cursor_icon(full_output.platform_output.cursor_icon)
+        };
         if self.cursor_icon != next_icon {
             self.cursor_icon = next_icon;
 

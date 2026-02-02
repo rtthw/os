@@ -226,6 +226,7 @@ pub struct View {
     pointer_position: Option<Xy<f32>>,
     pointer_capture_target: Option<u64>,
     hovered_path: Vec<u64>,
+    cursor_icon: CursorIcon,
 }
 
 impl View {
@@ -250,7 +251,13 @@ impl View {
             pointer_position: None,
             pointer_capture_target: None,
             hovered_path: Vec::new(),
+            cursor_icon: CursorIcon::Default,
         }
+    }
+
+    #[inline]
+    pub fn cursor_icon(&self) -> CursorIcon {
+        self.cursor_icon
     }
 
     pub fn resize_window(&mut self, size: Xy<f32>) {
@@ -335,6 +342,10 @@ pub trait Element {
         length_request: LengthRequest,
         cross_length: Option<f32>,
     ) -> f32;
+
+    fn cursor_icon(&self) -> CursorIcon {
+        CursorIcon::Default
+    }
 
     /// Called when this element is added to the view tree.
     #[allow(unused)]
@@ -750,6 +761,10 @@ impl Element for Label {
         unsafe { __ui_Label__measure(self, context, axis, length_request, cross_length) }
     }
 
+    fn cursor_icon(&self) -> CursorIcon {
+        CursorIcon::IBeam
+    }
+
     fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
         if hovered {
             self.font_size *= 2.0;
@@ -908,6 +923,18 @@ fn update_pointer_pass(view: &mut View) {
         });
     }
 
+    let next_cursor_icon = if let Some(node_id) = next_hovered_element {
+        let node = view
+            .tree
+            .find_mut(node_id)
+            .expect("failed to find the view's root node");
+
+        node.element.element.cursor_icon()
+    } else {
+        CursorIcon::Default
+    };
+
+    view.cursor_icon = next_cursor_icon;
     view.hovered_path = next_hovered_path;
 }
 
