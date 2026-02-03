@@ -12,6 +12,7 @@ pub mod mount;
 pub mod object;
 pub mod proc;
 pub mod raw;
+pub mod shm;
 pub mod signal;
 pub mod traits;
 
