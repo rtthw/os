@@ -1,5 +1,7 @@
 //! # Shared Memory
 
+use core::ops::{Deref, DerefMut};
+
 use crate::{Error, Result, c_str::AsCStr};
 
 
@@ -114,5 +116,115 @@ impl SharedMemory {
     #[inline]
     pub fn owned(&self) -> bool {
         self.owned
+    }
+
+    #[inline]
+    pub fn as_ptr(&self) -> *mut u8 {
+        self.ptr
+    }
+}
+
+
+
+pub struct Mutex {
+    ptr: *mut libc::pthread_mutex_t,
+    data: core::cell::UnsafeCell<*mut u8>,
+}
+
+impl Mutex {
+    pub unsafe fn new(base: *mut u8) -> Result<Self> {
+        let padding = base.align_offset(size_of::<*mut u8>() as _);
+        let data: *mut u8 = unsafe { base.add(padding + size_of::<libc::pthread_mutex_t>()) };
+
+        let mut lock_attr = core::mem::MaybeUninit::uninit();
+
+        let res = unsafe { libc::pthread_mutexattr_init(lock_attr.as_mut_ptr()) };
+        if res != 0 {
+            return Err(Error::from_raw(res));
+        }
+
+        let mut lock_attr = unsafe { lock_attr.assume_init() };
+
+        let res = unsafe {
+            libc::pthread_mutexattr_setpshared(&mut lock_attr, libc::PTHREAD_PROCESS_SHARED)
+        };
+        if res != 0 {
+            return Err(Error::from_raw(res));
+        }
+
+        let ptr = unsafe { base.add(padding) } as *mut _;
+
+        let res = unsafe { libc::pthread_mutex_init(ptr, &lock_attr) };
+        if res != 0 {
+            return Err(Error::from_raw(res));
+        }
+
+        Ok(Self {
+            ptr,
+            data: core::cell::UnsafeCell::new(data),
+        })
+    }
+
+    pub unsafe fn from_existing(base: *mut u8) -> Result<Self> {
+        let padding = base.align_offset(size_of::<*mut u8>() as _);
+        let data: *mut u8 = unsafe { base.add(padding + size_of::<libc::pthread_mutex_t>()) };
+        let ptr = unsafe { base.add(padding) } as *mut _;
+
+        Ok(Self {
+            ptr,
+            data: core::cell::UnsafeCell::new(data),
+        })
+    }
+}
+
+impl Mutex {
+    pub fn lock(&self) -> Result<MutexGuard<'_>> {
+        let res = unsafe { libc::pthread_mutex_lock(self.ptr) };
+        if res != 0 {
+            return Err(Error::from_raw(res));
+        }
+
+        Ok(MutexGuard { mutex: self })
+    }
+
+    pub fn unlock(&self) -> Result<()> {
+        let res = unsafe { libc::pthread_mutex_unlock(self.ptr) };
+        if res != 0 {
+            return Err(Error::from_raw(res));
+        }
+
+        Ok(())
+    }
+
+    unsafe fn get_inner(&self) -> &mut *mut u8 {
+        unsafe { &mut *self.data.get() }
+    }
+}
+
+
+
+pub struct MutexGuard<'lock> {
+    mutex: &'lock Mutex,
+}
+
+impl Drop for MutexGuard<'_> {
+    fn drop(&mut self) {
+        // ???: Maybe don't unwrap here?
+        self.mutex.unlock().unwrap();
+    }
+}
+
+impl Deref for MutexGuard<'_> {
+    type Target = *mut u8;
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: This is safe to access as long as the guard lives.
+        unsafe { self.mutex.get_inner() }
+    }
+}
+
+impl DerefMut for MutexGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: This is safe to access as long as the guard lives.
+        unsafe { self.mutex.get_inner() }
     }
 }
