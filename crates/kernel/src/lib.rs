@@ -9,6 +9,7 @@ pub mod epoll;
 mod error;
 pub mod file;
 pub mod mount;
+pub mod object;
 pub mod proc;
 pub mod raw;
 pub mod signal;

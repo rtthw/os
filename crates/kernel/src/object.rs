@@ -1,6 +1,6 @@
-use std::ffi::CStr;
+use core::ffi::CStr;
 
-use {anyhow::Result, kernel::c_str::AsCStr};
+use crate::{Error, Result, c_str::AsCStr};
 
 
 
@@ -34,14 +34,9 @@ impl Object {
                 if error_str_ptr.is_null() {
                     unreachable!("object is being loaded by some other library")
                 } else {
-                    CStr::from_ptr(error_str_ptr)
-                        .to_str()
-                        .map_err(|utf8_error| {
-                            anyhow::anyhow!(
-                                "dlopen error did not contain valid UTF-8: {utf8_error}"
-                            )
-                        })
-                        .map(|string| anyhow::anyhow!(string))?
+                    // FIXME: This just indicates that an error has occurred, not what the actual
+                    //        error is.
+                    Error::IO
                 }
             })
         } else {

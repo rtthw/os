@@ -14,7 +14,6 @@ pub mod cursor;
 pub mod egl;
 pub mod input;
 pub mod log;
-pub mod object;
 
 use std::{
     collections::HashMap,
@@ -44,10 +43,11 @@ use {
     kernel::{
         epoll::{Event, EventPoll},
         file::File,
+        object::{self, Object},
     },
 };
 
-use crate::{cursor::CursorData, object::Object};
+use crate::cursor::CursorData;
 
 
 
