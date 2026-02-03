@@ -25,6 +25,14 @@ fn main() {
         exit(-1)
     }
 
+    if let Err(error) = setup_shared_memory() {
+        println!(
+            "\x1b[31mERROR\x1b[0m \x1b[2m(init)\x1b[0m: Failed to setup shared memory subsystem: \
+            {error}"
+        );
+        exit(-1)
+    }
+
     // Make sure this process is a session leader.
     _ = setsid();
 
@@ -195,6 +203,21 @@ fn setup_mount_points() -> Result<()> {
             }
         }
     }
+}
+
+fn setup_shared_memory() -> Result<()> {
+    use kernel::mount::{NODEV, NOSUID};
+
+    _ = mkdir(c"/dev/shm", 0);
+    mount(
+        c"shm",
+        c"/dev/shm",
+        c"tmpfs",
+        NOSUID | NODEV,
+        Some(c"mode=1777"),
+    )?;
+
+    Ok(())
 }
 
 fn cleanup_initramfs(old_root_fd: File) -> Result<()> {
