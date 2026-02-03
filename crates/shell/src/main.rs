@@ -23,7 +23,10 @@ use std::{
     os::fd::AsRawFd as _,
     ptr::NonNull,
     str::FromStr as _,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU8, Ordering},
+    },
     time::Instant,
 };
 
@@ -44,6 +47,7 @@ use {
         epoll::{Event, EventPoll},
         file::File,
         object::{self, Object},
+        shm::SharedMemory,
     },
 };
 
@@ -57,6 +61,7 @@ fn main() -> Result<()> {
     log::Logger::default().init()?;
 
     run_abi_tests().context("failed to run ABI tests")?;
+    run_driver_tests().context("failed to run app driver tests")?;
 
     info!("Starting shell...");
 
@@ -1658,6 +1663,47 @@ fn run_abi_tests() -> Result<()> {
     }
 
     info!("All ABI tests passed");
+
+    Ok(())
+}
+
+fn run_driver_tests() -> Result<()> {
+    info!("Running application driver tests...");
+
+    let driver_map = SharedMemory::create("/shmem_example", 4096)?;
+    let mut raw_ptr = driver_map.as_ptr();
+    let is_map_initialized: &mut AtomicU8;
+
+    unsafe {
+        is_map_initialized = &mut *(raw_ptr as *mut u8 as *mut AtomicU8);
+        raw_ptr = raw_ptr.add(8);
+    };
+
+    is_map_initialized.store(0, Ordering::Relaxed);
+
+    let mutex = {
+        let mutex = unsafe { kernel::shm::Mutex::new(raw_ptr).unwrap() };
+        is_map_initialized.store(1, Ordering::Relaxed);
+
+        mutex
+    };
+
+    let driver_child = std::process::Command::new("/sbin/driver")
+        .arg("example")
+        .spawn()?;
+
+    for i in 1..=5 {
+        {
+            let _guard = mutex.lock()?;
+            println!("(shell) PING #{i}");
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    let _driver_output = driver_child.wait_with_output()?;
+
+    info!("All application driver tests passed");
 
     Ok(())
 }

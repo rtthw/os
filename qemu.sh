@@ -9,6 +9,7 @@ cd ../..
 # Build the init program.
 cargo build --release --target x86_64-unknown-linux-musl --bin init || exit
 cargo build --release --target x86_64-unknown-linux-gnu --bin shell || exit
+cargo build --release --target x86_64-unknown-linux-gnu --bin driver || exit
 
 cd build
 
@@ -28,7 +29,9 @@ cd initrd
 
     # Put the shell program where the init program can find it.
     cp ../../target/x86_64-unknown-linux-gnu/release/shell ../rootfs/sbin/
+    cp ../../target/x86_64-unknown-linux-gnu/release/driver ../rootfs/sbin/
     chmod +x ../rootfs/sbin/shell
+    chmod +x ../rootfs/sbin/driver
 
     # Put the ABI where the compiler can find it.
     cp ../../target/x86_64-unknown-linux-gnu/release/libabi.rlib ../rootfs/lib/

@@ -1,0 +1,10 @@
+[package]
+name = "driver"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+abi.workspace = true
+anyhow = "1"
+kernel.workspace = true
+libc = { version = "0.2", default-features = false }
