@@ -102,7 +102,44 @@ macro_rules! declare {
 #[repr(C)]
 pub struct DriverInput {
     pub id: u64,
-    pub events: u64,
+    pub events: [Option<DriverInputEvent>; DRIVER_INPUT_EVENT_CAPACITY],
+}
+
+const DRIVER_INPUT_EVENT_CAPACITY: usize = 16;
+
+impl DriverInput {
+    pub fn empty() -> Self {
+        Self {
+            id: 0,
+            events: [None; DRIVER_INPUT_EVENT_CAPACITY],
+        }
+    }
+
+    pub fn push_event(&mut self, event: DriverInputEvent) -> Option<DriverInputEvent> {
+        if let Some(null_index) = self.events.iter().position(|event| event.is_none()) {
+            self.events[null_index] = Some(event);
+            None
+        } else {
+            let missed_event = self.events[0].take();
+            self.events.rotate_left(1);
+            self.events[DRIVER_INPUT_EVENT_CAPACITY - 1] = Some(event);
+            missed_event
+        }
+    }
+
+    pub fn pop_event(&mut self) -> Option<DriverInputEvent> {
+        self.events
+            .iter()
+            .rposition(|event| event.is_some())
+            .and_then(|index| self.events[index].take())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C, u32)]
+pub enum DriverInputEvent {
+    Pointer(PointerEvent),
+    Other(u32),
 }
 
 
@@ -972,6 +1009,7 @@ pub enum PointerButton {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
 pub enum PointerEvent {
     Down { button: PointerButton },
     Up { button: PointerButton },

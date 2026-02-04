@@ -4,7 +4,7 @@ use {
     abi::*,
     anyhow::{Result, bail},
     kernel::shm::{Mutex, SharedMemory},
-    std::sync::atomic::{AtomicU8, Ordering},
+    std::sync::atomic::{AtomicU8, AtomicU64, Ordering},
 };
 
 
@@ -20,21 +20,34 @@ fn main() -> Result<()> {
     let map = SharedMemory::open(format!("/shmem_{}", app_name).as_str())?;
     let mut map_ptr = map.as_ptr();
     let is_map_initialized: &mut AtomicU8 = unsafe { &mut *(map_ptr as *mut AtomicU8) };
-    map_ptr = unsafe { map_ptr.add(8) };
+    map_ptr = unsafe { map_ptr.add(size_of::<*mut ()>()) };
+    let next_input_id: &mut AtomicU64 = unsafe { &mut *(map_ptr as *mut AtomicU64) };
+    map_ptr = unsafe { map_ptr.add(size_of::<*mut ()>()) };
 
     // Wait for the shell to initialize the map.
     while is_map_initialized.load(Ordering::Relaxed) != 1 {}
 
     let mutex: Mutex<DriverInput> = unsafe { Mutex::from_existing(map_ptr) }?;
 
-    for _i in 1..=5 {
-        {
-            let guard = mutex.lock()?;
-            let input = unsafe { &**guard };
-            println!("(driver @ {}) PONG #{}", input.id, input.events);
-            std::thread::sleep(std::time::Duration::from_millis(100));
+    let mut seen_input_id: u64 = 0;
+    'handle_input: loop {
+        let input_id = next_input_id.load(Ordering::Relaxed);
+        if input_id == seen_input_id {
+            continue 'handle_input;
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        if input_id == u64::MAX {
+            break 'handle_input;
+        }
+
+        let mut guard = mutex.lock()?;
+        let input = unsafe { &mut **guard };
+
+        seen_input_id = input_id;
+        let event = input.pop_event();
+
+        if event.is_none() {
+            println!("(driver) GOT EMPTY INPUT @ {input_id}");
+        }
     }
 
     Ok(())

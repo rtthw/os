@@ -25,9 +25,10 @@ use std::{
     str::FromStr as _,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::Instant,
+    u64,
 };
 
 use {
@@ -1675,38 +1676,82 @@ fn run_driver_tests() -> Result<()> {
         "/shmem_example",
         size_of::<DriverInput>()
             + size_of::<*mut ()>() // Initialized flag.
+            + size_of::<*mut ()>() // Input flag.
             + kernel::shm::Mutex::<DriverInput>::HEADER_SIZE,
     )?;
     let mut raw_ptr = driver_map.as_ptr();
     let is_map_initialized: &mut AtomicU8 = unsafe { &mut *(raw_ptr as *mut u8 as *mut AtomicU8) };
+    raw_ptr = unsafe { raw_ptr.add(size_of::<*mut ()>()) };
+    let next_input_id: &mut AtomicU64 = unsafe { &mut *(raw_ptr as *mut AtomicU64) };
 
     // Make `raw_ptr` point to the mutex base.
     raw_ptr = unsafe { raw_ptr.add(size_of::<*mut ()>()) };
 
     // Initialize the shared driver map.
     is_map_initialized.store(0, Ordering::Relaxed);
+    next_input_id.store(0, Ordering::Relaxed);
     let mutex = unsafe { kernel::shm::Mutex::<DriverInput>::new(raw_ptr)? };
     {
         let mut guard = mutex.lock()?;
         let input: &mut DriverInput = unsafe { &mut **guard };
-        *input = DriverInput { id: 1, events: 0 };
+        *input = DriverInput::empty();
     }
     is_map_initialized.store(1, Ordering::Relaxed);
 
-    let driver_child = std::process::Command::new("/sbin/driver")
+    let mut driver_child = std::process::Command::new("/sbin/driver")
         .arg("example")
         .spawn()?;
 
-    for i in 1..=5 {
-        {
-            let mut guard = mutex.lock()?;
-            let input: &mut DriverInput = unsafe { &mut **guard };
-            input.events = i as _;
-            println!("(shell) PING #{i}");
-            std::thread::sleep(std::time::Duration::from_millis(100));
+    // Wait for the driver to start up.
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    for trial_num in 1..=10 {
+        println!("\tTrial #{trial_num} starting...");
+
+        let start_time = Instant::now();
+
+        let event_count = 100_000;
+        let work_time = std::time::Duration::from_nanos(2);
+        let mut missed_events = 0;
+
+        for i in 1..(event_count + 1) {
+            let num = i * trial_num;
+            if i % 10_000 == 0 {
+                println!("\t\tReached event #{},000", num / 1_000);
+            }
+
+            // Send the event.
+            '_lock_scope: {
+                let mut guard = mutex.lock()?;
+                let input: &mut DriverInput = unsafe { &mut **guard };
+                if let Some(_missed_event) = input.push_event(DriverInputEvent::Other(num)) {
+                    warn!("\tDriver missed input event #{num}");
+                    missed_events += 1;
+                    match driver_child.try_wait()? {
+                        Some(exit_status) => {
+                            bail!("Test driver exited early with status: {exit_status}");
+                        }
+                        None => {}
+                    }
+                }
+            }
+
+            // Notify the driver.
+            next_input_id.store(i as _, Ordering::Relaxed);
+
+            // Simulate some work.
+            std::thread::sleep(work_time);
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        let time_taken = Instant::now().duration_since(start_time) - (work_time * event_count);
+        println!(
+            "\tTrial #{trial_num} took {} ms, and missed {missed_events} event(s)",
+            time_taken.as_millis(),
+        );
     }
+
+    // Trigger the end of the driver's main loop.
+    next_input_id.store(u64::MAX, Ordering::Relaxed);
 
     // Make sure the driver exits cleanly.
     let driver_output = driver_child.wait_with_output()?;
