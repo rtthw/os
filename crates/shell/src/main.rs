@@ -1671,7 +1671,12 @@ fn run_driver_tests() -> Result<()> {
     info!("Running application driver tests...");
 
     // Create the shared driver map.
-    let driver_map = SharedMemory::create("/shmem_example", 4096)?;
+    let driver_map = SharedMemory::create(
+        "/shmem_example",
+        size_of::<DriverInput>()
+            + size_of::<*mut ()>() // Initialized flag.
+            + kernel::shm::Mutex::<DriverInput>::HEADER_SIZE,
+    )?;
     let mut raw_ptr = driver_map.as_ptr();
     let is_map_initialized: &mut AtomicU8 = unsafe { &mut *(raw_ptr as *mut u8 as *mut AtomicU8) };
 
@@ -1680,7 +1685,12 @@ fn run_driver_tests() -> Result<()> {
 
     // Initialize the shared driver map.
     is_map_initialized.store(0, Ordering::Relaxed);
-    let mutex = unsafe { kernel::shm::Mutex::new(raw_ptr)? };
+    let mutex = unsafe { kernel::shm::Mutex::<DriverInput>::new(raw_ptr)? };
+    {
+        let mut guard = mutex.lock()?;
+        let input: &mut DriverInput = unsafe { &mut **guard };
+        *input = DriverInput { id: 1, events: 0 };
+    }
     is_map_initialized.store(1, Ordering::Relaxed);
 
     let driver_child = std::process::Command::new("/sbin/driver")
@@ -1689,7 +1699,9 @@ fn run_driver_tests() -> Result<()> {
 
     for i in 1..=5 {
         {
-            let _guard = mutex.lock()?;
+            let mut guard = mutex.lock()?;
+            let input: &mut DriverInput = unsafe { &mut **guard };
+            input.events = i as _;
             println!("(shell) PING #{i}");
             std::thread::sleep(std::time::Duration::from_millis(100));
         }

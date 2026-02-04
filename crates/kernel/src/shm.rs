@@ -126,15 +126,26 @@ impl SharedMemory {
 
 
 
-pub struct Mutex {
+/// A mutual exclusion primitive useful for protecting shared memory.
+pub struct Mutex<T: Sized> {
     ptr: *mut libc::pthread_mutex_t,
-    data: core::cell::UnsafeCell<*mut u8>,
+    data: core::cell::UnsafeCell<*mut T>,
 }
 
-impl Mutex {
+// Public.
+impl<T: Sized> Mutex<T> {
+    /// The size of the mutex header.
+    pub const HEADER_SIZE: usize = size_of::<libc::pthread_mutex_t>();
+
+    /// Creates a new shared mutex at the given `base` pointer.
+    ///
+    /// # Safety
+    ///
+    /// The provided pointer **MUST** point to a memory region at least as large
+    /// as [`Self::HEADER_SIZE`] + `size_of::<T>()`.
     pub unsafe fn new(base: *mut u8) -> Result<Self> {
-        let padding = base.align_offset(size_of::<*mut u8>() as _);
-        let data: *mut u8 = unsafe { base.add(padding + size_of::<libc::pthread_mutex_t>()) };
+        let data: *mut T = unsafe { base.add(Self::HEADER_SIZE) } as *mut T;
+        let ptr = base as *mut libc::pthread_mutex_t;
 
         let mut lock_attr = core::mem::MaybeUninit::uninit();
 
@@ -152,8 +163,6 @@ impl Mutex {
             return Err(Error::from_raw(res));
         }
 
-        let ptr = unsafe { base.add(padding) } as *mut _;
-
         let res = unsafe { libc::pthread_mutex_init(ptr, &lock_attr) };
         if res != 0 {
             return Err(Error::from_raw(res));
@@ -165,20 +174,26 @@ impl Mutex {
         })
     }
 
+    /// Opens an existing shared mutex at the given `base` pointer.
+    ///
+    /// # Safety
+    ///
+    /// The provided pointer **MUST** point to an already initialized mutex.
     pub unsafe fn from_existing(base: *mut u8) -> Result<Self> {
-        let padding = base.align_offset(size_of::<*mut u8>() as _);
-        let data: *mut u8 = unsafe { base.add(padding + size_of::<libc::pthread_mutex_t>()) };
-        let ptr = unsafe { base.add(padding) } as *mut _;
+        let data: *mut T = unsafe { base.add(Self::HEADER_SIZE) } as *mut T;
+        let ptr = base as *mut libc::pthread_mutex_t;
 
         Ok(Self {
             ptr,
             data: core::cell::UnsafeCell::new(data),
         })
     }
-}
 
-impl Mutex {
-    pub fn lock(&self) -> Result<MutexGuard<'_>> {
+    /// Acquires a mutex, blocking the current thread until it is able to do so.
+    ///
+    /// **Warning:** This will cause a deadlock if the current thread is already
+    /// holding this mutex.
+    pub fn lock(&self) -> Result<MutexGuard<'_, T>> {
         let res = unsafe { libc::pthread_mutex_lock(self.ptr) };
         if res != 0 {
             return Err(Error::from_raw(res));
@@ -186,8 +201,11 @@ impl Mutex {
 
         Ok(MutexGuard { mutex: self })
     }
+}
 
-    pub fn unlock(&self) -> Result<()> {
+// Private.
+impl<T: Sized> Mutex<T> {
+    fn unlock(&self) -> Result<()> {
         let res = unsafe { libc::pthread_mutex_unlock(self.ptr) };
         if res != 0 {
             return Err(Error::from_raw(res));
@@ -196,33 +214,33 @@ impl Mutex {
         Ok(())
     }
 
-    unsafe fn get_inner(&self) -> &mut *mut u8 {
+    unsafe fn get_inner(&self) -> &mut *mut T {
         unsafe { &mut *self.data.get() }
     }
 }
 
 
 
-pub struct MutexGuard<'lock> {
-    mutex: &'lock Mutex,
+pub struct MutexGuard<'lock, T: Sized> {
+    mutex: &'lock Mutex<T>,
 }
 
-impl Drop for MutexGuard<'_> {
+impl<T: Sized> Drop for MutexGuard<'_, T> {
     fn drop(&mut self) {
         // ???: Maybe don't unwrap here?
         self.mutex.unlock().unwrap();
     }
 }
 
-impl Deref for MutexGuard<'_> {
-    type Target = *mut u8;
+impl<T: Sized> Deref for MutexGuard<'_, T> {
+    type Target = *mut T;
     fn deref(&self) -> &Self::Target {
         // SAFETY: This is safe to access as long as the guard lives.
         unsafe { self.mutex.get_inner() }
     }
 }
 
-impl DerefMut for MutexGuard<'_> {
+impl<T: Sized> DerefMut for MutexGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: This is safe to access as long as the guard lives.
         unsafe { self.mutex.get_inner() }

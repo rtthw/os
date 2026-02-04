@@ -99,6 +99,14 @@ macro_rules! declare {
 
 
 
+#[repr(C)]
+pub struct DriverInput {
+    pub id: u64,
+    pub events: u64,
+}
+
+
+
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub enum Length {

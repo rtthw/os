@@ -1,8 +1,9 @@
 //! # Application Driver
 
 use {
+    abi::*,
     anyhow::{Result, bail},
-    kernel::shm::SharedMemory,
+    kernel::shm::{Mutex, SharedMemory},
     std::sync::atomic::{AtomicU8, Ordering},
 };
 
@@ -24,12 +25,13 @@ fn main() -> Result<()> {
     // Wait for the shell to initialize the map.
     while is_map_initialized.load(Ordering::Relaxed) != 1 {}
 
-    let mutex = unsafe { kernel::shm::Mutex::from_existing(map_ptr) }?;
+    let mutex: Mutex<DriverInput> = unsafe { Mutex::from_existing(map_ptr) }?;
 
-    for i in 1..=5 {
+    for _i in 1..=5 {
         {
-            let _guard = mutex.lock()?;
-            println!("(driver) PONG #{i}");
+            let guard = mutex.lock()?;
+            let input = unsafe { &**guard };
+            println!("(driver @ {}) PONG #{}", input.id, input.events);
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
