@@ -1670,23 +1670,18 @@ fn run_abi_tests() -> Result<()> {
 fn run_driver_tests() -> Result<()> {
     info!("Running application driver tests...");
 
+    // Create the shared driver map.
     let driver_map = SharedMemory::create("/shmem_example", 4096)?;
     let mut raw_ptr = driver_map.as_ptr();
-    let is_map_initialized: &mut AtomicU8;
+    let is_map_initialized: &mut AtomicU8 = unsafe { &mut *(raw_ptr as *mut u8 as *mut AtomicU8) };
 
-    unsafe {
-        is_map_initialized = &mut *(raw_ptr as *mut u8 as *mut AtomicU8);
-        raw_ptr = raw_ptr.add(8);
-    };
+    // Make `raw_ptr` point to the mutex base.
+    raw_ptr = unsafe { raw_ptr.add(size_of::<*mut ()>()) };
 
+    // Initialize the shared driver map.
     is_map_initialized.store(0, Ordering::Relaxed);
-
-    let mutex = {
-        let mutex = unsafe { kernel::shm::Mutex::new(raw_ptr).unwrap() };
-        is_map_initialized.store(1, Ordering::Relaxed);
-
-        mutex
-    };
+    let mutex = unsafe { kernel::shm::Mutex::new(raw_ptr)? };
+    is_map_initialized.store(1, Ordering::Relaxed);
 
     let driver_child = std::process::Command::new("/sbin/driver")
         .arg("example")
@@ -1701,7 +1696,15 @@ fn run_driver_tests() -> Result<()> {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    let _driver_output = driver_child.wait_with_output()?;
+    // Make sure the driver exits cleanly.
+    let driver_output = driver_child.wait_with_output()?;
+    if !driver_output.status.success() {
+        if let Some(code) = driver_output.status.code() {
+            bail!("driver tests failed with exit code {code}");
+        } else {
+            bail!("driver tests failed without exiting");
+        }
+    }
 
     info!("All application driver tests passed");
 

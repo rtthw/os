@@ -18,12 +18,8 @@ fn main() -> Result<()> {
 
     let map = SharedMemory::open(format!("/shmem_{}", app_name).as_str())?;
     let mut map_ptr = map.as_ptr();
-    let is_map_initialized: &mut AtomicU8;
-
-    unsafe {
-        is_map_initialized = &mut *(map_ptr as *mut AtomicU8);
-        map_ptr = map_ptr.add(8);
-    };
+    let is_map_initialized: &mut AtomicU8 = unsafe { &mut *(map_ptr as *mut AtomicU8) };
+    map_ptr = unsafe { map_ptr.add(8) };
 
     // Wait for the shell to initialize the map.
     while is_map_initialized.load(Ordering::Relaxed) != 1 {}
