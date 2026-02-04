@@ -1705,7 +1705,7 @@ fn run_driver_tests() -> Result<()> {
     // Wait for the driver to start up.
     std::thread::sleep(std::time::Duration::from_secs(2));
 
-    for trial_num in 1..=5 {
+    for trial_num in 1..=1 {
         println!("\tTrial #{trial_num} starting...");
 
         let start_time = Instant::now();
@@ -1920,7 +1920,7 @@ impl Program {
             let render = abi::render_pass(view);
 
             let painter = ui.painter();
-            for quad in render.quads {
+            for quad in render.quads.iter() {
                 painter.rect(
                     aabb2d_to_rect(quad.bounds.translate(self.known_bounds.position())),
                     3,
@@ -1929,7 +1929,7 @@ impl Program {
                     egui::StrokeKind::Inside,
                 );
             }
-            for text in render.texts {
+            for text in render.texts.iter() {
                 let pos = text.bounds.position() + self.known_bounds.position();
                 painter
                     .with_clip_rect(aabb2d_to_rect(

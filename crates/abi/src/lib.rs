@@ -21,6 +21,7 @@ pub use {
 
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Debug,
     ops::{Deref, DerefMut},
     sync::{
         Arc,
@@ -103,6 +104,7 @@ macro_rules! declare {
 pub struct DriverInput {
     pub id: u64,
     pub events: [Option<DriverInputEvent>; DRIVER_INPUT_EVENT_CAPACITY],
+    pub render: Render,
 }
 
 pub const DRIVER_INPUT_EVENT_CAPACITY: usize = 16;
@@ -112,6 +114,7 @@ impl DriverInput {
         Self {
             id: 0,
             events: [None; DRIVER_INPUT_EVENT_CAPACITY],
+            render: Render::default(),
         }
     }
 
@@ -1170,13 +1173,60 @@ fn find_pointer_target<'view>(
 
 
 
-#[derive(Default)]
-pub struct Render {
-    pub quads: Vec<RenderQuad>,
-    pub texts: Vec<RenderText>,
+pub struct SizedVec<T: Sized, const SIZE: usize> {
+    inner: [Option<T>; SIZE],
 }
 
-#[derive(Clone)]
+impl<T: Sized + Clone + Debug, const SIZE: usize> Default for SizedVec<T, SIZE> {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
+impl<T: Sized + Clone + Debug, const SIZE: usize> SizedVec<T, SIZE> {
+    pub fn empty() -> Self {
+        const {
+            assert!(SIZE > 0);
+        }
+
+        Self {
+            inner: (0..SIZE)
+                .map(|_| None)
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("length should equal SIZE"),
+        }
+    }
+
+    pub fn push(&mut self, element: T) -> Option<T> {
+        if let Some(null_index) = self.inner.iter().position(|item| item.is_none()) {
+            self.inner[null_index] = Some(element);
+            None
+        } else {
+            Some(element)
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.inner.iter_mut().for_each(|item| {
+            item.take();
+        });
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.inner.iter().flat_map(|item| item.as_ref())
+    }
+}
+
+
+
+#[derive(Default)]
+pub struct Render {
+    pub quads: SizedVec<RenderQuad, 64>,
+    pub texts: SizedVec<RenderText, 64>,
+}
+
+#[derive(Clone, Debug)]
 pub struct RenderQuad {
     pub bounds: Aabb2D<f32>,
     pub color: Rgba<u8>,
@@ -1184,7 +1234,7 @@ pub struct RenderQuad {
     pub border_color: Rgba<u8>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RenderText {
     pub content: Arc<str>,
     pub bounds: Aabb2D<f32>,
@@ -1199,16 +1249,18 @@ impl Render {
     }
 
     pub fn extend(&mut self, other: &Render, transform: Transform2D) {
-        self.quads
-            .extend(other.quads.iter().cloned().map(|quad| RenderQuad {
+        for quad in other.quads.iter().cloned() {
+            self.quads.push(RenderQuad {
                 bounds: transform.transform_area(quad.bounds),
                 ..quad
-            }));
-        self.texts
-            .extend(other.texts.iter().cloned().map(|text| RenderText {
+            });
+        }
+        for text in other.texts.iter().cloned() {
+            self.texts.push(RenderText {
                 bounds: transform.transform_area(text.bounds),
                 ..text
-            }));
+            });
+        }
     }
 }
 
