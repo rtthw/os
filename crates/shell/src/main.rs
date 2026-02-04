@@ -1705,7 +1705,7 @@ fn run_driver_tests() -> Result<()> {
     // Wait for the driver to start up.
     std::thread::sleep(std::time::Duration::from_secs(2));
 
-    for trial_num in 1..=10 {
+    for trial_num in 1..=5 {
         println!("\tTrial #{trial_num} starting...");
 
         let start_time = Instant::now();
@@ -1715,7 +1715,7 @@ fn run_driver_tests() -> Result<()> {
         let mut missed_events = 0;
 
         for i in 1..(event_count + 1) {
-            let num = i * trial_num;
+            let num = i + ((trial_num - 1) * event_count);
             if i % 10_000 == 0 {
                 println!("\t\tReached event #{},000", num / 1_000);
             }

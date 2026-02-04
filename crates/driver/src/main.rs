@@ -29,6 +29,7 @@ fn main() -> Result<()> {
 
     let mutex: Mutex<DriverInput> = unsafe { Mutex::from_existing(map_ptr) }?;
 
+    let mut drain_counts = [0; DRIVER_INPUT_EVENT_CAPACITY + 1];
     let mut seen_input_id: u64 = 0;
     'handle_input: loop {
         let input_id = next_input_id.load(Ordering::Relaxed);
@@ -43,12 +44,16 @@ fn main() -> Result<()> {
         let input = unsafe { &mut **guard };
 
         seen_input_id = input_id;
-        let event = input.pop_event();
 
-        if event.is_none() {
-            println!("(driver) GOT EMPTY INPUT @ {input_id}");
+        let mut drain_count = 0;
+        for _event in input.drain_events() {
+            drain_count += 1;
         }
+
+        drain_counts[drain_count] += 1;
     }
+
+    println!("(driver) DRAIN_COUNTS = {drain_counts:?}");
 
     Ok(())
 }

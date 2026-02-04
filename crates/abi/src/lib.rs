@@ -105,7 +105,7 @@ pub struct DriverInput {
     pub events: [Option<DriverInputEvent>; DRIVER_INPUT_EVENT_CAPACITY],
 }
 
-const DRIVER_INPUT_EVENT_CAPACITY: usize = 16;
+pub const DRIVER_INPUT_EVENT_CAPACITY: usize = 16;
 
 impl DriverInput {
     pub fn empty() -> Self {
@@ -127,11 +127,8 @@ impl DriverInput {
         }
     }
 
-    pub fn pop_event(&mut self) -> Option<DriverInputEvent> {
-        self.events
-            .iter()
-            .rposition(|event| event.is_some())
-            .and_then(|index| self.events[index].take())
+    pub fn drain_events(&mut self) -> impl Iterator<Item = DriverInputEvent> {
+        self.events.iter_mut().flat_map(|event| event.take())
     }
 }
 
