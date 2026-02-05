@@ -267,7 +267,7 @@ pub struct View {
     tree: tree::Tree<ElementInfo>,
     root_element_id: u64,
     window_size: Xy<f32>,
-    render_cache: HashMap<u64, (Render, Render)>,
+    render_cache: HashMap<u64, (CachedRender, CachedRender)>,
     pointer_position: Option<Xy<f32>>,
     pointer_capture_target: Option<u64>,
     hovered_path: Vec<u64>,
@@ -1243,12 +1243,12 @@ pub struct RenderText {
 }
 
 impl Render {
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.quads.clear();
         self.texts.clear();
     }
 
-    pub fn extend(&mut self, other: &Render, transform: Transform2D) {
+    fn extend(&mut self, other: &CachedRender, transform: Transform2D) {
         for quad in other.quads.iter().cloned() {
             self.quads.push(RenderQuad {
                 bounds: transform.transform_area(quad.bounds),
@@ -1264,9 +1264,35 @@ impl Render {
     }
 }
 
+#[derive(Default)]
+struct CachedRender {
+    quads: Vec<RenderQuad>,
+    texts: Vec<RenderText>,
+}
+
+impl CachedRender {
+    fn clear(&mut self) {
+        self.quads.clear();
+        self.texts.clear();
+    }
+
+    // fn extend(&mut self, other: &CachedRender, transform: Transform2D) {
+    //     self.quads
+    //         .extend(other.quads.iter().cloned().map(|quad| RenderQuad {
+    //             bounds: transform.transform_area(quad.bounds),
+    //             ..quad
+    //         }));
+    //     self.texts
+    //         .extend(other.texts.iter().cloned().map(|text| RenderText {
+    //             bounds: transform.transform_area(text.bounds),
+    //             ..text
+    //         }));
+    // }
+}
+
 pub struct RenderPass<'view> {
     state: &'view mut ElementState,
-    render: &'view mut Render,
+    render: &'view mut CachedRender,
 }
 
 impl RenderPass<'_> {
@@ -1305,21 +1331,18 @@ impl RenderPass<'_> {
     }
 }
 
-pub fn render_pass(view: &mut View) -> Render {
-    let mut final_render = Render::default();
+pub fn render_pass(view: &mut View, render: &mut Render) {
     let root_node = view
         .tree
         .find_mut(view.root_element_id)
         .expect("failed to find the view's root node");
 
-    render_element(root_node, &mut view.render_cache, &mut final_render);
-
-    final_render
+    render_element(root_node, &mut view.render_cache, render);
 }
 
-pub fn render_element(
+fn render_element(
     node: tree::NodeMut<'_, ElementInfo>,
-    render_cache: &mut HashMap<u64, (Render, Render)>,
+    render_cache: &mut HashMap<u64, (CachedRender, CachedRender)>,
     final_render: &mut Render,
 ) {
     let children = node.leaves;

@@ -1917,7 +1917,8 @@ impl Program {
                 view.resize_window(window_bounds.size());
             }
 
-            let render = abi::render_pass(view);
+            let mut render = abi::Render::default();
+            abi::render_pass(view, &mut render);
 
             let painter = ui.painter();
             for quad in render.quads.iter() {
