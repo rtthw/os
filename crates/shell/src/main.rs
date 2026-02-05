@@ -33,6 +33,7 @@ use std::{
 
 use {
     ::log::{debug, error, info, trace, warn},
+    abi::*,
     anyhow::{Context as _, Result, bail},
     drm::{Device, control::Device as ControlDevice},
     egui::{Pos2, Rect, pos2, vec2},
@@ -48,7 +49,7 @@ use {
         epoll::{Event, EventPoll},
         file::File,
         object::Object,
-        shm::SharedMemory,
+        shm::{Mutex, SharedMemory},
     },
 };
 
@@ -73,7 +74,7 @@ fn main() -> Result<()> {
     info!("Compiling example program...");
 
     let example_program_text = std::fs::read_to_string("/lib/example.rs")?;
-    let example_program = Program::load("example", example_program_text, egui_context.clone())?;
+    let example_program = Program::load("example", example_program_text)?;
 
     let gpu = GraphicsCard::open("/dev/dri/card0")?;
 
@@ -1779,12 +1780,11 @@ struct Program {
     compile_success_flag: Arc<AtomicBool>,
     text: String,
     known_bounds: abi::Aabb2D<f32>,
-    egui_context: egui::Context,
     driver_input: DriverInputHandle,
 }
 
 impl Program {
-    fn load(name: &'static str, text: String, egui_context: egui::Context) -> Result<Self> {
+    fn load(name: &'static str, text: String) -> Result<Self> {
         let block = SharedMemory::create(
             format!("/shmem_{}", name).as_str(),
             size_of::<DriverInput>()
@@ -1823,11 +1823,10 @@ impl Program {
             compile_success_flag: Arc::new(AtomicBool::new(true)),
             text,
             known_bounds: abi::Aabb2D::default(),
-            egui_context,
             driver_input: DriverInputHandle {
-                block,
                 event_id,
                 mutex,
+                _block: block,
             },
         };
 
@@ -2015,9 +2014,9 @@ struct ProgramHandle {
 }
 
 struct DriverInputHandle {
-    block: SharedMemory,
     event_id: *mut AtomicU64,
     mutex: Mutex<DriverInput>,
+    _block: SharedMemory,
 }
 
 impl DriverInputHandle {
@@ -2052,88 +2051,6 @@ fn aabb2d_to_rect(bounds: abi::Aabb2D<f32>) -> Rect {
         pos2(bounds.min.x, bounds.min.y),
         pos2(bounds.max.x, bounds.max.y),
     )
-}
-
-
-
-use {abi::*, kernel::shm::Mutex};
-
-
-
-// static DEFAULT_PROP_FONT_DATA: &[u8] =
-// include_bytes!("../../../res/NotoSans-Regular.ttf");
-
-struct FontsImpl {
-    egui_context: egui::Context,
-    galley_cache: HashMap<u64, Arc<egui::text::Galley>>,
-}
-
-impl Fonts for FontsImpl {
-    fn measure_text(
-        &mut self,
-        id: u64,
-        text: &Arc<str>,
-        max_advance: Option<f32>,
-        font_size: f32,
-        _line_height: LineHeight,
-        _font_style: FontStyle,
-        alignment: TextAlignment,
-        wrap_mode: TextWrapMode,
-    ) -> Xy<f32> {
-        let run_layout = || {
-            self.egui_context.fonts_mut(|fonts| {
-                fonts.layout_job(egui::text::LayoutJob {
-                    text: text.to_string(),
-                    sections: vec![egui::text::LayoutSection {
-                        leading_space: 0.0,
-                        byte_range: 0..text.len(),
-                        format: egui::TextFormat::simple(
-                            egui::FontId {
-                                size: font_size,
-                                family: egui::FontFamily::Proportional,
-                            },
-                            egui::Color32::WHITE,
-                        ),
-                    }],
-                    wrap: egui::text::TextWrapping {
-                        max_width: max_advance.unwrap_or(f32::INFINITY),
-                        max_rows: if wrap_mode == TextWrapMode::Wrap {
-                            usize::MAX
-                        } else {
-                            1
-                        },
-                        break_anywhere: false,
-                        overflow_character: Default::default(),
-                    },
-                    first_row_min_height: 0.0,
-                    break_on_newline: true,
-                    halign: match alignment {
-                        TextAlignment::Start => egui::Align::Min,
-                        TextAlignment::End => egui::Align::Max,
-                        TextAlignment::Left => egui::Align::LEFT,
-                        TextAlignment::Center => egui::Align::Center,
-                        TextAlignment::Right => egui::Align::RIGHT,
-                        TextAlignment::Justify => egui::Align::Min,
-                    },
-                    justify: alignment == TextAlignment::Justify,
-                    round_output_to_gui: false,
-                })
-            })
-        };
-
-        let galley = self.galley_cache.entry(id).or_insert_with(|| run_layout());
-
-        if galley.text() != text.as_ref()
-            || galley.job.wrap.max_width != max_advance.unwrap_or(f32::INFINITY)
-            || galley.job.sections.first().unwrap().format.font_id.size != font_size
-        {
-            *galley = run_layout();
-        }
-
-        let rect = galley.rect;
-
-        Xy::new(rect.width(), rect.height())
-    }
 }
 
 
