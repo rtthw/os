@@ -1,6 +1,10 @@
+// TODO: There must be a better way to handle errors here.
+
 use core::ffi::CStr;
 
-use crate::{Error, Result, c_str::AsCStr};
+use alloc::ffi::CString;
+
+use crate::c_str::AsCStr;
 
 
 
@@ -12,20 +16,25 @@ unsafe impl Send for Object {}
 unsafe impl Sync for Object {}
 
 impl Object {
-    pub unsafe fn open<P>(path: &P) -> Result<Self>
+    pub unsafe fn open<P>(path: &P) -> Result<Self, CString>
     where
         P: AsCStr + ?Sized,
     {
-        Ok(path.map_cstr(|path| unsafe {
-            Self::open_with_path_ptr(path.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL)
-        })??)
+        Ok(path
+            .map_cstr(|path| unsafe {
+                Self::open_with_path_ptr(path.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL)
+            })
+            .map_err(|error| unsafe {
+                // SAFETY: Error descriptions are all valid ASCII.
+                CString::from_vec_unchecked(error.description().as_bytes().to_vec())
+            })??)
     }
 
-    pub unsafe fn open_this() -> Result<Self> {
+    pub unsafe fn open_this() -> Result<Self, CString> {
         unsafe { Self::open_with_path_ptr(core::ptr::null(), libc::RTLD_LAZY | libc::RTLD_LOCAL) }
     }
 
-    unsafe fn open_with_path_ptr(path: *const i8, flags: i32) -> Result<Self> {
+    unsafe fn open_with_path_ptr(path: *const i8, flags: i32) -> Result<Self, CString> {
         let result = unsafe { libc::dlopen(path, flags) };
 
         if result.is_null() {
@@ -34,9 +43,7 @@ impl Object {
                 if error_str_ptr.is_null() {
                     unreachable!("object is being loaded by some other library")
                 } else {
-                    // FIXME: This just indicates that an error has occurred, not what the actual
-                    //        error is.
-                    Error::IO
+                    CString::from_raw(error_str_ptr)
                 }
             })
         } else {
