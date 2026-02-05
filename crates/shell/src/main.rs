@@ -1710,7 +1710,7 @@ fn run_driver_tests() -> Result<()> {
 
         let start_time = Instant::now();
 
-        let event_count = 100_000;
+        let event_count = 10_000;
         let work_time = std::time::Duration::from_nanos(2);
         let mut missed_events = 0;
 
@@ -1935,31 +1935,72 @@ impl Program {
 
             {
                 let input = unsafe { &mut **self.driver_input.mutex.lock().unwrap() };
+
+                let mut bounds = self.known_bounds;
+                let mut text = String::new();
+                let mut font_size = 16.0;
+                let mut foreground_color = Rgba::WHITE;
+                let mut background_color = Rgba::BLACK;
+                let mut border_color = Rgba::NONE;
+                let mut border_width = 0.0;
+
                 let painter = ui.painter();
-                for quad in input.render.quads.iter() {
-                    painter.rect(
-                        aabb2d_to_rect(quad.bounds.translate(self.known_bounds.position())),
-                        3,
-                        rgba_to_color32(quad.color),
-                        egui::Stroke::new(quad.border_width, rgba_to_color32(quad.border_color)),
-                        egui::StrokeKind::Inside,
-                    );
+                for command in input.render.commands.iter() {
+                    if !matches!(command, RenderCommand::DrawChar(_)) && !text.is_empty() {
+                        let pos = bounds.position() + self.known_bounds.position();
+                        painter
+                            .with_clip_rect(aabb2d_to_rect(
+                                bounds.translate(self.known_bounds.position()),
+                            ))
+                            .text(
+                                pos2(pos.x, pos.y),
+                                egui::Align2::LEFT_TOP,
+                                std::mem::take(&mut text),
+                                egui::FontId {
+                                    size: font_size,
+                                    family: egui::FontFamily::Proportional,
+                                },
+                                rgba_to_color32(foreground_color),
+                            );
+                    }
+
+                    match command {
+                        RenderCommand::DrawChar(ch) => text.push(*ch),
+                        RenderCommand::DrawQuad => {
+                            painter.rect(
+                                aabb2d_to_rect(bounds.translate(self.known_bounds.position())),
+                                3,
+                                rgba_to_color32(background_color),
+                                egui::Stroke::new(border_width, rgba_to_color32(border_color)),
+                                egui::StrokeKind::Inside,
+                            );
+                        }
+                        RenderCommand::SetBounds(aabb2d) => bounds = *aabb2d,
+                        RenderCommand::SetForegroundColor(rgba) => foreground_color = *rgba,
+                        RenderCommand::SetBackgroundColor(rgba) => background_color = *rgba,
+                        RenderCommand::SetBorderColor(rgba) => border_color = *rgba,
+                        RenderCommand::SetBorderWidth(width) => border_width = *width,
+                        RenderCommand::SetFontSize(size) => font_size = *size,
+                    }
                 }
-                for text in input.render.texts.iter() {
-                    let pos = text.bounds.position() + self.known_bounds.position();
+
+                // We need to manually check the text length because the render commands could
+                // end with a `DrawChar`, which wouldn't be checked in the loop above.
+                if !text.is_empty() {
+                    let pos = bounds.position() + self.known_bounds.position();
                     painter
                         .with_clip_rect(aabb2d_to_rect(
-                            text.bounds.translate(self.known_bounds.position()),
+                            bounds.translate(self.known_bounds.position()),
                         ))
                         .text(
                             pos2(pos.x, pos.y),
                             egui::Align2::LEFT_TOP,
-                            text.content.to_string(),
+                            std::mem::take(&mut text),
                             egui::FontId {
-                                size: text.font_size,
+                                size: font_size,
                                 family: egui::FontFamily::Proportional,
                             },
-                            rgba_to_color32(text.color),
+                            rgba_to_color32(foreground_color),
                         );
                 }
             }

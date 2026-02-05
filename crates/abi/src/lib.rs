@@ -184,7 +184,7 @@ impl Into<Length> for LengthRequest {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
 pub struct Rgba<V> {
     pub r: V,
@@ -200,6 +200,14 @@ impl Rgba<u8> {
         b: 0,
         a: 0,
     };
+
+    pub const WHITE: Self = Self::rgb(0xff, 0xff, 0xff);
+    pub const BLACK: Self = Self::rgb(0x00, 0x00, 0x00);
+
+    #[inline]
+    pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b, a: 0xff }
+    }
 }
 
 
@@ -1176,6 +1184,7 @@ fn find_pointer_target<'view>(
 
 
 
+#[derive(Clone, Debug)]
 #[repr(C)]
 pub struct SizedVec<T: Sized, const SIZE: usize> {
     inner: [Option<T>; SIZE],
@@ -1227,8 +1236,7 @@ impl<T: Sized + Clone + Debug, const SIZE: usize> SizedVec<T, SIZE> {
 #[derive(Default)]
 #[repr(C)]
 pub struct Render {
-    pub quads: SizedVec<RenderQuad, 64>,
-    pub texts: SizedVec<RenderText, 64>,
+    pub commands: SizedVec<RenderCommand, 512>,
 }
 
 #[derive(Clone, Debug)]
@@ -1249,58 +1257,67 @@ pub struct RenderText {
 
 impl Render {
     pub fn clear(&mut self) {
-        self.quads.clear();
-        self.texts.clear();
+        self.commands.clear();
     }
 
     fn extend(&mut self, other: &CachedRender, transform: Transform2D) {
-        for quad in other.quads.iter().cloned() {
-            self.quads.push(RenderQuad {
-                bounds: transform.transform_area(quad.bounds),
-                ..quad
-            });
-        }
-        for text in other.texts.iter().cloned() {
-            self.texts.push(RenderText {
-                bounds: transform.transform_area(text.bounds),
-                ..text
-            });
+        for command in other.commands.iter().cloned() {
+            self.commands.push(command);
         }
     }
 }
 
 #[derive(Default)]
 struct CachedRender {
-    quads: Vec<RenderQuad>,
-    texts: Vec<RenderText>,
+    commands: Vec<RenderCommand>,
 }
 
 impl CachedRender {
     fn clear(&mut self) {
-        self.quads.clear();
-        self.texts.clear();
+        self.commands.clear();
     }
+}
 
-    // fn extend(&mut self, other: &CachedRender, transform: Transform2D) {
-    //     self.quads
-    //         .extend(other.quads.iter().cloned().map(|quad| RenderQuad {
-    //             bounds: transform.transform_area(quad.bounds),
-    //             ..quad
-    //         }));
-    //     self.texts
-    //         .extend(other.texts.iter().cloned().map(|text| RenderText {
-    //             bounds: transform.transform_area(text.bounds),
-    //             ..text
-    //         }));
-    // }
+#[derive(Clone, Debug)]
+#[repr(C)]
+pub enum RenderCommand {
+    DrawChar(char),
+    DrawQuad,
+    SetBounds(Aabb2D<f32>),
+    SetForegroundColor(Rgba<u8>),
+    SetBackgroundColor(Rgba<u8>),
+    SetBorderColor(Rgba<u8>),
+    SetBorderWidth(f32),
+    SetFontSize(f32),
 }
 
 pub struct RenderPass<'view> {
     state: &'view mut ElementState,
     render: &'view mut CachedRender,
+
+    current_bounds: Aabb2D<f32>,
+    current_font_size: f32,
+    current_foreground_color: Rgba<u8>,
+    current_background_color: Rgba<u8>,
+    current_border_color: Rgba<u8>,
+    current_border_width: f32,
 }
 
-impl RenderPass<'_> {
+impl<'view> RenderPass<'view> {
+    fn new(state: &'view mut ElementState, render: &'view mut CachedRender) -> Self {
+        Self {
+            state,
+            render,
+
+            current_bounds: Aabb2D::ZERO,
+            current_font_size: 16.0,
+            current_foreground_color: Rgba::WHITE,
+            current_background_color: Rgba::BLACK,
+            current_border_color: Rgba::NONE,
+            current_border_width: 0.0,
+        }
+    }
+
     pub fn bounds(&self) -> Aabb2D<f32> {
         self.state.bounds
     }
@@ -1312,31 +1329,70 @@ impl RenderPass<'_> {
         border_width: f32,
         border_color: Rgba<u8>,
     ) {
-        self.render.quads.push(RenderQuad {
-            bounds,
-            color,
-            border_width,
-            border_color,
-        });
+        let real_bounds = bounds.translate(self.state.bounds.position());
+        if real_bounds != self.current_bounds {
+            self.render
+                .commands
+                .push(RenderCommand::SetBounds(real_bounds));
+            self.current_bounds = real_bounds;
+        }
+        if color != self.current_background_color {
+            self.render
+                .commands
+                .push(RenderCommand::SetBackgroundColor(color));
+            self.current_background_color = color;
+        }
+        if border_width != self.current_border_width {
+            self.render
+                .commands
+                .push(RenderCommand::SetBorderWidth(border_width));
+            self.current_border_width = border_width;
+        }
+        if border_color != self.current_border_color {
+            self.render
+                .commands
+                .push(RenderCommand::SetBorderColor(border_color));
+            self.current_border_color = border_color;
+        }
+
+        self.render.commands.push(RenderCommand::DrawQuad);
     }
 
     pub fn fill_text(
         &mut self,
-        content: impl Into<Arc<str>>,
+        content: impl AsRef<str>,
         bounds: Aabb2D<f32>,
         color: Rgba<u8>,
         font_size: f32,
     ) {
-        self.render.texts.push(RenderText {
-            content: content.into(),
-            bounds,
-            color,
-            font_size,
-        });
+        let real_bounds = bounds.translate(self.state.bounds.position());
+        if real_bounds != self.current_bounds {
+            self.render
+                .commands
+                .push(RenderCommand::SetBounds(real_bounds));
+            self.current_bounds = real_bounds;
+        }
+        if color != self.current_foreground_color {
+            self.render
+                .commands
+                .push(RenderCommand::SetForegroundColor(color));
+            self.current_foreground_color = color;
+        }
+        if font_size != self.current_font_size {
+            self.render
+                .commands
+                .push(RenderCommand::SetFontSize(font_size));
+            self.current_font_size = font_size;
+        }
+
+        for ch in content.as_ref().chars() {
+            self.render.commands.push(RenderCommand::DrawChar(ch));
+        }
     }
 }
 
 pub fn render_pass(view: &mut View, render: &mut Render) {
+    render.clear();
     let root_node = view
         .tree
         .find_mut(view.root_element_id)
@@ -1359,15 +1415,12 @@ fn render_element(
 
         if state.wants_render {
             render.clear();
-            let mut pass = RenderPass { state, render };
+            let mut pass = RenderPass::new(state, render);
             element.render(&mut pass);
         }
         if state.wants_overlay_render {
             overlay_render.clear();
-            let mut pass = RenderPass {
-                state,
-                render: overlay_render,
-            };
+            let mut pass = RenderPass::new(state, overlay_render);
             element.render_overlay(&mut pass);
         }
     }
