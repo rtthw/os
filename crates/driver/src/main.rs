@@ -3,8 +3,14 @@
 use {
     abi::*,
     anyhow::{Result, bail},
-    kernel::shm::{Mutex, SharedMemory},
-    std::sync::atomic::{AtomicU8, AtomicU64, Ordering},
+    kernel::{
+        object::Object,
+        shm::{Mutex, SharedMemory},
+    },
+    std::sync::{
+        Arc,
+        atomic::{AtomicU8, AtomicU64, Ordering},
+    },
 };
 
 
@@ -29,6 +35,73 @@ fn main() -> Result<()> {
 
     let mutex: Mutex<DriverInput> = unsafe { Mutex::from_existing(map_ptr) }?;
 
+    if app_name == "test" {
+        return run_tests(next_input_id, mutex);
+    }
+
+    let handle = unsafe { Object::open(format!("/home/{}.so", app_name).as_str()).unwrap() };
+    let manifest = handle
+        .get::<_, *const abi::Manifest>("__MANIFEST")
+        .ok_or(anyhow::anyhow!(
+            "Could not find manifest for program '{}'",
+            app_name,
+        ))?;
+
+    let mut view = abi::View::new(
+        ((unsafe { &**manifest }).init)(),
+        Box::new(FontsImpl { /* TODO */ }),
+        unsafe { &**mutex.lock()? }.known_bounds.size(),
+    );
+
+    println!("(driver) Performing initial update...");
+    abi::update_pass(&mut view);
+
+    println!("(driver) Performing initial render...");
+    abi::render_pass(&mut view, &mut unsafe { &mut **mutex.lock()? }.render);
+
+    println!("(driver) Starting main loop...");
+
+    let mut drain_counts = [0; DRIVER_INPUT_EVENT_CAPACITY + 1];
+    let mut seen_input_id: u64 = 0;
+    'handle_input: loop {
+        let input_id = next_input_id.load(Ordering::Relaxed);
+        if input_id == seen_input_id {
+            continue 'handle_input;
+        }
+        if input_id == u64::MAX {
+            break 'handle_input;
+        }
+
+        let mut guard = mutex.lock()?;
+        let input = unsafe { &mut **guard };
+
+        seen_input_id = input_id;
+
+        let mut drain_count = 0;
+        for event in input.drain_events() {
+            drain_count += 1;
+            match event {
+                DriverInputEvent::Pointer(pointer_event) => {
+                    println!("Pointer event: {pointer_event:?}");
+                }
+                DriverInputEvent::WindowResize(new_bounds) => {
+                    println!("Window resize: {new_bounds:?}");
+                }
+                _ => {
+                    break 'handle_input;
+                }
+            }
+        }
+
+        drain_counts[drain_count] += 1;
+    }
+
+    println!("(driver) DRAIN_COUNTS = {drain_counts:?}");
+
+    Ok(())
+}
+
+fn run_tests(next_input_id: &mut AtomicU64, mutex: Mutex<DriverInput>) -> Result<()> {
     let mut drain_counts = [0; DRIVER_INPUT_EVENT_CAPACITY + 1];
     let mut seen_input_id: u64 = 0;
     'handle_input: loop {
@@ -56,4 +129,110 @@ fn main() -> Result<()> {
     println!("(driver) DRAIN_COUNTS = {drain_counts:?}");
 
     Ok(())
+}
+
+
+
+// FIXME: This should actually be measuring text bounds.
+struct FontsImpl {}
+
+impl Fonts for FontsImpl {
+    fn measure_text(
+        &mut self,
+        _id: u64,
+        text: &Arc<str>,
+        _max_advance: Option<f32>,
+        font_size: f32,
+        line_height: LineHeight,
+        _font_style: FontStyle,
+        _alignment: TextAlignment,
+        _wrap_mode: TextWrapMode,
+    ) -> Xy<f32> {
+        let width = text.len() as f32 * (font_size / 2.0);
+        let height = match line_height {
+            LineHeight::Relative(mult) => font_size * mult,
+            LineHeight::Absolute(value) => value,
+        };
+
+        Xy::new(width, height)
+    }
+}
+
+
+
+#[allow(unused)]
+#[unsafe(export_name = "__ui_Label__children_ids")]
+pub extern "Rust" fn __label_children_ids(_label: &Label) -> Vec<u64> {
+    Vec::new()
+}
+
+#[allow(unused)]
+#[unsafe(export_name = "__ui_Label__render")]
+pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>) {
+    pass.fill_quad(
+        pass.bounds(),
+        Rgba {
+            r: 11,
+            g: 11,
+            b: 11,
+            a: 255,
+        },
+        0.0,
+        Rgba::NONE,
+    );
+    pass.fill_text(
+        label.text.clone(),
+        pass.bounds(),
+        Rgba {
+            r: 177,
+            g: 177,
+            b: 177,
+            a: 255,
+        },
+        label.font_size,
+    );
+}
+
+#[allow(unused)]
+#[unsafe(export_name = "__ui_Label__layout")]
+pub extern "Rust" fn __label_layout(_label: &mut Label, _pass: &mut LayoutPass<'_>) {}
+
+#[allow(unused)]
+#[unsafe(export_name = "__ui_Label__measure")]
+pub extern "Rust" fn __label_measure(
+    label: &mut Label,
+    context: &mut MeasureContext<'_>,
+    axis: Axis,
+    length_request: LengthRequest,
+    cross_length: Option<f32>,
+) -> f32 {
+    let id = context.id();
+    let fonts = context.fonts_mut();
+    // For exact measurements, we round up so the `FontsImpl` doesn't wrap
+    // unnecessarily.
+    let max_advance = match axis {
+        Axis::Horizontal => match length_request {
+            LengthRequest::MinContent => Some(0.0),
+            LengthRequest::MaxContent => None,
+            LengthRequest::FitContent(space) => Some((space + 0.5).round()),
+        },
+        Axis::Vertical => match length_request {
+            LengthRequest::MinContent => cross_length.or(Some(0.0)),
+            LengthRequest::MaxContent | LengthRequest::FitContent(_) => {
+                cross_length.map(|l| (l + 0.5).round())
+            }
+        },
+    };
+    let used_size = fonts.measure_text(
+        id,
+        &label.text,
+        max_advance,
+        label.font_size,
+        label.line_height,
+        label.font_style,
+        label.alignment,
+        label.wrap_mode,
+    );
+
+    used_size.value_for_axis(axis)
 }

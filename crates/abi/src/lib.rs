@@ -103,6 +103,7 @@ macro_rules! declare {
 #[repr(C)]
 pub struct DriverInput {
     pub id: u64,
+    pub known_bounds: Aabb2D<f32>,
     pub events: [Option<DriverInputEvent>; DRIVER_INPUT_EVENT_CAPACITY],
     pub render: Render,
 }
@@ -110,9 +111,10 @@ pub struct DriverInput {
 pub const DRIVER_INPUT_EVENT_CAPACITY: usize = 16;
 
 impl DriverInput {
-    pub fn empty() -> Self {
+    pub fn new(initial_bounds: Aabb2D<f32>) -> Self {
         Self {
             id: 0,
+            known_bounds: initial_bounds,
             events: [None; DRIVER_INPUT_EVENT_CAPACITY],
             render: Render::default(),
         }
@@ -140,6 +142,7 @@ impl DriverInput {
 pub enum DriverInputEvent {
     Pointer(PointerEvent),
     Other(u32),
+    WindowResize(Aabb2D<f32>),
 }
 
 
@@ -1173,6 +1176,7 @@ fn find_pointer_target<'view>(
 
 
 
+#[repr(C)]
 pub struct SizedVec<T: Sized, const SIZE: usize> {
     inner: [Option<T>; SIZE],
 }
@@ -1221,6 +1225,7 @@ impl<T: Sized + Clone + Debug, const SIZE: usize> SizedVec<T, SIZE> {
 
 
 #[derive(Default)]
+#[repr(C)]
 pub struct Render {
     pub quads: SizedVec<RenderQuad, 64>,
     pub texts: SizedVec<RenderText, 64>,
