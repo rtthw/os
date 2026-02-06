@@ -7,9 +7,12 @@ use {
         object::Object,
         shm::{Mutex, SharedMemory},
     },
-    std::sync::{
-        Arc,
-        atomic::{AtomicU8, AtomicU64, Ordering},
+    std::{
+        collections::HashMap,
+        sync::{
+            Arc,
+            atomic::{AtomicU8, AtomicU64, Ordering},
+        },
     },
 };
 
@@ -21,6 +24,15 @@ fn main() -> Result<()> {
 
     let Some(app_name) = args.next() else {
         bail!("no application name provided");
+    };
+
+    let fonts = FontsImpl {
+        proportional: fontdue::Font::from_bytes(
+            epaint_default_fonts::UBUNTU_LIGHT,
+            fontdue::FontSettings::default(),
+        )
+        .map_err(|error| anyhow::anyhow!(error))?,
+        cache: HashMap::new(),
     };
 
     let map = SharedMemory::open(format!("/shmem_{}", app_name).as_str())?;
@@ -49,7 +61,7 @@ fn main() -> Result<()> {
 
     let mut view = abi::View::new(
         ((unsafe { &**manifest }).init)(),
-        Box::new(FontsImpl { /* TODO */ }),
+        Box::new(fonts),
         unsafe { &**mutex.lock()? }.known_bounds.size(),
     );
 
@@ -126,8 +138,10 @@ fn run_tests(next_input_id: &mut AtomicU64, mutex: Mutex<DriverInput>) -> Result
 
 
 
-// FIXME: This should actually be measuring text bounds.
-struct FontsImpl {}
+struct FontsImpl {
+    proportional: fontdue::Font,
+    cache: HashMap<(char, u16), fontdue::Metrics>,
+}
 
 impl Fonts for FontsImpl {
     fn measure_text(
@@ -136,18 +150,29 @@ impl Fonts for FontsImpl {
         text: &Arc<str>,
         _max_advance: Option<f32>,
         font_size: f32,
-        line_height: LineHeight,
+        _line_height: LineHeight,
         _font_style: FontStyle,
         _alignment: TextAlignment,
         _wrap_mode: TextWrapMode,
     ) -> Xy<f32> {
-        let width = text.len() as f32 * (font_size / 2.0);
-        let height = match line_height {
-            LineHeight::Relative(mult) => font_size * mult,
-            LineHeight::Absolute(value) => value,
-        };
+        // let mut min_y = f32::MAX;
+        // let mut max_y = f32::MIN;
+        let line_metrics = self
+            .proportional
+            .horizontal_line_metrics(font_size)
+            .unwrap();
+        let width = text.chars().fold(0.0, |acc, ch| {
+            let entry = self
+                .cache
+                .entry((ch, font_size as u16))
+                .or_insert_with(|| self.proportional.metrics(ch, font_size));
+            // min_y = min_y.min(entry.ymin as f32);
+            // max_y = max_y.max(entry.height as f32 + entry.ymin as f32);
 
-        Xy::new(width, height)
+            acc + entry.advance_width as f32
+        });
+
+        Xy::new(width, line_metrics.new_line_size)
     }
 }
 

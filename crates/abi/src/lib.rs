@@ -597,7 +597,7 @@ impl Element for Column {
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
         let width = Length::FitContent(pass.size.x);
-        let height = Length::MaxContent;
+        let height = Length::FitContent(pass.size.y);
         let auto_size = Xy::new(width, height);
 
         let mut y_offset = 0.0;
@@ -704,7 +704,7 @@ impl Element for Row {
     }
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
-        let width = Length::MaxContent;
+        let width = Length::FitContent(pass.size.x);
         let height = Length::FitContent(pass.size.y);
         let auto_size = Xy::new(width, height);
 
