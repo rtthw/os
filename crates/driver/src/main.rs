@@ -78,9 +78,10 @@ fn main() -> Result<()> {
 
         for event in input.drain_events().collect::<Vec<_>>() {
             match event {
-                // DriverInputEvent::Pointer(pointer_event) => {
-                //     println!("Pointer event: {pointer_event:?}");
-                // }
+                DriverInputEvent::Pointer(pointer_event) => {
+                    view.handle_pointer_event(pointer_event);
+                    abi::render_pass(&mut view, &mut input.render);
+                }
                 DriverInputEvent::WindowResize(new_bounds) => {
                     view.resize_window(new_bounds.size());
                     abi::render_pass(&mut view, &mut input.render);

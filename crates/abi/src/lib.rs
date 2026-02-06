@@ -1260,7 +1260,7 @@ impl Render {
         self.commands.clear();
     }
 
-    fn extend(&mut self, other: &CachedRender, transform: Transform2D) {
+    fn extend(&mut self, other: &CachedRender) {
         for command in other.commands.iter().cloned() {
             self.commands.push(command);
         }
@@ -1329,12 +1329,9 @@ impl<'view> RenderPass<'view> {
         border_width: f32,
         border_color: Rgba<u8>,
     ) {
-        let real_bounds = bounds.translate(self.state.bounds.position());
-        if real_bounds != self.current_bounds {
-            self.render
-                .commands
-                .push(RenderCommand::SetBounds(real_bounds));
-            self.current_bounds = real_bounds;
+        if bounds != self.current_bounds {
+            self.render.commands.push(RenderCommand::SetBounds(bounds));
+            self.current_bounds = bounds;
         }
         if color != self.current_background_color {
             self.render
@@ -1365,12 +1362,9 @@ impl<'view> RenderPass<'view> {
         color: Rgba<u8>,
         font_size: f32,
     ) {
-        let real_bounds = bounds.translate(self.state.bounds.position());
-        if real_bounds != self.current_bounds {
-            self.render
-                .commands
-                .push(RenderCommand::SetBounds(real_bounds));
-            self.current_bounds = real_bounds;
+        if bounds != self.current_bounds {
+            self.render.commands.push(RenderCommand::SetBounds(bounds));
+            self.current_bounds = bounds;
         }
         if color != self.current_foreground_color {
             self.render
@@ -1430,12 +1424,11 @@ fn render_element(
     state.wants_overlay_render = false;
 
     {
-        let transform = state.global_transform;
         let Some((render, _)) = &mut render_cache.get(&state.id) else {
             return;
         };
 
-        final_render.extend(render, transform);
+        final_render.extend(render);
     }
 
     let parent_state = &mut *state;
@@ -1445,12 +1438,11 @@ fn render_element(
     });
 
     {
-        let transform = state.global_transform;
         let Some((_, overlay_render)) = &mut render_cache.get(&state.id) else {
             return;
         };
 
-        final_render.extend(overlay_render, transform);
+        final_render.extend(overlay_render);
     }
 }
 
