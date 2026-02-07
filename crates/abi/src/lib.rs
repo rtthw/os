@@ -1291,30 +1291,44 @@ pub enum RenderCommand {
     SetFontSize(f32),
 }
 
+struct RenderPassVariables {
+    bounds: Aabb2D<f32>,
+    font_size: f32,
+    foreground_color: Rgba<u8>,
+    background_color: Rgba<u8>,
+    border_color: Rgba<u8>,
+    border_width: f32,
+}
+
+impl Default for RenderPassVariables {
+    fn default() -> Self {
+        Self {
+            bounds: Aabb2D::ZERO,
+            font_size: 16.0,
+            foreground_color: Rgba::WHITE,
+            background_color: Rgba::BLACK,
+            border_color: Rgba::NONE,
+            border_width: 0.0,
+        }
+    }
+}
+
 pub struct RenderPass<'view> {
     state: &'view mut ElementState,
     render: &'view mut CachedRender,
-
-    current_bounds: Aabb2D<f32>,
-    current_font_size: f32,
-    current_foreground_color: Rgba<u8>,
-    current_background_color: Rgba<u8>,
-    current_border_color: Rgba<u8>,
-    current_border_width: f32,
+    vars: &'view mut RenderPassVariables,
 }
 
 impl<'view> RenderPass<'view> {
-    fn new(state: &'view mut ElementState, render: &'view mut CachedRender) -> Self {
+    fn new(
+        state: &'view mut ElementState,
+        render: &'view mut CachedRender,
+        vars: &'view mut RenderPassVariables,
+    ) -> Self {
         Self {
             state,
             render,
-
-            current_bounds: Aabb2D::ZERO,
-            current_font_size: 16.0,
-            current_foreground_color: Rgba::WHITE,
-            current_background_color: Rgba::BLACK,
-            current_border_color: Rgba::NONE,
-            current_border_width: 0.0,
+            vars,
         }
     }
 
@@ -1329,27 +1343,27 @@ impl<'view> RenderPass<'view> {
         border_width: f32,
         border_color: Rgba<u8>,
     ) {
-        if bounds != self.current_bounds {
+        if bounds != self.vars.bounds {
             self.render.commands.push(RenderCommand::SetBounds(bounds));
-            self.current_bounds = bounds;
+            self.vars.bounds = bounds;
         }
-        if color != self.current_background_color {
+        if color != self.vars.background_color {
             self.render
                 .commands
                 .push(RenderCommand::SetBackgroundColor(color));
-            self.current_background_color = color;
+            self.vars.background_color = color;
         }
-        if border_width != self.current_border_width {
+        if border_width != self.vars.border_width {
             self.render
                 .commands
                 .push(RenderCommand::SetBorderWidth(border_width));
-            self.current_border_width = border_width;
+            self.vars.border_width = border_width;
         }
-        if border_color != self.current_border_color {
+        if border_color != self.vars.border_color {
             self.render
                 .commands
                 .push(RenderCommand::SetBorderColor(border_color));
-            self.current_border_color = border_color;
+            self.vars.border_color = border_color;
         }
 
         self.render.commands.push(RenderCommand::DrawQuad);
@@ -1362,21 +1376,21 @@ impl<'view> RenderPass<'view> {
         color: Rgba<u8>,
         font_size: f32,
     ) {
-        if bounds != self.current_bounds {
+        if bounds != self.vars.bounds {
             self.render.commands.push(RenderCommand::SetBounds(bounds));
-            self.current_bounds = bounds;
+            self.vars.bounds = bounds;
         }
-        if color != self.current_foreground_color {
+        if color != self.vars.foreground_color {
             self.render
                 .commands
                 .push(RenderCommand::SetForegroundColor(color));
-            self.current_foreground_color = color;
+            self.vars.foreground_color = color;
         }
-        if font_size != self.current_font_size {
+        if font_size != self.vars.font_size {
             self.render
                 .commands
                 .push(RenderCommand::SetFontSize(font_size));
-            self.current_font_size = font_size;
+            self.vars.font_size = font_size;
         }
 
         for ch in content.as_ref().chars() {
@@ -1391,14 +1405,16 @@ pub fn render_pass(view: &mut View, render: &mut Render) {
         .tree
         .find_mut(view.root_element_id)
         .expect("failed to find the view's root node");
+    let mut vars = RenderPassVariables::default();
 
-    render_element(root_node, &mut view.render_cache, render);
+    render_element(root_node, &mut view.render_cache, render, &mut vars);
 }
 
 fn render_element(
     node: tree::NodeMut<'_, ElementInfo>,
     render_cache: &mut HashMap<u64, (CachedRender, CachedRender)>,
     final_render: &mut Render,
+    vars: &mut RenderPassVariables,
 ) {
     let children = node.leaves;
     let element = &mut *node.element.element;
@@ -1409,12 +1425,12 @@ fn render_element(
 
         if state.wants_render {
             render.clear();
-            let mut pass = RenderPass::new(state, render);
+            let mut pass = RenderPass::new(state, render, vars);
             element.render(&mut pass);
         }
         if state.wants_overlay_render {
             overlay_render.clear();
-            let mut pass = RenderPass::new(state, overlay_render);
+            let mut pass = RenderPass::new(state, overlay_render, vars);
             element.render_overlay(&mut pass);
         }
     }
@@ -1433,7 +1449,7 @@ fn render_element(
 
     let parent_state = &mut *state;
     for_each_child_element(element, children, |mut node| {
-        render_element(node.reborrow_mut(), render_cache, final_render);
+        render_element(node.reborrow_mut(), render_cache, final_render, vars);
         parent_state.merge_with_child(&node.element.state);
     });
 

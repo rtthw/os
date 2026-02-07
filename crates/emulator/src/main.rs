@@ -340,7 +340,6 @@ impl Program {
                 let mut border_color = Rgba::NONE;
                 let mut border_width = 0.0;
 
-                println!("\tFONT_SIZES");
                 let painter = ui.painter();
                 for command in render.commands.iter() {
                     if !matches!(command, RenderCommand::DrawChar(_)) && !text.is_empty() {
@@ -377,10 +376,7 @@ impl Program {
                         RenderCommand::SetBackgroundColor(rgba) => background_color = *rgba,
                         RenderCommand::SetBorderColor(rgba) => border_color = *rgba,
                         RenderCommand::SetBorderWidth(width) => border_width = *width,
-                        RenderCommand::SetFontSize(size) => {
-                            println!("FONT_SIZE: {size}");
-                            font_size = *size
-                        }
+                        RenderCommand::SetFontSize(size) => font_size = *size,
                     }
                 }
 
