@@ -92,8 +92,8 @@ pub fn run(content: &str, input_filename: &str, output_filename: &str) -> Result
 
     if result.is_ok() {
         std::fs::rename(
-            "example.so",
-            format!("{WORKSPACE_DIR}/../../build/example.so"),
+            output_filename,
+            format!("{WORKSPACE_DIR}/../../build/{output_filename}"),
         )?;
     }
 
