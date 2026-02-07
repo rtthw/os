@@ -725,9 +725,9 @@ impl Element for Row {
         length_request: LengthRequest,
         cross_length: Option<f32>,
     ) -> f32 {
-        let (length_request, min_result) = match length_request {
-            LengthRequest::MinContent | LengthRequest::MaxContent => (length_request, 0.0),
-            LengthRequest::FitContent(space) => (LengthRequest::MinContent, space),
+        let length_request = match length_request {
+            LengthRequest::MinContent | LengthRequest::MaxContent => length_request,
+            LengthRequest::FitContent(_space) => LengthRequest::MinContent,
         };
 
         let fallback_length = length_request.into();
@@ -742,7 +742,7 @@ impl Element for Row {
             }
         }
 
-        min_result.max(length)
+        length
     }
 
     fn on_child_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
