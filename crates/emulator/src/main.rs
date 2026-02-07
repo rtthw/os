@@ -240,6 +240,8 @@ impl Program {
         let mut render = Render::default();
         abi::render_pass(&mut view, &mut render);
 
+        abi::layout_pass(&mut view);
+
         self.handle = Some(ProgramHandle {
             view,
             render,
@@ -304,10 +306,29 @@ impl Program {
             let view = &mut handle.view;
             let render = &mut handle.render;
 
+            for event in ui.input(|i| i.filtered_events(&egui::EventFilter::default())) {
+                match event {
+                    egui::Event::PointerMoved(pos) => {
+                        let pos = Xy::new(pos.x, pos.y);
+                        view.handle_pointer_event(PointerEvent::Move {
+                            position: pos - self.known_bounds.position(),
+                        });
+                        abi::render_pass(view, render);
+                    }
+                    _ => {}
+                }
+            }
+
             let window_bounds = rect_to_aabb2d(ui.available_rect_before_wrap());
             if self.known_bounds != window_bounds {
                 self.known_bounds = window_bounds;
                 view.resize_window(window_bounds.size());
+                abi::render_pass(view, render);
+            }
+
+            if ui.ui_contains_pointer() {
+                ui.ctx()
+                    .set_cursor_icon(abi_to_egui_cursor_icon(view.cursor_icon()));
             }
 
             {
@@ -483,6 +504,23 @@ fn aabb2d_to_rect(bounds: abi::Aabb2D<f32>) -> Rect {
         pos2(bounds.min.x, bounds.min.y),
         pos2(bounds.max.x, bounds.max.y),
     )
+}
+
+fn abi_to_egui_cursor_icon(value: CursorIcon) -> egui::CursorIcon {
+    match value {
+        CursorIcon::AllScroll => egui::CursorIcon::AllScroll,
+        CursorIcon::Grab => egui::CursorIcon::Grab,
+        CursorIcon::Grabbing => egui::CursorIcon::Grabbing,
+        CursorIcon::Help => egui::CursorIcon::Help,
+        CursorIcon::NoDrop => egui::CursorIcon::NoDrop,
+        CursorIcon::PointingHand => egui::CursorIcon::PointingHand,
+        CursorIcon::SplitH => egui::CursorIcon::ResizeHorizontal,
+        CursorIcon::SplitV => egui::CursorIcon::ResizeVertical,
+        CursorIcon::IBeam => egui::CursorIcon::Text,
+        CursorIcon::ZoomIn => egui::CursorIcon::ZoomIn,
+        CursorIcon::ZoomOut => egui::CursorIcon::ZoomOut,
+        _ => egui::CursorIcon::Default,
+    }
 }
 
 
