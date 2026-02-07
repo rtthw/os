@@ -553,6 +553,7 @@ pub struct Column {
     children: Vec<ChildElement>,
     background_color: Rgba<u8>,
     border_color: Rgba<u8>,
+    gap: f32,
 }
 
 impl Column {
@@ -571,7 +572,13 @@ impl Column {
                 b: 111,
                 a: 255,
             },
+            gap: 0.0,
         }
+    }
+
+    pub fn with_gap(mut self, gap: f32) -> Self {
+        self.gap = gap;
+        self
     }
 
     pub fn with(mut self, child: impl Element + 'static) -> Self {
@@ -606,7 +613,7 @@ impl Element for Column {
             pass.do_layout(child, child_size);
             pass.place_child(child, Xy::new(0.0, y_offset));
 
-            y_offset += child_size.y;
+            y_offset += child_size.y + self.gap;
         }
     }
 
@@ -632,6 +639,11 @@ impl Element for Column {
                 Axis::Horizontal => length = length.max(child_length),
                 Axis::Vertical => length += child_length,
             }
+        }
+
+        if axis == Axis::Vertical {
+            let gap_count = (self.children.len() - 1) as f32;
+            length += gap_count * self.gap;
         }
 
         length
@@ -661,6 +673,7 @@ pub struct Row {
     children: Vec<ChildElement>,
     background_color: Rgba<u8>,
     border_color: Rgba<u8>,
+    gap: f32,
 }
 
 impl Row {
@@ -679,7 +692,13 @@ impl Row {
                 b: 111,
                 a: 255,
             },
+            gap: 0.0,
         }
+    }
+
+    pub fn with_gap(mut self, gap: f32) -> Self {
+        self.gap = gap;
+        self
     }
 
     pub fn with(mut self, child: impl Element + 'static) -> Self {
@@ -714,7 +733,7 @@ impl Element for Row {
             pass.do_layout(child, child_size);
             pass.place_child(child, Xy::new(x_offset, 0.0));
 
-            x_offset += child_size.x;
+            x_offset += child_size.x + self.gap;
         }
     }
 
@@ -740,6 +759,11 @@ impl Element for Row {
                 Axis::Horizontal => length += child_length,
                 Axis::Vertical => length = length.max(child_length),
             }
+        }
+
+        if axis == Axis::Horizontal {
+            let gap_count = (self.children.len() - 1) as f32;
+            length += gap_count * self.gap;
         }
 
         length
