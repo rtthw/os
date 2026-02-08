@@ -147,6 +147,22 @@ impl Xy<f32> {
     pub const ZERO: Self = Self::new(0.0, 0.0);
 
     #[inline]
+    pub const fn min(self, other: Self) -> Self {
+        Self {
+            x: self.x.min(other.x),
+            y: self.y.min(other.y),
+        }
+    }
+
+    #[inline]
+    pub const fn max(self, other: Self) -> Self {
+        Self {
+            x: self.x.max(other.x),
+            y: self.y.max(other.y),
+        }
+    }
+
+    #[inline]
     pub const fn round(self) -> Self {
         Self::new(self.x.round(), self.y.round())
     }
@@ -158,11 +174,32 @@ impl Xy<f32> {
             y: self.y + other.y,
         }
     }
+
+    #[inline]
+    pub const fn dot(self, other: Self) -> f32 {
+        self.x * other.x + self.y * other.y
+    }
+
+    #[inline]
+    pub const fn cross(self, other: Self) -> f32 {
+        self.x * other.y - self.y * other.x
+    }
+
+    #[inline]
+    pub const fn length_squared(self) -> f32 {
+        self.dot(self)
+    }
+
+    #[inline]
+    pub fn length(self) -> f32 {
+        self.length_squared().sqrt()
+    }
 }
 
 impl<V: Add<V, Output = V>> Add for Xy<V> {
     type Output = Self;
 
+    #[inline]
     fn add(self, rhs: Self) -> Self::Output {
         Self {
             x: self.x + rhs.x,
@@ -174,10 +211,23 @@ impl<V: Add<V, Output = V>> Add for Xy<V> {
 impl<V: Sub<V, Output = V>> Sub for Xy<V> {
     type Output = Self;
 
+    #[inline]
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
             x: self.x - rhs.x,
             y: self.y - rhs.y,
+        }
+    }
+}
+
+impl<V: Mul<V, Output = V>> Mul for Xy<V> {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x * rhs.x,
+            y: self.y * rhs.y,
         }
     }
 }
@@ -218,6 +268,13 @@ impl Transform2D {
         }
     }
 
+    #[inline]
+    pub const fn with_translation(mut self, translation: Xy<f32>) -> Self {
+        self.0[4] += translation.x;
+        self.0[5] += translation.y;
+        self
+    }
+
     pub const fn determinant(self) -> f32 {
         self.0[0] * self.0[3] - self.0[1] * self.0[2]
     }
@@ -242,6 +299,22 @@ impl Transform2D {
         let p11 = self * Xy::new(area.max.x, area.max.y);
 
         Aabb2D::from_min_max(p00, p01).union(Aabb2D::from_min_max(p10, p11))
+    }
+}
+
+impl Mul for Transform2D {
+    type Output = Self;
+
+    #[inline]
+    fn mul(self, other: Self) -> Self {
+        Self([
+            self.0[0] * other.0[0] + self.0[2] * other.0[1],
+            self.0[1] * other.0[0] + self.0[3] * other.0[1],
+            self.0[0] * other.0[2] + self.0[2] * other.0[3],
+            self.0[1] * other.0[2] + self.0[3] * other.0[3],
+            self.0[0] * other.0[4] + self.0[2] * other.0[5] + self.0[4],
+            self.0[1] * other.0[4] + self.0[3] * other.0[5] + self.0[5],
+        ])
     }
 }
 

@@ -332,6 +332,16 @@ impl Program {
                         });
                         abi::render_pass(view, render);
                     }
+                    egui::Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Line,
+                        delta,
+                        ..
+                    } => {
+                        view.handle_pointer_event(PointerEvent::Scroll {
+                            delta: ScrollDelta::Lines(Xy::new(delta.x, delta.y)),
+                        });
+                        abi::render_pass(view, render);
+                    }
                     _ => {}
                 }
             }
@@ -357,7 +367,9 @@ impl Program {
                 let mut border_color = Rgba::NONE;
                 let mut border_width = 0.0;
 
-                let painter = ui.painter();
+                let painter = ui
+                    .painter()
+                    .with_clip_rect(aabb2d_to_rect(self.known_bounds));
                 for command in render.commands.iter() {
                     if !matches!(command, RenderCommand::DrawChar(_)) && !text.is_empty() {
                         let pos = bounds.position() + self.known_bounds.position();

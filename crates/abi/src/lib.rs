@@ -20,8 +20,10 @@ pub use {
 };
 
 use std::{
+    any::Any,
     collections::{HashMap, HashSet},
     fmt::Debug,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     sync::{
         Arc,
@@ -336,6 +338,7 @@ impl View {
         update_pointer_pass(self);
         update_focus_pass(self);
         layout_pass(self);
+        compose_pass(self);
     }
 }
 
@@ -367,7 +370,7 @@ pub enum ViewEvent {
     Focus { old: Option<u64>, new: u64 },
 }
 
-pub trait Element {
+pub trait Element: Any {
     fn children_ids(&self) -> Vec<u64> {
         Vec::new()
     }
@@ -405,6 +408,9 @@ pub trait Element {
         length_request: LengthRequest,
         cross_length: Option<f32>,
     ) -> f32;
+
+    #[allow(unused)]
+    fn compose(&mut self, pass: &mut ComposePass<'_>) {}
 
     fn cursor_icon(&self) -> CursorIcon {
         CursorIcon::Default
@@ -454,10 +460,11 @@ impl DerefMut for ElementInfo {
 
 pub struct ElementState {
     pub id: u64,
+
     pub bounds: Aabb2D<f32>,
+    pub layout_bounds: Aabb2D<f32>,
 
-    pub layout_size: Xy<f32>,
-
+    pub scroll_translation: Xy<f32>,
     pub local_transform: Transform2D,
     pub global_transform: Transform2D,
 
@@ -470,7 +477,10 @@ pub struct ElementState {
 
     pub needs_layout: bool,
     pub wants_layout: bool,
-    pub moved: bool,
+
+    pub needs_compose: bool,
+    pub wants_compose: bool,
+    pub transformed: bool,
 
     pub hovered: bool,
     pub focused: bool,
@@ -482,7 +492,8 @@ impl ElementState {
         Self {
             id,
             bounds: Aabb2D::ZERO,
-            layout_size: Xy::ZERO,
+            layout_bounds: Aabb2D::ZERO,
+            scroll_translation: Xy::ZERO,
             local_transform: Transform2D::IDENTITY,
             global_transform: Transform2D::IDENTITY,
             newly_added: true,
@@ -492,7 +503,9 @@ impl ElementState {
             wants_overlay_render: true,
             needs_layout: true,
             wants_layout: true,
-            moved: true,
+            needs_compose: true,
+            wants_compose: true,
+            transformed: true,
             hovered: false,
             focused: false,
         }
@@ -502,6 +515,7 @@ impl ElementState {
         self.children_changed |= child_state.children_changed;
         self.needs_render |= child_state.needs_render;
         self.needs_layout |= child_state.needs_layout;
+        self.needs_compose |= child_state.needs_compose;
     }
 }
 
@@ -560,6 +574,25 @@ impl ChildElement {
 enum ChildElementInner {
     Existing,
     New(ElementBuilder),
+}
+
+pub struct TypedChildElement<E: Element> {
+    pub inner: ChildElement,
+    _type: PhantomData<E>,
+}
+
+impl<E: Element + 'static> TypedChildElement<E> {
+    pub fn new(element: E) -> Self {
+        Self {
+            inner: ElementBuilder::new(element).into_child(),
+            _type: PhantomData,
+        }
+    }
+
+    #[inline]
+    pub fn id(&self) -> u64 {
+        self.inner.id
+    }
 }
 
 
@@ -804,7 +837,92 @@ impl Element for Row {
     }
 }
 
+pub struct VerticalScroll {
+    column: TypedChildElement<Column>,
+    viewport_pos: Xy<f32>,
+    content_size: Xy<f32>,
+}
 
+impl VerticalScroll {
+    pub fn new(column: Column) -> Self {
+        Self {
+            column: TypedChildElement::new(column),
+            viewport_pos: Xy::ZERO,
+            content_size: Xy::ZERO,
+        }
+    }
+}
+
+impl Element for VerticalScroll {
+    fn children_ids(&self) -> Vec<u64> {
+        vec![self.column.id()]
+    }
+
+    fn update_children(&mut self, pass: &mut UpdatePass<'_>) {
+        pass.update_child(&mut self.column.inner);
+    }
+
+    fn layout(&mut self, pass: &mut LayoutPass<'_>) {
+        let auto_size = Xy::new(Length::FitContent(pass.size.x), Length::MaxContent);
+        self.content_size = pass.resolve_size(self.column.id(), auto_size);
+
+        pass.do_layout(&mut self.column.inner, self.content_size);
+        pass.place_child(&mut self.column.inner, Xy::ZERO);
+
+        let viewport_max_pos = (self.content_size - pass.size).max(Xy::ZERO);
+        let pos = Xy::new(
+            self.viewport_pos.x.clamp(0.0, viewport_max_pos.x),
+            self.viewport_pos.y.clamp(0.0, viewport_max_pos.y),
+        );
+        if (pos - self.viewport_pos).length_squared() > 1e-12 {
+            self.viewport_pos = pos;
+        }
+    }
+
+    fn measure(
+        &mut self,
+        context: &mut MeasureContext<'_>,
+        axis: Axis,
+        length_request: LengthRequest,
+        cross_length: Option<f32>,
+    ) -> f32 {
+        match length_request {
+            LengthRequest::MaxContent => {
+                context.resolve_length(self.column.id(), axis, Length::MaxContent, cross_length)
+            }
+            LengthRequest::MinContent => 0.0,
+            LengthRequest::FitContent(space) => space,
+        }
+    }
+
+    fn compose(&mut self, pass: &mut ComposePass<'_>) {
+        pass.set_child_scroll(
+            &mut self.column.inner,
+            Xy::new(-self.viewport_pos.x, -self.viewport_pos.y),
+        );
+    }
+
+    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>, event: &PointerEvent) {
+        match event {
+            PointerEvent::Scroll { delta } => {
+                let pixel_delta = delta.to_pixels(Xy::new(120.0, 120.0));
+                let delta = Xy::new(0.0, pixel_delta.y);
+                let pos = self.viewport_pos - delta;
+                let max_viewport_pos = (self.content_size - pass.state.bounds.size()).max(Xy::ZERO);
+                let pos = Xy::new(
+                    pos.x.clamp(0.0, max_viewport_pos.x),
+                    pos.y.clamp(0.0, max_viewport_pos.y),
+                );
+
+                if (pos - self.viewport_pos).length_squared() > 1e-12 {
+                    self.viewport_pos = pos;
+                    pass.set_handled();
+                }
+            }
+            _ => (),
+        }
+    }
+}
 
 pub struct Label {
     pub text: Arc<str>,
@@ -1150,6 +1268,15 @@ pub enum PointerEvent {
 pub enum ScrollDelta {
     Pixels(Xy<f32>),
     Lines(Xy<f32>),
+}
+
+impl ScrollDelta {
+    pub fn to_pixels(self, line_size: Xy<f32>) -> Xy<f32> {
+        match self {
+            Self::Pixels(delta) => delta,
+            ScrollDelta::Lines(delta) => delta * line_size,
+        }
+    }
 }
 
 fn event_pass(
@@ -1601,6 +1728,83 @@ fn render_element(
 
 
 
+pub struct ComposePass<'view> {
+    state: &'view mut ElementState,
+    children: tree::LeavesMut<'view, ElementInfo>,
+}
+
+impl ComposePass<'_> {
+    pub fn set_child_scroll(&mut self, child: &mut ChildElement, translation: Xy<f32>) {
+        let translation = translation.round();
+
+        let child_state = &mut self
+            .children
+            .get_mut(child.id())
+            .expect("invalid child passed to ComposePass::set_child_scroll_translation")
+            .element
+            .state;
+        if translation != child_state.scroll_translation {
+            child_state.scroll_translation = translation;
+            child_state.transformed = true;
+        }
+    }
+}
+
+pub fn compose_pass(view: &mut View) {
+    let node = view
+        .tree
+        .find_mut(view.root_element_id)
+        .expect("failed to find the view's root node");
+    compose_element(node, Transform2D::IDENTITY, false);
+}
+
+fn compose_element(
+    node: tree::NodeMut<'_, ElementInfo>,
+    parent_global_transform: Transform2D,
+    parent_transformed: bool,
+) {
+    let mut children = node.leaves;
+    let element = &mut *node.element.element;
+    let state = &mut node.element.state;
+
+    let transformed = parent_transformed || state.transformed;
+
+    if !transformed && !state.needs_compose {
+        return;
+    }
+
+    let local_translation = state.scroll_translation + state.layout_bounds.position();
+    state.global_transform =
+        parent_global_transform * state.local_transform.with_translation(local_translation);
+    state.bounds = state
+        .global_transform
+        .transform_area(Aabb2D::from_size(state.layout_bounds.size()));
+
+    if state.wants_compose {
+        element.compose(&mut ComposePass {
+            state,
+            children: children.reborrow_mut(),
+        });
+    }
+
+    state.needs_render = true;
+    state.needs_compose = false;
+    state.wants_compose = false;
+    state.transformed = false;
+
+    let parent_state = &mut *state;
+    for_each_child_element(element, children, |mut node| {
+        compose_element(
+            node.reborrow_mut(),
+            parent_state.global_transform,
+            transformed,
+        );
+        parent_state.merge_with_child(&node.element.state);
+    });
+}
+
+
+
 pub struct LayoutPass<'view> {
     fonts: &'view mut dyn Fonts,
     state: &'view mut ElementState,
@@ -1629,7 +1833,6 @@ impl LayoutPass<'_> {
     }
 
     pub fn place_child(&mut self, child: &mut ChildElement, position: Xy<f32>) {
-        let offset = self.state.bounds.position();
         move_element(
             &mut self
                 .children
@@ -1637,7 +1840,7 @@ impl LayoutPass<'_> {
                 .expect("invalid child passed to LayoutPass::place_child")
                 .element
                 .state,
-            position + offset,
+            position,
         );
     }
 
@@ -1664,7 +1867,7 @@ fn layout_element(fonts: &mut dyn Fonts, node: tree::NodeMut<'_, ElementInfo>, s
     let state = &mut node.element.state;
     let children = node.leaves;
 
-    state.bounds.set_size(size);
+    state.layout_bounds.set_size(size);
 
     let mut pass = LayoutPass {
         fonts,
@@ -1676,20 +1879,22 @@ fn layout_element(fonts: &mut dyn Fonts, node: tree::NodeMut<'_, ElementInfo>, s
 
     state.needs_render = true;
     state.wants_render = true;
+    state.needs_compose = true;
+    state.wants_compose = true;
 }
 
 fn move_element(state: &mut ElementState, position: Xy<f32>) {
-    let end_point = position + state.bounds.size();
+    let end_point = position + state.layout_bounds.size();
 
     let position = position.round();
     let end_point = end_point.round();
 
-    if position != state.bounds.min {
-        state.moved = true;
+    if position != state.layout_bounds.min {
+        state.transformed = true;
     }
 
-    state.bounds.min = position;
-    state.bounds.max = end_point;
+    state.layout_bounds.min = position;
+    state.layout_bounds.max = end_point;
 }
 
 pub struct MeasureContext<'pass> {
@@ -1826,6 +2031,7 @@ macro_rules! multi_impl {
 
 // Types with a `state: &mut ElementState` field.
 multi_impl! {
+    ComposePass<'_>,
     EventPass<'_>,
     LayoutPass<'_>,
     MeasureContext<'_>,
@@ -1843,11 +2049,17 @@ multi_impl! {
         pub fn request_layout(&mut self) {
             self.state.needs_layout = true;
         }
+
+        pub fn request_compose(&mut self) {
+            self.state.wants_compose = true;
+            self.state.needs_compose = true;
+        }
     }
 }
 
 // Types with a `children: tree::LeavesMut<'_, ElementInfo>` field.
 multi_impl! {
+    ComposePass<'_>,
     EventPass<'_>,
     LayoutPass<'_>,
     MeasureContext<'_>,
@@ -1855,6 +2067,18 @@ multi_impl! {
     {
         pub fn child(&self, id: u64) -> Option<tree::NodeRef<'_, ElementInfo>> {
             self.children.get(id)
+        }
+
+        pub fn typed_child_mut<T: Element>(
+            &mut self,
+            child: &mut TypedChildElement<T>,
+        ) -> &mut T {
+            let node_mut = self
+                .children
+                .get_mut(child.id())
+                .expect("get_mut: child element not found");
+
+            (&mut *node_mut.element.element as &mut dyn Any).downcast_mut().unwrap()
         }
     }
 }
