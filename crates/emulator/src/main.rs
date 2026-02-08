@@ -315,6 +315,23 @@ impl Program {
                         });
                         abi::render_pass(view, render);
                     }
+                    egui::Event::PointerButton {
+                        button, pressed, ..
+                    } => {
+                        let button = match button {
+                            egui::PointerButton::Primary => PointerButton::Primary,
+                            egui::PointerButton::Secondary => PointerButton::Secondary,
+                            egui::PointerButton::Middle => PointerButton::Auxiliary,
+                            egui::PointerButton::Extra1 => PointerButton::Back,
+                            egui::PointerButton::Extra2 => PointerButton::Forward,
+                        };
+                        view.handle_pointer_event(if pressed {
+                            PointerEvent::Down { button }
+                        } else {
+                            PointerEvent::Up { button }
+                        });
+                        abi::render_pass(view, render);
+                    }
                     _ => {}
                 }
             }

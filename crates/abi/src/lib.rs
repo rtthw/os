@@ -283,6 +283,9 @@ pub struct View {
     pointer_capture_target: Option<u64>,
     hovered_path: Vec<u64>,
     cursor_icon: CursorIcon,
+    focused_element: Option<u64>,
+    next_focused_element: Option<u64>,
+    focused_path: Vec<u64>,
 }
 
 impl View {
@@ -308,6 +311,9 @@ impl View {
             pointer_capture_target: None,
             hovered_path: Vec::new(),
             cursor_icon: CursorIcon::Default,
+            focused_element: None,
+            next_focused_element: None,
+            focused_path: Vec::new(),
         }
     }
 
@@ -326,8 +332,9 @@ impl View {
     }
 
     pub fn handle_pointer_event(&mut self, event: PointerEvent) {
-        pointer_event_pass(self, event);
+        pointer_event_pass(self, &event);
         update_pointer_pass(self);
+        update_focus_pass(self);
         layout_pass(self);
     }
 }
@@ -409,13 +416,19 @@ pub trait Element {
 
     /// Called when this element is interacted with by the user's pointer.
     #[allow(unused)]
-    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>) {}
+    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>, event: &PointerEvent) {}
 
     #[allow(unused)]
     fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {}
 
     #[allow(unused)]
     fn on_child_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {}
+
+    #[allow(unused)]
+    fn on_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {}
+
+    #[allow(unused)]
+    fn on_child_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {}
 }
 
 pub struct ElementInfo {
@@ -460,6 +473,7 @@ pub struct ElementState {
     pub moved: bool,
 
     pub hovered: bool,
+    pub focused: bool,
 }
 
 impl ElementState {
@@ -480,6 +494,7 @@ impl ElementState {
             wants_layout: true,
             moved: true,
             hovered: false,
+            focused: false,
         }
     }
 
@@ -845,8 +860,19 @@ impl Element for Label {
         CursorIcon::IBeam
     }
 
-    fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
-        if hovered {
+    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>, event: &PointerEvent) {
+        if matches!(
+            event,
+            PointerEvent::Down {
+                button: PointerButton::Primary,
+            },
+        ) {
+            pass.request_focus();
+        }
+    }
+
+    fn on_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
+        if focused {
             self.font_size *= 2.0;
         } else {
             self.font_size /= 2.0;
@@ -1018,17 +1044,85 @@ fn update_pointer_pass(view: &mut View) {
     view.hovered_path = next_hovered_path;
 }
 
+fn update_focus_pass(view: &mut View) {
+    let next_focused_element = view.next_focused_element;
+    let next_focused_path = next_focused_element.map_or(Vec::new(), |node_id| {
+        view.tree.branches().get_id_path(node_id, None)
+    });
+    let prev_focused_path = std::mem::take(&mut view.focused_path);
+    let prev_focused_element = prev_focused_path.first().copied();
+
+    if prev_focused_path != next_focused_path {
+        let mut focused_set = HashSet::new();
+        for node_id in &next_focused_path {
+            focused_set.insert(*node_id);
+        }
+
+        for node_id in prev_focused_path.iter().copied() {
+            if view
+                .tree
+                .find_mut(node_id)
+                .map(|node| node.element.state.focused != focused_set.contains(&node_id))
+                .unwrap_or(false)
+            {
+                let focused = focused_set.contains(&node_id);
+                event_pass(view, Some(node_id), |element, pass| {
+                    if pass.state.focused != focused {
+                        element.on_child_focus(pass, focused);
+                    }
+                    pass.state.focused = focused;
+                });
+            }
+        }
+        for node_id in next_focused_path.iter().copied() {
+            if view
+                .tree
+                .find_mut(node_id)
+                .map(|node| node.element.state.focused != focused_set.contains(&node_id))
+                .unwrap_or(false)
+            {
+                let focused = focused_set.contains(&node_id);
+                event_pass(view, Some(node_id), |element, pass| {
+                    if pass.state.focused != focused {
+                        element.on_child_focus(pass, focused);
+                    }
+                    pass.state.focused = focused;
+                });
+            }
+        }
+    }
+
+    if prev_focused_element != next_focused_element {
+        single_event_pass(view, prev_focused_element, |element, pass| {
+            pass.state.focused = false;
+            element.on_focus(pass, false);
+        });
+        single_event_pass(view, next_focused_element, |element, pass| {
+            pass.state.focused = true;
+            element.on_focus(pass, true);
+        });
+    }
+
+    view.focused_element = next_focused_element;
+    view.focused_path = next_focused_path;
+}
+
 
 
 pub struct EventPass<'view> {
     state: &'view mut ElementState,
     children: tree::LeavesMut<'view, ElementInfo>,
     handled: bool,
+    next_focus: &'view mut Option<u64>,
 }
 
 impl EventPass<'_> {
     pub fn set_handled(&mut self) {
         self.handled = true;
+    }
+
+    pub fn request_focus(&mut self) {
+        *self.next_focus = Some(self.state.id);
     }
 }
 
@@ -1077,6 +1171,7 @@ fn event_pass(
                     state: &mut node.element.state,
                     children: node.leaves,
                     handled: false,
+                    next_focus: &mut view.next_focused_element,
                 };
                 callback(&mut *node.element.element, &mut pass);
 
@@ -1118,6 +1213,7 @@ fn single_event_pass(
         state: &mut node.element.state,
         children: node.leaves,
         handled: false,
+        next_focus: &mut view.next_focused_element,
     };
     callback(&mut *node.element.element, &mut pass);
 
@@ -1142,7 +1238,7 @@ fn single_event_pass(
     }
 }
 
-fn pointer_event_pass(view: &mut View, event: PointerEvent) {
+fn pointer_event_pass(view: &mut View, event: &PointerEvent) {
     // let mut pointer_entered = false;
     if let PointerEvent::Move { position } = &event {
         if view.pointer_position == Some(*position) {
@@ -1153,8 +1249,25 @@ fn pointer_event_pass(view: &mut View, event: PointerEvent) {
     }
     let pointer_target = get_pointer_target(&view, view.pointer_position);
 
+    if matches!(event, PointerEvent::Down { .. })
+        && let Some(target_id) = pointer_target
+    {
+        // Clear the focus when the user clicks outside the focused element.
+        if let Some(focused_element) = view.focused_element {
+            // Focused element isn't an ancestor of the pointer target.
+            if !view
+                .tree
+                .branches()
+                .get_id_path(target_id, None)
+                .contains(&focused_element)
+            {
+                view.next_focused_element = None;
+            }
+        }
+    }
+
     event_pass(view, pointer_target, |element, pass| {
-        element.on_pointer_event(pass)
+        element.on_pointer_event(pass, event)
     });
 }
 
