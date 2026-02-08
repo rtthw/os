@@ -493,10 +493,10 @@ impl Fonts for FontsImpl {
         let galley = self.galley_cache.entry(id).or_insert_with(|| run_layout());
 
         if galley.text() != text.as_ref()
-            || galley.job.wrap.max_width != max_advance.unwrap_or(f32::INFINITY)
             || galley.job.sections.first().unwrap().format.font_id.size != font_size
         {
             *galley = run_layout();
+            // println!("{text} @ {font_size} = {:?}", galley.rect.size());
         }
 
         let rect = galley.rect;
