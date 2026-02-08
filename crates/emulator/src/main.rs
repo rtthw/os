@@ -237,10 +237,10 @@ impl Program {
 
         view.resize_window(self.known_bounds.size());
 
+        abi::layout_pass(&mut view);
+
         let mut render = Render::default();
         abi::render_pass(&mut view, &mut render);
-
-        abi::layout_pass(&mut view);
 
         self.handle = Some(ProgramHandle {
             view,
