@@ -358,6 +358,12 @@ impl View {
         render_pass(self, render);
     }
 
+    pub fn handle_keyboard_event(&mut self, event: KeyboardEvent) {
+        keyboard_event_pass(self, &event);
+        layout_pass(self);
+        compose_pass(self);
+    }
+
     pub fn handle_pointer_event(&mut self, event: PointerEvent) {
         pointer_event_pass(self, &event);
         update_pointer_pass(self);
@@ -371,7 +377,7 @@ pub trait Fonts {
     fn measure_text(
         &mut self,
         id: u64,
-        text: &Arc<str>,
+        text: &str,
         max_advance: Option<f32>,
         font_size: f32,
         line_height: LineHeight,
@@ -447,6 +453,10 @@ pub trait Element: Any {
     /// Called when this element is added to the view tree.
     #[allow(unused)]
     fn on_build(&mut self, pass: &mut UpdatePass<'_>) {}
+
+    /// Called when this element is interacted with by the user's keyboard.
+    #[allow(unused)]
+    fn on_keyboard_event(&mut self, pass: &mut EventPass<'_>, event: &KeyboardEvent) {}
 
     /// Called when this element is interacted with by the user's pointer.
     #[allow(unused)]
@@ -1074,6 +1084,153 @@ unsafe extern "Rust" {
     ) -> f32;
 }
 
+pub struct LineInput {
+    pub text: String,
+    pub font_size: f32,
+
+    text_width: f32,
+    show_cursor: bool,
+}
+
+impl LineInput {
+    pub fn new(text: impl ToString) -> Self {
+        Self {
+            text: text.to_string(),
+            font_size: 16.0,
+            text_width: 0.0,
+            show_cursor: false,
+        }
+    }
+
+    pub fn with_font_size(mut self, font_size: f32) -> Self {
+        self.font_size = font_size;
+        self
+    }
+}
+
+impl Element for LineInput {
+    fn render(&mut self, pass: &mut RenderPass<'_>) {
+        pass.fill_quad(
+            pass.bounds(),
+            Rgba {
+                r: 11,
+                g: 11,
+                b: 11,
+                a: 255,
+            },
+            5.0,
+            Rgba::NONE,
+        );
+        pass.fill_text(
+            &self.text,
+            pass.bounds(),
+            Rgba {
+                r: 177,
+                g: 177,
+                b: 177,
+                a: 255,
+            },
+            self.font_size,
+        );
+        if self.show_cursor {
+            let cursor_width = 2.0;
+            let cursor_position = pass.bounds().position() + Xy::new(self.text_width, 0.0);
+
+            pass.fill_quad(
+                Aabb2D::new(
+                    cursor_position.x,
+                    cursor_position.y,
+                    cursor_position.x + cursor_width,
+                    cursor_position.y + pass.bounds().size().y,
+                ),
+                Rgba {
+                    r: 177,
+                    g: 177,
+                    b: 177,
+                    a: 200,
+                },
+                0.0,
+                Rgba::NONE,
+            );
+        }
+    }
+
+    fn layout(&mut self, _pass: &mut LayoutPass<'_>) {}
+
+    fn measure(
+        &mut self,
+        context: &mut MeasureContext<'_>,
+        axis: Axis,
+        length_request: LengthRequest,
+        _cross_length: Option<f32>,
+    ) -> f32 {
+        let id = context.id();
+        let fonts = context.fonts_mut();
+        let max_advance = match axis {
+            Axis::Horizontal => match length_request {
+                LengthRequest::MinContent | LengthRequest::MaxContent => None,
+                LengthRequest::FitContent(space) => Some(space),
+            },
+            Axis::Vertical => None,
+        };
+        let used_size = fonts.measure_text(
+            id,
+            &self.text,
+            max_advance,
+            self.font_size,
+            LineHeight::Relative(1.0),
+            FontStyle::Normal,
+            TextAlignment::Start,
+            TextWrapMode::NoWrap,
+        );
+
+        self.text_width = used_size.x;
+
+        match axis {
+            Axis::Horizontal => match length_request {
+                LengthRequest::MinContent | LengthRequest::MaxContent => used_size.x,
+                LengthRequest::FitContent(space) => space,
+            },
+            Axis::Vertical => used_size.y,
+        }
+    }
+
+    fn cursor_icon(&self) -> CursorIcon {
+        CursorIcon::IBeam
+    }
+
+    fn on_keyboard_event(&mut self, pass: &mut EventPass<'_>, event: &KeyboardEvent) {
+        match event {
+            KeyboardEvent::Down { key } => {
+                if key.is_ascii_control() {
+                    return;
+                }
+                self.text.push(*key);
+                pass.request_layout();
+                pass.request_render();
+                pass.set_handled();
+            }
+            KeyboardEvent::Up { key: _ } => {}
+        }
+    }
+
+    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>, event: &PointerEvent) {
+        if matches!(
+            event,
+            PointerEvent::Down {
+                button: PointerButton::Primary,
+            },
+        ) {
+            pass.request_focus();
+        }
+    }
+
+    fn on_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
+        self.show_cursor = focused;
+        pass.request_render();
+        pass.set_handled();
+    }
+}
 
 
 #[derive(Clone, Debug)]
@@ -1385,6 +1542,13 @@ impl ScrollDelta {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
+pub enum KeyboardEvent {
+    Down { key: char },
+    Up { key: char },
+}
+
 fn event_pass(
     view: &mut View,
     target: Option<u64>,
@@ -1469,6 +1633,12 @@ fn single_event_pass(
 
         current_id = parent_id;
     }
+}
+
+fn keyboard_event_pass(view: &mut View, event: &KeyboardEvent) {
+    event_pass(view, view.focused_element, |element, pass| {
+        element.on_keyboard_event(pass, event)
+    });
 }
 
 fn pointer_event_pass(view: &mut View, event: &PointerEvent) {

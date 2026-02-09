@@ -309,6 +309,23 @@ impl Program {
             let mut rendered = false;
             for event in ui.input(|i| i.filtered_events(&egui::EventFilter::default())) {
                 match event {
+                    egui::Event::Key {
+                        key,
+                        pressed,
+                        modifiers,
+                        ..
+                    } => {
+                        let Some(key) = egui_key_to_char(key, modifiers) else {
+                            continue;
+                        };
+                        view.handle_keyboard_event(if pressed {
+                            KeyboardEvent::Down { key }
+                        } else {
+                            KeyboardEvent::Up { key }
+                        });
+                        view.render(render);
+                        rendered = true;
+                    }
                     egui::Event::PointerMoved(pos) => {
                         let pos = Xy::new(pos.x, pos.y);
                         view.handle_pointer_event(PointerEvent::Move {
@@ -465,7 +482,7 @@ impl Fonts for FontsImpl {
     fn measure_text(
         &mut self,
         id: u64,
-        text: &Arc<str>,
+        text: &str,
         max_advance: Option<f32>,
         font_size: f32,
         _line_height: LineHeight,
@@ -516,7 +533,7 @@ impl Fonts for FontsImpl {
 
         let galley = self.galley_cache.entry(id).or_insert_with(|| run_layout());
 
-        if galley.text() != text.as_ref()
+        if galley.text() != text
             || galley.job.sections.first().unwrap().format.font_id.size != font_size
         {
             *galley = run_layout();
@@ -562,6 +579,101 @@ fn abi_to_egui_cursor_icon(value: CursorIcon) -> egui::CursorIcon {
         CursorIcon::ZoomOut => egui::CursorIcon::ZoomOut,
         _ => egui::CursorIcon::Default,
     }
+}
+
+fn egui_key_to_char(key: egui::Key, mods: egui::Modifiers) -> Option<char> {
+    Some(match key {
+        egui::Key::Space => ' ',
+        egui::Key::Tab => '\t',
+        egui::Key::Enter => '\n',
+        other => {
+            if mods.shift {
+                match other {
+                    egui::Key::Num0 => ')',
+                    egui::Key::Num1 => '!',
+                    egui::Key::Num2 => '@',
+                    egui::Key::Num3 => '#',
+                    egui::Key::Num4 => '$',
+                    egui::Key::Num5 => '%',
+                    egui::Key::Num6 => '^',
+                    egui::Key::Num7 => '&',
+                    egui::Key::Num8 => '*',
+                    egui::Key::Num9 => '(',
+                    egui::Key::Minus => '_',
+                    egui::Key::Equals => '+',
+                    egui::Key::A => 'A',
+                    egui::Key::B => 'B',
+                    egui::Key::C => 'C',
+                    egui::Key::D => 'D',
+                    egui::Key::E => 'E',
+                    egui::Key::F => 'F',
+                    egui::Key::G => 'G',
+                    egui::Key::H => 'H',
+                    egui::Key::I => 'I',
+                    egui::Key::J => 'J',
+                    egui::Key::K => 'K',
+                    egui::Key::L => 'L',
+                    egui::Key::M => 'M',
+                    egui::Key::N => 'N',
+                    egui::Key::O => 'O',
+                    egui::Key::P => 'P',
+                    egui::Key::Q => 'Q',
+                    egui::Key::R => 'R',
+                    egui::Key::S => 'S',
+                    egui::Key::T => 'T',
+                    egui::Key::U => 'U',
+                    egui::Key::V => 'V',
+                    egui::Key::W => 'W',
+                    egui::Key::X => 'X',
+                    egui::Key::Y => 'Y',
+                    egui::Key::Z => 'Z',
+                    _ => None?,
+                }
+            } else {
+                match other {
+                    egui::Key::Num0 => '0',
+                    egui::Key::Num1 => '1',
+                    egui::Key::Num2 => '2',
+                    egui::Key::Num3 => '3',
+                    egui::Key::Num4 => '4',
+                    egui::Key::Num5 => '5',
+                    egui::Key::Num6 => '6',
+                    egui::Key::Num7 => '7',
+                    egui::Key::Num8 => '8',
+                    egui::Key::Num9 => '9',
+                    egui::Key::Minus => '-',
+                    egui::Key::Equals => '=',
+                    egui::Key::A => 'a',
+                    egui::Key::B => 'b',
+                    egui::Key::C => 'c',
+                    egui::Key::D => 'd',
+                    egui::Key::E => 'e',
+                    egui::Key::F => 'f',
+                    egui::Key::G => 'g',
+                    egui::Key::H => 'h',
+                    egui::Key::I => 'i',
+                    egui::Key::J => 'j',
+                    egui::Key::K => 'k',
+                    egui::Key::L => 'l',
+                    egui::Key::M => 'm',
+                    egui::Key::N => 'n',
+                    egui::Key::O => 'o',
+                    egui::Key::P => 'p',
+                    egui::Key::Q => 'q',
+                    egui::Key::R => 'r',
+                    egui::Key::S => 's',
+                    egui::Key::T => 't',
+                    egui::Key::U => 'u',
+                    egui::Key::V => 'v',
+                    egui::Key::W => 'w',
+                    egui::Key::X => 'x',
+                    egui::Key::Y => 'y',
+                    egui::Key::Z => 'z',
+                    _ => None?,
+                }
+            }
+        }
+    })
 }
 
 

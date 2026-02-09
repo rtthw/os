@@ -14,6 +14,7 @@ manifest! {
         ElementBuilder::new(VerticalScroll::new(Column::new()
             .with_gap(50.0)
             .with(Label::new("Zero"))
+            .with(LineInput::new("Type something...").with_font_size(20.0))
             .with(Row::new()
                 .with_gap(10.0)
                 .with(Label::new("One").with_font_size(12.0))

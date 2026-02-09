@@ -9,10 +9,7 @@ use {
     },
     std::{
         collections::HashMap,
-        sync::{
-            Arc,
-            atomic::{AtomicU8, AtomicU64, Ordering},
-        },
+        sync::atomic::{AtomicU8, AtomicU64, Ordering},
     },
 };
 
@@ -147,7 +144,7 @@ impl Fonts for FontsImpl {
     fn measure_text(
         &mut self,
         _id: u64,
-        text: &Arc<str>,
+        text: &str,
         _max_advance: Option<f32>,
         font_size: f32,
         _line_height: LineHeight,
