@@ -240,7 +240,7 @@ impl Program {
         abi::layout_pass(&mut view);
 
         let mut render = Render::default();
-        abi::render_pass(&mut view, &mut render);
+        view.render(&mut render);
 
         self.handle = Some(ProgramHandle {
             view,
@@ -306,6 +306,7 @@ impl Program {
             let view = &mut handle.view;
             let render = &mut handle.render;
 
+            let mut rendered = false;
             for event in ui.input(|i| i.filtered_events(&egui::EventFilter::default())) {
                 match event {
                     egui::Event::PointerMoved(pos) => {
@@ -313,7 +314,8 @@ impl Program {
                         view.handle_pointer_event(PointerEvent::Move {
                             position: pos - self.known_bounds.position(),
                         });
-                        abi::render_pass(view, render);
+                        view.render(render);
+                        rendered = true;
                     }
                     egui::Event::PointerButton {
                         button, pressed, ..
@@ -330,7 +332,8 @@ impl Program {
                         } else {
                             PointerEvent::Up { button }
                         });
-                        abi::render_pass(view, render);
+                        view.render(render);
+                        rendered = true;
                     }
                     egui::Event::MouseWheel {
                         unit: egui::MouseWheelUnit::Line,
@@ -340,7 +343,8 @@ impl Program {
                         view.handle_pointer_event(PointerEvent::Scroll {
                             delta: ScrollDelta::Lines(Xy::new(delta.x, delta.y)),
                         });
-                        abi::render_pass(view, render);
+                        view.render(render);
+                        rendered = true;
                     }
                     _ => {}
                 }
@@ -350,7 +354,15 @@ impl Program {
             if self.known_bounds != window_bounds {
                 self.known_bounds = window_bounds;
                 view.resize_window(window_bounds.size());
-                abi::render_pass(view, render);
+                view.render(render);
+                rendered = true;
+            }
+
+            if view.animating() {
+                if !rendered {
+                    view.render(render);
+                }
+                ui.ctx().request_repaint();
             }
 
             if ui.ui_contains_pointer() {
@@ -627,7 +639,7 @@ pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>
             b: 177,
             a: 255,
         },
-        label.font_size,
+        label.visual_font_size.get(),
     );
 }
 

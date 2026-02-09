@@ -29,6 +29,7 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
+    time::Instant,
 };
 
 pub const VERSION: &'static str = env!("CARGO_PKG_VERSION");
@@ -288,6 +289,7 @@ pub struct View {
     focused_element: Option<u64>,
     next_focused_element: Option<u64>,
     focused_path: Vec<u64>,
+    last_animation: Option<Instant>,
 }
 
 impl View {
@@ -316,12 +318,23 @@ impl View {
             focused_element: None,
             next_focused_element: None,
             focused_path: Vec::new(),
+            last_animation: None,
         }
     }
 
     #[inline]
     pub fn cursor_icon(&self) -> CursorIcon {
         self.cursor_icon
+    }
+
+    pub fn animating(&self) -> bool {
+        self.tree
+            .roots()
+            .get(self.root_element_id)
+            .expect("infallible")
+            .element
+            .state
+            .needs_animate
     }
 
     pub fn resize_window(&mut self, size: Xy<f32>) {
@@ -331,6 +344,18 @@ impl View {
         self.window_size = size;
 
         layout_pass(self);
+    }
+
+    pub fn render(&mut self, render: &mut Render) {
+        let now = Instant::now();
+        let last = self.last_animation.take();
+        let elapsed = last.map(|t| now.duration_since(t)).unwrap_or_default();
+
+        animation_pass(self, elapsed.as_secs_f64());
+
+        self.last_animation = self.animating().then_some(now);
+
+        render_pass(self, render);
     }
 
     pub fn handle_pointer_event(&mut self, event: PointerEvent) {
@@ -398,6 +423,9 @@ pub trait Element: Any {
 
     #[allow(unused)]
     fn render_overlay(&mut self, pass: &mut RenderPass<'_>) {}
+
+    #[allow(unused)]
+    fn animate(&mut self, pass: &mut AnimatePass<'_>, dt: f64) {}
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>);
 
@@ -475,6 +503,9 @@ pub struct ElementState {
     pub wants_render: bool,
     pub wants_overlay_render: bool,
 
+    pub needs_animate: bool,
+    pub wants_animate: bool,
+
     pub needs_layout: bool,
     pub wants_layout: bool,
 
@@ -501,6 +532,8 @@ impl ElementState {
             needs_render: true,
             wants_render: true,
             wants_overlay_render: true,
+            needs_animate: true,
+            wants_animate: true,
             needs_layout: true,
             wants_layout: true,
             needs_compose: true,
@@ -514,6 +547,7 @@ impl ElementState {
     fn merge_with_child(&mut self, child_state: &Self) {
         self.children_changed |= child_state.children_changed;
         self.needs_render |= child_state.needs_render;
+        self.needs_animate |= child_state.needs_animate;
         self.needs_layout |= child_state.needs_layout;
         self.needs_compose |= child_state.needs_compose;
     }
@@ -927,6 +961,7 @@ impl Element for VerticalScroll {
 pub struct Label {
     pub text: Arc<str>,
     pub font_size: f32,
+    pub visual_font_size: AnimatedF32,
     pub line_height: LineHeight,
     pub font_style: FontStyle,
     pub alignment: TextAlignment,
@@ -942,11 +977,13 @@ impl Label {
             font_style: FontStyle::Normal,
             alignment: TextAlignment::Start,
             wrap_mode: TextWrapMode::Wrap,
+            visual_font_size: AnimatedF32::new(16.0),
         }
     }
 
     pub fn with_font_size(mut self, font_size: f32) -> Self {
         self.font_size = font_size;
+        self.visual_font_size = AnimatedF32::new(font_size);
         self
     }
 }
@@ -958,6 +995,15 @@ impl Element for Label {
 
     fn render(&mut self, pass: &mut RenderPass<'_>) {
         unsafe { __ui_Label__render(self, pass) }
+    }
+
+    fn animate(&mut self, pass: &mut AnimatePass<'_>, dt: f64) {
+        let ms = (dt * 1000.0) as f32;
+        let done = self.visual_font_size.advance(ms);
+        if !done {
+            pass.request_animate();
+        }
+        pass.request_render();
     }
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
@@ -989,6 +1035,17 @@ impl Element for Label {
         }
     }
 
+    fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
+        if hovered {
+            self.visual_font_size.move_to(self.font_size * 2.0, 1000.0);
+        } else {
+            self.visual_font_size.move_to(self.font_size, 1000.0);
+        }
+        pass.request_animate();
+        pass.request_render();
+        pass.set_handled();
+    }
+
     fn on_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
         if focused {
             self.font_size *= 2.0;
@@ -1015,6 +1072,55 @@ unsafe extern "Rust" {
         length_request: LengthRequest,
         cross_length: Option<f32>,
     ) -> f32;
+}
+
+
+
+#[derive(Clone, Debug)]
+pub struct AnimatedF32 {
+    current: f32,
+    target: f32,
+    rate: f32,
+}
+
+impl AnimatedF32 {
+    pub const fn new(value: f32) -> Self {
+        Self {
+            current: value,
+            target: value,
+            rate: 0.0,
+        }
+    }
+
+    #[inline]
+    pub const fn get(&self) -> f32 {
+        self.current
+    }
+
+    pub fn move_to(&mut self, target: f32, time_ms: f32) {
+        self.target = target;
+        match time_ms.partial_cmp(&0.0) {
+            Some(std::cmp::Ordering::Equal | std::cmp::Ordering::Less) => self.current = target,
+            Some(std::cmp::Ordering::Greater) => {
+                self.rate = (self.target - self.current) / time_ms;
+            }
+            None => panic!(),
+        }
+    }
+
+    pub fn advance(&mut self, ms: f32) -> bool {
+        let original_cmp = self.current.partial_cmp(&self.target).unwrap();
+        self.current += self.rate * ms;
+        let final_cmp = self.current.partial_cmp(&self.target).unwrap();
+
+        if final_cmp.is_eq() || original_cmp != final_cmp {
+            self.current = self.target;
+            self.rate = 0.0;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 
@@ -1728,6 +1834,51 @@ fn render_element(
 
 
 
+pub struct AnimatePass<'view> {
+    state: &'view mut ElementState,
+    children: tree::LeavesMut<'view, ElementInfo>,
+}
+
+fn animation_pass(view: &mut View, time_delta: f64) {
+    let node = view
+        .tree
+        .find_mut(view.root_element_id)
+        .expect("failed to find the view's root node");
+    animate_element(node, time_delta);
+}
+
+fn animate_element(node: tree::NodeMut<'_, ElementInfo>, time_delta: f64) {
+    let mut children = node.leaves;
+    let element = &mut *node.element.element;
+    let state = &mut node.element.state;
+
+    if !state.needs_animate {
+        return;
+    }
+    state.needs_animate = false;
+
+    if state.wants_animate {
+        state.wants_animate = false;
+        element.animate(
+            &mut AnimatePass {
+                state,
+                children: children.reborrow_mut(),
+            },
+            time_delta,
+        );
+    }
+
+    state.needs_render = true;
+
+    let parent_state = &mut *state;
+    for_each_child_element(element, children, |mut node| {
+        animate_element(node.reborrow_mut(), time_delta);
+        parent_state.merge_with_child(&node.element.state);
+    });
+}
+
+
+
 pub struct ComposePass<'view> {
     state: &'view mut ElementState,
     children: tree::LeavesMut<'view, ElementInfo>,
@@ -2031,6 +2182,7 @@ macro_rules! multi_impl {
 
 // Types with a `state: &mut ElementState` field.
 multi_impl! {
+    AnimatePass<'_>,
     ComposePass<'_>,
     EventPass<'_>,
     LayoutPass<'_>,
@@ -2054,11 +2206,17 @@ multi_impl! {
             self.state.wants_compose = true;
             self.state.needs_compose = true;
         }
+
+        pub fn request_animate(&mut self) {
+            self.state.wants_animate = true;
+            self.state.needs_animate = true;
+        }
     }
 }
 
 // Types with a `children: tree::LeavesMut<'_, ElementInfo>` field.
 multi_impl! {
+    AnimatePass<'_>,
     ComposePass<'_>,
     EventPass<'_>,
     LayoutPass<'_>,
