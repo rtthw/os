@@ -1085,19 +1085,23 @@ unsafe extern "Rust" {
 }
 
 pub struct LineInput {
-    pub text: String,
+    pub text_before_cursor: String,
+    pub text_after_cursor: String,
     pub font_size: f32,
 
-    text_width: f32,
+    width_before_cursor: f32,
+    width_after_cursor: f32,
     show_cursor: bool,
 }
 
 impl LineInput {
     pub fn new(text: impl ToString) -> Self {
         Self {
-            text: text.to_string(),
+            text_before_cursor: text.to_string(),
+            text_after_cursor: String::new(),
             font_size: 16.0,
-            text_width: 0.0,
+            width_before_cursor: 0.0,
+            width_after_cursor: 0.0,
             show_cursor: false,
         }
     }
@@ -1122,8 +1126,8 @@ impl Element for LineInput {
             Rgba::NONE,
         );
         pass.fill_text(
-            &self.text,
-            pass.bounds(),
+            &self.text_before_cursor,
+            pass.bounds().with_width(self.width_before_cursor),
             Rgba {
                 r: 177,
                 g: 177,
@@ -1132,9 +1136,11 @@ impl Element for LineInput {
             },
             self.font_size,
         );
+
+        let cursor_position = pass.bounds().position() + Xy::new(self.width_before_cursor, 0.0);
+
         if self.show_cursor {
             let cursor_width = 2.0;
-            let cursor_position = pass.bounds().position() + Xy::new(self.text_width, 0.0);
 
             pass.fill_quad(
                 Aabb2D::new(
@@ -1151,6 +1157,22 @@ impl Element for LineInput {
                 },
                 0.0,
                 Rgba::NONE,
+            );
+        }
+
+        if !self.text_after_cursor.is_empty() {
+            pass.fill_text(
+                &self.text_after_cursor,
+                pass.bounds()
+                    .with_width(self.width_after_cursor)
+                    .with_position(cursor_position),
+                Rgba {
+                    r: 177,
+                    g: 177,
+                    b: 177,
+                    a: 255,
+                },
+                self.font_size,
             );
         }
     }
@@ -1173,9 +1195,19 @@ impl Element for LineInput {
             },
             Axis::Vertical => None,
         };
-        let used_size = fonts.measure_text(
+        let before_cursor_size = fonts.measure_text(
             id,
-            &self.text,
+            &self.text_before_cursor,
+            max_advance,
+            self.font_size,
+            LineHeight::Relative(1.0),
+            FontStyle::Normal,
+            TextAlignment::Start,
+            TextWrapMode::NoWrap,
+        );
+        let after_cursor_size = fonts.measure_text(
+            id,
+            &self.text_after_cursor,
             max_advance,
             self.font_size,
             LineHeight::Relative(1.0),
@@ -1184,14 +1216,15 @@ impl Element for LineInput {
             TextWrapMode::NoWrap,
         );
 
-        self.text_width = used_size.x;
+        self.width_before_cursor = before_cursor_size.x;
+        self.width_after_cursor = after_cursor_size.x;
 
         match axis {
             Axis::Horizontal => match length_request {
-                LengthRequest::MinContent | LengthRequest::MaxContent => used_size.x,
+                LengthRequest::MinContent | LengthRequest::MaxContent => before_cursor_size.x,
                 LengthRequest::FitContent(space) => space,
             },
-            Axis::Vertical => used_size.y,
+            Axis::Vertical => before_cursor_size.y,
         }
     }
 
@@ -1203,13 +1236,46 @@ impl Element for LineInput {
         match event {
             KeyboardEvent::Down { key } => match key {
                 Key::Char(ch) => {
-                    self.text.push(*ch);
+                    self.text_before_cursor.push(*ch);
                     pass.request_layout();
                     pass.request_render();
                     pass.set_handled();
                 }
                 Key::Backspace => {
-                    _ = self.text.pop();
+                    _ = self.text_before_cursor.pop();
+                    pass.request_layout();
+                    pass.request_render();
+                    pass.set_handled();
+                }
+                Key::Delete => {
+                    if !self.text_after_cursor.is_empty() {
+                        _ = self.text_after_cursor.remove(0);
+                        pass.request_layout();
+                        pass.request_render();
+                        pass.set_handled();
+                    }
+                }
+                Key::ArrowLeft => {
+                    if let Some(ch) = self.text_before_cursor.pop() {
+                        self.text_after_cursor.insert(0, ch);
+                        pass.request_layout();
+                        pass.request_render();
+                        pass.set_handled();
+                    }
+                }
+                Key::ArrowRight => {
+                    if let Some(ch) = {
+                        if self.text_after_cursor.len() == 0 {
+                            None
+                        } else {
+                            Some(self.text_after_cursor.remove(0))
+                        }
+                    } {
+                        self.text_before_cursor.push(ch);
+                        pass.request_layout();
+                        pass.request_render();
+                        pass.set_handled();
+                    }
                 }
                 _ => {}
             },

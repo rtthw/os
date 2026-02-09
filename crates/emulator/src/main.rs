@@ -307,7 +307,14 @@ impl Program {
             let render = &mut handle.render;
 
             let mut rendered = false;
-            for event in ui.input(|i| i.filtered_events(&egui::EventFilter::default())) {
+            for event in ui.input(|i| {
+                i.filtered_events(&egui::EventFilter {
+                    tab: true,
+                    horizontal_arrows: true,
+                    vertical_arrows: true,
+                    escape: true,
+                })
+            }) {
                 match event {
                     egui::Event::Key {
                         key,
@@ -475,13 +482,13 @@ struct ProgramHandle {
 
 struct FontsImpl {
     egui_context: egui::Context,
-    galley_cache: HashMap<u64, Arc<egui::text::Galley>>,
+    galley_cache: HashMap<String, Arc<egui::text::Galley>>,
 }
 
 impl Fonts for FontsImpl {
     fn measure_text(
         &mut self,
-        id: u64,
+        _id: u64,
         text: &str,
         max_advance: Option<f32>,
         font_size: f32,
@@ -531,7 +538,10 @@ impl Fonts for FontsImpl {
             })
         };
 
-        let galley = self.galley_cache.entry(id).or_insert_with(|| run_layout());
+        let galley = self
+            .galley_cache
+            .entry(text.to_string())
+            .or_insert_with(|| run_layout());
 
         if galley.text() != text
             || galley.job.sections.first().unwrap().format.font_id.size != font_size

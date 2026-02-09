@@ -36,6 +36,34 @@ impl Aabb2D<f32> {
     }
 
     #[inline]
+    pub const fn with_size(mut self, size: Xy<f32>) -> Self {
+        self.max = self.min.const_add(size);
+        self
+    }
+
+    #[inline]
+    pub const fn with_width(mut self, width: f32) -> Self {
+        self.max.x = self.min.x + width;
+        self
+    }
+
+    #[inline]
+    pub const fn with_height(mut self, height: f32) -> Self {
+        self.max.y = self.min.y + height;
+        self
+    }
+
+    #[inline]
+    pub const fn with_position(self, position: Xy<f32>) -> Self {
+        let size = self.max.const_sub(self.min);
+
+        Self {
+            min: position,
+            max: position.const_add(size),
+        }
+    }
+
+    #[inline]
     pub const fn size(&self) -> Xy<f32> {
         Xy::new(self.max.x - self.min.x, self.max.y - self.min.y)
     }
@@ -172,6 +200,14 @@ impl Xy<f32> {
         Self {
             x: self.x + other.x,
             y: self.y + other.y,
+        }
+    }
+
+    #[inline]
+    pub const fn const_sub(&self, other: Self) -> Self {
+        Self {
+            x: self.x - other.x,
+            y: self.y - other.y,
         }
     }
 
