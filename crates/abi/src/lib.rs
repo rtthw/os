@@ -1201,15 +1201,18 @@ impl Element for LineInput {
 
     fn on_keyboard_event(&mut self, pass: &mut EventPass<'_>, event: &KeyboardEvent) {
         match event {
-            KeyboardEvent::Down { key } => {
-                if key.is_ascii_control() {
-                    return;
+            KeyboardEvent::Down { key } => match key {
+                Key::Char(ch) => {
+                    self.text.push(*ch);
+                    pass.request_layout();
+                    pass.request_render();
+                    pass.set_handled();
                 }
-                self.text.push(*key);
-                pass.request_layout();
-                pass.request_render();
-                pass.set_handled();
-            }
+                Key::Backspace => {
+                    _ = self.text.pop();
+                }
+                _ => {}
+            },
             KeyboardEvent::Up { key: _ } => {}
         }
     }
@@ -1542,11 +1545,31 @@ impl ScrollDelta {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(C)]
+pub enum Key {
+    Char(char),
+
+    Space,
+    Tab,
+    Enter,
+    Backspace,
+    Delete,
+
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
+
+    PageUp,
+    PageDown,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
 pub enum KeyboardEvent {
-    Down { key: char },
-    Up { key: char },
+    Down { key: Key },
+    Up { key: Key },
 }
 
 fn event_pass(
