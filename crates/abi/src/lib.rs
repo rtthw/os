@@ -869,7 +869,7 @@ impl Element for ScrollBar {
                 Rgba {
                     r: 0x53,
                     g: 0x53,
-                    b: 0x79,
+                    b: 0x6d,
                     a: 255,
                 }
             },
@@ -913,6 +913,8 @@ impl Element for ScrollBar {
                 position: mouse_pos,
                 ..
             } => {
+                pass.capture_pointer();
+
                 let size = pass.bounds().size();
                 let height_ratio = if self.content_height != 0.0 {
                     self.area_height / self.content_height
@@ -957,7 +959,6 @@ impl Element for ScrollBar {
                 if changed {
                     pass.request_render();
                 }
-                println!("CLICKED BAR @ {:?}", self.grab_anchor);
             }
             PointerEvent::Move {
                 position: mouse_pos,
@@ -1711,6 +1712,7 @@ pub struct EventPass<'view> {
     children: tree::LeavesMut<'view, ElementInfo>,
     handled: bool,
     next_focus: &'view mut Option<u64>,
+    pointer_capture_target: &'view mut Option<u64>,
 }
 
 impl EventPass<'_> {
@@ -1720,6 +1722,10 @@ impl EventPass<'_> {
 
     pub fn request_focus(&mut self) {
         *self.next_focus = Some(self.state.id);
+    }
+
+    pub fn capture_pointer(&mut self) {
+        *self.pointer_capture_target = Some(self.state.id);
     }
 }
 
@@ -1814,6 +1820,7 @@ fn event_pass(
                     children: node.leaves,
                     handled: false,
                     next_focus: &mut view.next_focused_element,
+                    pointer_capture_target: &mut view.pointer_capture_target,
                 };
                 callback(&mut *node.element.element, &mut pass);
 
@@ -1856,6 +1863,7 @@ fn single_event_pass(
         children: node.leaves,
         handled: false,
         next_focus: &mut view.next_focused_element,
+        pointer_capture_target: &mut view.pointer_capture_target,
     };
     callback(&mut *node.element.element, &mut pass);
 
@@ -1917,6 +1925,10 @@ fn pointer_event_pass(view: &mut View, event: &PointerEvent) {
     event_pass(view, pointer_target, |element, pass| {
         element.on_pointer_event(pass, event)
     });
+
+    if matches!(event, PointerEvent::Up { .. }) {
+        view.pointer_capture_target = None;
+    }
 }
 
 fn get_pointer_target(view: &View, pointer_pos: Option<Xy<f32>>) -> Option<u64> {
