@@ -822,9 +822,178 @@ impl Element for Row {
     }
 }
 
+pub struct ScrollBar {
+    progress: f32,
+    area_height: f32,
+    content_height: f32,
+    grab_anchor: Option<f32>,
+}
+
+impl ScrollBar {
+    pub fn new() -> Self {
+        Self {
+            progress: 0.0,
+            area_height: 0.0,
+            content_height: 0.0,
+            grab_anchor: None,
+        }
+    }
+}
+
+impl Element for ScrollBar {
+    fn render(&mut self, pass: &mut RenderPass<'_>) {
+        let height_ratio = if self.content_height != 0.0 {
+            self.area_height / self.content_height
+        } else {
+            1.0
+        };
+        let height_ratio = height_ratio.clamp(0.0, 1.0);
+        let min_height = 40.0; // TODO: Theme.
+        let layout_size = pass.bounds().size();
+        let bar_height = (height_ratio * layout_size.y).max(min_height);
+        let empty_space = layout_size.y - bar_height;
+
+        pass.fill_quad(
+            Aabb2D::from_size_position(
+                Xy::new(layout_size.x, bar_height),
+                pass.bounds().position() + Xy::new(0.0, self.progress * empty_space),
+            ),
+            if self.grab_anchor.is_some() {
+                Rgba {
+                    r: 0x73,
+                    g: 0x73,
+                    b: 0x89,
+                    a: 255,
+                }
+            } else {
+                Rgba {
+                    r: 0x53,
+                    g: 0x53,
+                    b: 0x79,
+                    a: 255,
+                }
+            },
+            0.0,
+            Rgba::NONE,
+        );
+    }
+
+    fn layout(&mut self, _pass: &mut LayoutPass<'_>) {}
+
+    fn measure(
+        &mut self,
+        _context: &mut MeasureContext<'_>,
+        axis: Axis,
+        length_request: LengthRequest,
+        _cross_length: Option<f32>,
+    ) -> f32 {
+        if axis == Axis::Vertical {
+            match length_request {
+                LengthRequest::MinContent | LengthRequest::MaxContent => self.area_height,
+                LengthRequest::FitContent(space) => space,
+            }
+        } else {
+            let scrollbar_width = 12.0; // TODO: Theming
+
+            scrollbar_width
+        }
+    }
+
+    fn cursor_icon(&self) -> CursorIcon {
+        if self.grab_anchor.is_some() {
+            CursorIcon::Grabbing
+        } else {
+            CursorIcon::Grab
+        }
+    }
+
+    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>, event: &PointerEvent) {
+        match event {
+            PointerEvent::Down {
+                position: mouse_pos,
+                ..
+            } => {
+                let size = pass.bounds().size();
+                let height_ratio = if self.content_height != 0.0 {
+                    self.area_height / self.content_height
+                } else {
+                    1.0
+                };
+                let height_ratio = height_ratio.clamp(0.0, 1.0);
+                let min_height = 40.0; // TODO: Theme.
+                let bar_height = (height_ratio * size.y).max(min_height);
+                let empty_space = size.y - bar_height;
+
+                let bar_bounds = Aabb2D::from_size_position(
+                    Xy::new(size.x, bar_height),
+                    pass.bounds().position() + Xy::new(0.0, self.progress * empty_space),
+                );
+
+                // let mouse_pos = pass.local_position(*mouse_pos);
+                let mut changed = false;
+                if bar_bounds.contains(*mouse_pos) {
+                    let y_min = bar_bounds.min.y;
+                    let y_max = bar_bounds.max.y;
+                    self.grab_anchor = Some((mouse_pos.y - y_min) / (y_max - y_min));
+                } else {
+                    let height_ratio = if self.content_height != 0.0 {
+                        self.area_height / self.content_height
+                    } else {
+                        1.0
+                    };
+                    let height_ratio = height_ratio.clamp(0.0, 1.0);
+                    let min_height = 40.0; // TODO: Theme.
+                    let bar_height = (height_ratio * size.y).max(min_height);
+                    let empty_space = size.y - bar_height;
+
+                    let progress = (mouse_pos.y - bar_height * 0.5) / empty_space;
+                    let progress = progress.clamp(0.0, 1.0);
+
+                    changed |= (progress - self.progress).abs() > 1e-12;
+
+                    self.progress = progress;
+                    self.grab_anchor = Some(0.5);
+                };
+                if changed {
+                    pass.request_render();
+                }
+                println!("CLICKED BAR @ {:?}", self.grab_anchor);
+            }
+            PointerEvent::Move {
+                position: mouse_pos,
+            } => {
+                if let Some(grab_anchor) = self.grab_anchor {
+                    let size = pass.bounds().size();
+                    let height_ratio = if self.content_height != 0.0 {
+                        self.area_height / self.content_height
+                    } else {
+                        1.0
+                    };
+                    let height_ratio = height_ratio.clamp(0.0, 1.0);
+                    let min_height = 40.0; // TODO: Theme.
+                    let bar_height = (height_ratio * size.y).max(min_height);
+                    let empty_space = size.y - bar_height;
+
+                    let progress = (mouse_pos.y - bar_height * grab_anchor) / empty_space;
+                    let progress = progress.clamp(0.0, 1.0);
+                    if (progress - self.progress).abs() > 1e-12 {
+                        self.progress = progress;
+                        pass.request_render();
+                    }
+                }
+            }
+            PointerEvent::Up { .. } => {
+                self.grab_anchor = None;
+            }
+            _ => {}
+        }
+    }
+}
+
 pub struct VerticalScroll {
     column: TypedChildElement<Column>,
-    viewport_pos: Xy<f32>,
+    scroll_bar: TypedChildElement<ScrollBar>,
+    viewport_offset: Xy<f32>,
     content_size: Xy<f32>,
 }
 
@@ -832,7 +1001,8 @@ impl VerticalScroll {
     pub fn new(column: Column) -> Self {
         Self {
             column: TypedChildElement::new(column),
-            viewport_pos: Xy::ZERO,
+            scroll_bar: TypedChildElement::new(ScrollBar::new()),
+            viewport_offset: Xy::ZERO,
             content_size: Xy::ZERO,
         }
     }
@@ -840,11 +1010,12 @@ impl VerticalScroll {
 
 impl Element for VerticalScroll {
     fn children_ids(&self) -> Vec<u64> {
-        vec![self.column.id()]
+        vec![self.column.id(), self.scroll_bar.id()]
     }
 
     fn update_children(&mut self, pass: &mut UpdatePass<'_>) {
         pass.update_child(&mut self.column.inner);
+        pass.update_child(&mut self.scroll_bar.inner);
     }
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
@@ -856,12 +1027,33 @@ impl Element for VerticalScroll {
 
         let viewport_max_pos = (self.content_size - pass.size).max(Xy::ZERO);
         let pos = Xy::new(
-            self.viewport_pos.x.clamp(0.0, viewport_max_pos.x),
-            self.viewport_pos.y.clamp(0.0, viewport_max_pos.y),
+            self.viewport_offset.x.clamp(0.0, viewport_max_pos.x),
+            self.viewport_offset.y.clamp(0.0, viewport_max_pos.y),
         );
-        if (pos - self.viewport_pos).length_squared() > 1e-12 {
-            self.viewport_pos = pos;
+        if (pos - self.viewport_offset).length_squared() > 1e-12 {
+            self.viewport_offset = pos;
         }
+
+        {
+            let area_size = pass.size;
+            let scroll_bar = pass.typed_child_mut(&mut self.scroll_bar);
+            scroll_bar.area_height = area_size.y;
+            scroll_bar.content_height = self.content_size.y;
+            pass.request_child_render(self.scroll_bar.id());
+        }
+
+        let scroll_bar_size = pass.resolve_size(
+            self.scroll_bar.id(),
+            Xy::new(
+                Length::FitContent(pass.size.x),
+                Length::FitContent(pass.size.y),
+            ),
+        );
+        pass.do_layout(&mut self.scroll_bar.inner, scroll_bar_size);
+        pass.place_child(
+            &mut self.scroll_bar.inner,
+            Xy::new(pass.size.x - scroll_bar_size.x, 0.0),
+        );
     }
 
     fn measure(
@@ -883,7 +1075,7 @@ impl Element for VerticalScroll {
     fn compose(&mut self, pass: &mut ComposePass<'_>) {
         pass.set_child_scroll(
             &mut self.column.inner,
-            Xy::new(-self.viewport_pos.x, -self.viewport_pos.y),
+            Xy::new(-self.viewport_offset.x, -self.viewport_offset.y),
         );
     }
 
@@ -892,16 +1084,28 @@ impl Element for VerticalScroll {
             PointerEvent::Scroll { delta } => {
                 let pixel_delta = delta.to_pixels(Xy::new(120.0, 120.0));
                 let delta = Xy::new(0.0, pixel_delta.y);
-                let pos = self.viewport_pos - delta;
-                let max_viewport_pos = (self.content_size - pass.state.bounds.size()).max(Xy::ZERO);
+                let pos = self.viewport_offset - delta;
+                let scroll_range = (self.content_size - pass.state.bounds.size()).max(Xy::ZERO);
                 let pos = Xy::new(
-                    pos.x.clamp(0.0, max_viewport_pos.x),
-                    pos.y.clamp(0.0, max_viewport_pos.y),
+                    pos.x.clamp(0.0, scroll_range.x),
+                    pos.y.clamp(0.0, scroll_range.y),
                 );
 
-                if (pos - self.viewport_pos).length_squared() > 1e-12 {
-                    self.viewport_pos = pos;
+                if (pos - self.viewport_offset).length_squared() > 1e-12 {
+                    self.viewport_offset = pos;
                     pass.set_handled();
+                }
+
+                let progress = if scroll_range.y > 1e-12 {
+                    (self.viewport_offset.y / scroll_range.y).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+
+                {
+                    let scroll_bar = pass.typed_child_mut(&mut self.scroll_bar);
+                    scroll_bar.progress = progress;
+                    pass.request_child_render(self.scroll_bar.id());
                 }
             }
             _ => (),
@@ -980,6 +1184,7 @@ impl Element for Label {
             event,
             PointerEvent::Down {
                 button: PointerButton::Primary,
+                ..
             },
         ) {
             pass.request_focus();
@@ -1229,6 +1434,7 @@ impl Element for LineInput {
             event,
             PointerEvent::Down {
                 button: PointerButton::Primary,
+                ..
             },
         ) {
             pass.request_focus();
@@ -1531,10 +1737,19 @@ pub enum PointerButton {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
 pub enum PointerEvent {
-    Down { button: PointerButton },
-    Up { button: PointerButton },
-    Move { position: Xy<f32> },
-    Scroll { delta: ScrollDelta },
+    Down {
+        button: PointerButton,
+        position: Xy<f32>,
+    },
+    Up {
+        button: PointerButton,
+    },
+    Move {
+        position: Xy<f32>,
+    },
+    Scroll {
+        delta: ScrollDelta,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1900,10 +2115,6 @@ impl<'view> RenderPass<'view> {
             render,
             vars,
         }
-    }
-
-    pub fn bounds(&self) -> Aabb2D<f32> {
-        self.state.bounds
     }
 
     pub fn fill_quad(
@@ -2390,8 +2601,18 @@ multi_impl! {
     RenderPass<'_>,
     UpdatePass<'_>,
     {
+        #[inline]
         pub fn id(&self) -> u64 {
             self.state.id
+        }
+
+        #[inline]
+        pub fn bounds(&self) -> Aabb2D<f32> {
+            self.state.bounds
+        }
+
+        pub fn local_position(&self, point: Xy<f32>) -> Xy<f32> {
+            self.state.global_transform.inverse() * point
         }
 
         pub fn request_render(&mut self) {
@@ -2437,6 +2658,15 @@ multi_impl! {
                 .expect("get_mut: child element not found");
 
             (&mut *node_mut.element.element as &mut dyn Any).downcast_mut().unwrap()
+        }
+
+        pub fn request_child_render(&mut self, id: u64) {
+            self.children
+                .get_mut(id)
+                .expect("invalid child ID passed to request_child_render")
+                .element
+                .state
+                .wants_render = true;
         }
     }
 }

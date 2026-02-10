@@ -342,8 +342,12 @@ impl Program {
                         rendered = true;
                     }
                     egui::Event::PointerButton {
-                        button, pressed, ..
+                        pos,
+                        button,
+                        pressed,
+                        ..
                     } => {
+                        let position = Xy::new(pos.x, pos.y) - self.known_bounds.position();
                         let button = match button {
                             egui::PointerButton::Primary => PointerButton::Primary,
                             egui::PointerButton::Secondary => PointerButton::Secondary,
@@ -352,7 +356,7 @@ impl Program {
                             egui::PointerButton::Extra2 => PointerButton::Forward,
                         };
                         view.handle_pointer_event(if pressed {
-                            PointerEvent::Down { button }
+                            PointerEvent::Down { button, position }
                         } else {
                             PointerEvent::Up { button }
                         });

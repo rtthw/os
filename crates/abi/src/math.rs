@@ -28,6 +28,12 @@ impl Aabb2D<f32> {
     }
 
     #[inline]
+    pub const fn from_size_position(size: Xy<f32>, position: Xy<f32>) -> Self {
+        let max = position.const_add(size);
+        Self { min: position, max }
+    }
+
+    #[inline]
     pub const fn from_size(size: Xy<f32>) -> Self {
         Self {
             min: Xy::ZERO,
