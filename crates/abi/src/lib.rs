@@ -827,6 +827,7 @@ pub struct ScrollBar {
     area_height: f32,
     content_height: f32,
     grab_anchor: Option<f32>,
+    moved: bool,
 }
 
 impl ScrollBar {
@@ -836,6 +837,7 @@ impl ScrollBar {
             area_height: 0.0,
             content_height: 0.0,
             grab_anchor: None,
+            moved: false,
         }
     }
 }
@@ -979,6 +981,7 @@ impl Element for ScrollBar {
                     let progress = progress.clamp(0.0, 1.0);
                     if (progress - self.progress).abs() > 1e-12 {
                         self.progress = progress;
+                        self.moved = true;
                         pass.request_render();
                     }
                 }
@@ -1081,35 +1084,54 @@ impl Element for VerticalScroll {
     }
 
     fn on_pointer_event(&mut self, pass: &mut EventPass<'_>, event: &PointerEvent) {
+        let scroll_range = (self.content_size - pass.state.bounds.size()).max(Xy::ZERO);
+
+        let mut changed = false;
         match event {
             PointerEvent::Scroll { delta } => {
                 let pixel_delta = delta.to_pixels(Xy::new(120.0, 120.0));
                 let delta = Xy::new(0.0, pixel_delta.y);
                 let pos = self.viewport_offset - delta;
-                let scroll_range = (self.content_size - pass.state.bounds.size()).max(Xy::ZERO);
                 let pos = Xy::new(
                     pos.x.clamp(0.0, scroll_range.x),
                     pos.y.clamp(0.0, scroll_range.y),
                 );
 
                 if (pos - self.viewport_offset).length_squared() > 1e-12 {
+                    changed = true;
                     self.viewport_offset = pos;
                     pass.set_handled();
                 }
-
-                let progress = if scroll_range.y > 1e-12 {
-                    (self.viewport_offset.y / scroll_range.y).clamp(0.0, 1.0)
-                } else {
-                    0.0
-                };
-
-                {
-                    let scroll_bar = pass.typed_child_mut(&mut self.scroll_bar);
-                    scroll_bar.progress = progress;
-                    pass.request_child_render(self.scroll_bar.id());
+            }
+            _ => {}
+        }
+        {
+            let scroll_bar = pass.typed_child_mut(&mut self.scroll_bar);
+            if scroll_bar.moved {
+                scroll_bar.moved = false;
+                let y = scroll_bar.progress * scroll_range.y;
+                let pos = Xy::new(self.viewport_offset.x, y.clamp(0.0, scroll_range.y));
+                if (pos - self.viewport_offset).length_squared() > 1e-12 {
+                    changed = true;
+                    self.viewport_offset = pos;
                 }
             }
-            _ => (),
+        }
+
+        if changed {
+            pass.set_handled();
+            pass.request_compose();
+            let progress = if scroll_range.y > 1e-12 {
+                (self.viewport_offset.y / scroll_range.y).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+
+            {
+                let scroll_bar = pass.typed_child_mut(&mut self.scroll_bar);
+                scroll_bar.progress = progress;
+                pass.request_child_render(self.scroll_bar.id());
+            }
         }
     }
 }
