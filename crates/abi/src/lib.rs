@@ -1139,7 +1139,8 @@ impl Element for VerticalScroll {
 pub struct Label {
     pub text: Arc<str>,
     pub font_size: f32,
-    pub visual_font_size: AnimatedF32,
+    pub color: Rgba<u8>,
+    // pub visual_font_size: AnimatedF32,
     pub line_height: LineHeight,
     pub font_style: FontStyle,
     pub alignment: TextAlignment,
@@ -1150,18 +1151,24 @@ impl Label {
     pub fn new(text: impl Into<Arc<str>>) -> Self {
         Self {
             text: text.into(),
+            color: Rgba::WHITE,
             font_size: 16.0,
             line_height: LineHeight::FONT_PREFERRED,
             font_style: FontStyle::Normal,
             alignment: TextAlignment::Start,
             wrap_mode: TextWrapMode::Wrap,
-            visual_font_size: AnimatedF32::new(16.0),
+            // visual_font_size: AnimatedF32::new(16.0),
         }
+    }
+
+    pub fn with_color(mut self, color: Rgba<u8>) -> Self {
+        self.color = color;
+        self
     }
 
     pub fn with_font_size(mut self, font_size: f32) -> Self {
         self.font_size = font_size;
-        self.visual_font_size = AnimatedF32::new(font_size);
+        // self.visual_font_size = AnimatedF32::new(font_size);
         self
     }
 }
@@ -1175,14 +1182,14 @@ impl Element for Label {
         unsafe { __ui_Label__render(self, pass) }
     }
 
-    fn animate(&mut self, pass: &mut AnimatePass<'_>, dt: f64) {
-        let ms = (dt * 1000.0) as f32;
-        let done = self.visual_font_size.advance(ms);
-        if !done {
-            pass.request_animate();
-        }
-        pass.request_render();
-    }
+    // fn animate(&mut self, pass: &mut AnimatePass<'_>, dt: f64) {
+    //     let ms = (dt * 1000.0) as f32;
+    //     let done = self.visual_font_size.advance(ms);
+    //     if !done {
+    //         pass.request_animate();
+    //     }
+    //     pass.request_render();
+    // }
 
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
         unsafe { __ui_Label__layout(self, pass) }
@@ -1214,16 +1221,16 @@ impl Element for Label {
         }
     }
 
-    fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
-        if hovered {
-            self.visual_font_size.move_to(self.font_size * 2.0, 1000.0);
-        } else {
-            self.visual_font_size.move_to(self.font_size, 1000.0);
-        }
-        pass.request_animate();
-        pass.request_render();
-        pass.set_handled();
-    }
+    // fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
+    //     if hovered {
+    //         self.visual_font_size.move_to(self.font_size * 2.0, 1000.0);
+    //     } else {
+    //         self.visual_font_size.move_to(self.font_size, 1000.0);
+    //     }
+    //     pass.request_animate();
+    //     pass.request_render();
+    //     pass.set_handled();
+    // }
 
     fn on_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
         if focused {
@@ -1283,17 +1290,17 @@ impl LineInput {
 
 impl Element for LineInput {
     fn render(&mut self, pass: &mut RenderPass<'_>) {
-        pass.fill_quad(
-            pass.bounds(),
-            Rgba {
-                r: 11,
-                g: 11,
-                b: 11,
-                a: 255,
-            },
-            5.0,
-            Rgba::NONE,
-        );
+        // pass.fill_quad(
+        //     pass.bounds(),
+        //     Rgba {
+        //         r: 11,
+        //         g: 11,
+        //         b: 11,
+        //         a: 255,
+        //     },
+        //     5.0,
+        //     Rgba::NONE,
+        // );
         pass.fill_text(
             &self.text_before_cursor,
             pass.bounds().with_width(self.width_before_cursor),
@@ -1470,6 +1477,7 @@ impl Element for LineInput {
         pass.set_handled();
     }
 }
+
 
 
 #[derive(Clone, Debug)]

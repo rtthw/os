@@ -754,27 +754,11 @@ pub extern "Rust" fn __label_children_ids(_label: &Label) -> Vec<u64> {
 #[allow(unused)]
 #[unsafe(export_name = "__ui_Label__render")]
 pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>) {
-    pass.fill_quad(
-        pass.bounds(),
-        Rgba {
-            r: 11,
-            g: 11,
-            b: 11,
-            a: 255,
-        },
-        0.0,
-        Rgba::NONE,
-    );
     pass.fill_text(
         label.text.clone(),
         pass.bounds(),
-        Rgba {
-            r: 177,
-            g: 177,
-            b: 177,
-            a: 255,
-        },
-        label.visual_font_size.get(),
+        label.color,
+        label.font_size,
     );
 }
 
