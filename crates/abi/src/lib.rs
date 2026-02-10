@@ -1649,16 +1649,17 @@ fn update_pointer_pass(view: &mut View) {
         });
     }
 
-    let next_cursor_icon = if let Some(node_id) = next_hovered_element {
-        let node = view
-            .tree
-            .find_mut(node_id)
-            .expect("failed to find the view's root node");
+    let next_cursor_icon =
+        if let Some(node_id) = view.pointer_capture_target.or(next_hovered_element) {
+            let node = view
+                .tree
+                .find_mut(node_id)
+                .expect("failed to find the view's root node");
 
-        node.element.element.cursor_icon()
-    } else {
-        CursorIcon::Default
-    };
+            node.element.element.cursor_icon()
+        } else {
+            CursorIcon::Default
+        };
 
     view.cursor_icon = next_cursor_icon;
     view.hovered_path = next_hovered_path;
