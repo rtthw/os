@@ -246,7 +246,7 @@ impl View {
 
         tree.roots_mut().insert(id, info);
 
-        Self {
+        let mut this = Self {
             fonts,
             tree,
             root_element_id: id,
@@ -260,7 +260,13 @@ impl View {
             next_focused_element: None,
             focused_path: Vec::new(),
             last_animation: None,
-        }
+        };
+
+        update_pass(&mut this);
+        layout_pass(&mut this);
+        compose_pass(&mut this);
+
+        this
     }
 
     #[inline]

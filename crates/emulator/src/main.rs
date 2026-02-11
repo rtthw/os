@@ -233,12 +233,6 @@ impl Program {
             self.known_bounds.size(),
         );
 
-        abi::update_pass(&mut view);
-
-        view.resize_window(self.known_bounds.size());
-
-        abi::layout_pass(&mut view);
-
         let mut render = Render::default();
         view.render(&mut render);
 
