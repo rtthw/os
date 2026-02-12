@@ -11,35 +11,39 @@ use abi::*;
 manifest! {
     name: "example",
     init: || {
-        ElementBuilder::new(VerticalScroll::new(Column::new()
-            .with_gap(50.0)
-            .with(Label::new("Zero").with_color(Rgba::rgb(0xaa, 0xaa, 0xad)))
-            .with(LineInput::new("Type something...").with_font_size(20.0))
-            .with(Row::new()
-                .with_gap(10.0)
-                .with(Label::new("One")
+        ElementBuilder::new(VerticalScroll::new(abi::column![
+            gap: 50.0;
+            Label::new("Zero").with_color(Rgba::rgb(0xaa, 0xaa, 0xad)),
+            LineInput::new("Type something...").with_font_size(20.0),
+            abi::row![
+                gap: 10.0;
+                Label::new("One")
                     .with_font_size(12.0)
-                    .with_color(Rgba::rgb(0x73, 0x73, 0x89)))
-                .with(Label::new("Two").with_font_size(24.0))
-                .with(Column::new()
-                    .with_gap(10.0)
-                    .with(Label::new("Four"))
-                    .with(Label::new("Five").with_font_size(48.0))
-                    .with(Label::new("Six").with_font_size(36.0)))
-                .with(Label::new("Three").with_font_size(36.0))
-                .with(Label::new("Three").with_font_size(24.0))
-                .with(Label::new("Three").with_font_size(12.0))
-                .with(Column::new()
-                    .with_gap(10.0)
-                    .with(Label::new("Four"))
-                    .with(Label::new("Five").with_font_size(48.0)))
-                    .with(Label::new("Six")))
-            .with(Label::new("Seven"))
-            .with(Label::new("Eight"))
-            .with(Label::new("Nine"))
-            .with(Label::new("Ten"))
-            .with(Label::new("Eleven"))
-            .with(Label::new("Twelve"))))
+                    .with_color(Rgba::rgb(0x73, 0x73, 0x89)),
+                Label::new("Two").with_font_size(24.0),
+                abi::column![
+                    gap: 10.0;
+                    Label::new("Four"),
+                    Label::new("Five").with_font_size(48.0),
+                    Label::new("Six").with_font_size(36.0),
+                ],
+                Label::new("Three").with_font_size(36.0),
+                Label::new("Three").with_font_size(24.0),
+                Label::new("Three").with_font_size(12.0),
+                abi::column![
+                    gap: 10.0;
+                    Label::new("Four"),
+                    Label::new("Five").with_font_size(48.0),
+                ],
+                Label::new("Six"),
+            ],
+            Label::new("Seven"),
+            Label::new("Eight"),
+            Label::new("Nine"),
+            Label::new("Ten"),
+            Label::new("Eleven"),
+            Label::new("Twelve"),
+        ]))
     },
     dependencies: &[],
 }

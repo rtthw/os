@@ -588,6 +588,32 @@ impl<E: Element + 'static> TypedChildElement<E> {
 
 
 
+#[macro_export]
+macro_rules! column {
+    (@_ { $col:expr } gap: $gap:expr; $($rest:tt)*) => {
+        $crate::column!(@_ { $col .with_gap($gap) } $($rest)*)
+    };
+    (@_ { $col:expr } $($rest:expr),* $(,)?) => {
+        $col $(.with($rest))*
+    };
+    ($($items:tt)*) => {
+        $crate::column!(@_ { Column::new() } $($items)*)
+    };
+}
+
+#[macro_export]
+macro_rules! row {
+    (@_ { $row:expr } gap: $gap:expr; $($rest:tt)*) => {
+        $crate::row!(@_ { $row .with_gap($gap) } $($rest)*)
+    };
+    (@_ { $row:expr } $($rest:expr),* $(,)?) => {
+        $row $(.with($rest))*
+    };
+    ($($items:tt)*) => {
+        $crate::row!(@_ { Row::new() } $($items)*)
+    };
+}
+
 pub struct Column {
     children: Vec<ChildElement>,
     background_color: Rgba<u8>,
