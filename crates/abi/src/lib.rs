@@ -1267,10 +1267,10 @@ unsafe extern "Rust" {
 }
 
 pub struct LineInput {
-    pub text_before_cursor: String,
-    pub text_after_cursor: String,
+    pub text: String,
     pub font_size: f32,
 
+    cursor_offset: usize,
     width_before_cursor: f32,
     width_after_cursor: f32,
     show_cursor: bool,
@@ -1278,10 +1278,12 @@ pub struct LineInput {
 
 impl LineInput {
     pub fn new(text: impl ToString) -> Self {
+        let text = text.to_string();
+        let cursor_offset = text.len();
         Self {
-            text_before_cursor: text.to_string(),
-            text_after_cursor: String::new(),
+            text,
             font_size: 16.0,
+            cursor_offset,
             width_before_cursor: 0.0,
             width_after_cursor: 0.0,
             show_cursor: false,
@@ -1296,20 +1298,21 @@ impl LineInput {
 
 impl Element for LineInput {
     fn render(&mut self, pass: &mut RenderPass<'_>) {
-        // pass.fill_quad(
-        //     pass.bounds(),
-        //     Rgba {
-        //         r: 11,
-        //         g: 11,
-        //         b: 11,
-        //         a: 255,
-        //     },
-        //     5.0,
-        //     Rgba::NONE,
-        // );
+        pass.fill_quad(
+            pass.bounds(),
+            Rgba::NONE,
+            1.0,
+            Rgba {
+                r: 111,
+                g: 111,
+                b: 111,
+                a: 255,
+            },
+        );
         pass.fill_text(
-            &self.text_before_cursor,
-            pass.bounds().with_width(self.width_before_cursor),
+            &self.text,
+            pass.bounds()
+                .with_width(self.width_before_cursor + self.width_after_cursor),
             Rgba {
                 r: 177,
                 g: 177,
@@ -1319,18 +1322,12 @@ impl Element for LineInput {
             self.font_size,
         );
 
-        let cursor_position = pass.bounds().position() + Xy::new(self.width_before_cursor, 0.0);
-
         if self.show_cursor {
-            let cursor_width = 2.0;
+            let cursor_size = Xy::new(2.0, pass.bounds().size().y);
+            let cursor_pos = pass.bounds().position() + Xy::new(self.width_before_cursor, 0.0);
 
             pass.fill_quad(
-                Aabb2D::new(
-                    cursor_position.x,
-                    cursor_position.y,
-                    cursor_position.x + cursor_width,
-                    cursor_position.y + pass.bounds().size().y,
-                ),
+                Aabb2D::from_size_position(cursor_size, cursor_pos),
                 Rgba {
                     r: 177,
                     g: 177,
@@ -1339,22 +1336,6 @@ impl Element for LineInput {
                 },
                 0.0,
                 Rgba::NONE,
-            );
-        }
-
-        if !self.text_after_cursor.is_empty() {
-            pass.fill_text(
-                &self.text_after_cursor,
-                pass.bounds()
-                    .with_width(self.width_after_cursor)
-                    .with_position(cursor_position),
-                Rgba {
-                    r: 177,
-                    g: 177,
-                    b: 177,
-                    a: 255,
-                },
-                self.font_size,
             );
         }
     }
@@ -1379,7 +1360,7 @@ impl Element for LineInput {
         };
         let before_cursor_size = fonts.measure_text(
             id,
-            &self.text_before_cursor,
+            &self.text[..self.cursor_offset],
             max_advance,
             self.font_size,
             LineHeight::Relative(1.0),
@@ -1389,7 +1370,7 @@ impl Element for LineInput {
         );
         let after_cursor_size = fonts.measure_text(
             id,
-            &self.text_after_cursor,
+            &self.text[self.cursor_offset..],
             max_advance,
             self.font_size,
             LineHeight::Relative(1.0),
@@ -1403,7 +1384,9 @@ impl Element for LineInput {
 
         match axis {
             Axis::Horizontal => match length_request {
-                LengthRequest::MinContent | LengthRequest::MaxContent => before_cursor_size.x,
+                LengthRequest::MinContent | LengthRequest::MaxContent => {
+                    before_cursor_size.x + after_cursor_size.x
+                }
                 LengthRequest::FitContent(space) => space,
             },
             Axis::Vertical => before_cursor_size.y,
@@ -1416,51 +1399,45 @@ impl Element for LineInput {
 
     fn on_keyboard_event(&mut self, pass: &mut EventPass<'_>, event: &KeyboardEvent) {
         match event {
-            KeyboardEvent::Down { key } => match key {
-                Key::Char(ch) => {
-                    self.text_before_cursor.push(*ch);
-                    pass.request_layout();
-                    pass.request_render();
-                    pass.set_handled();
+            KeyboardEvent::Down { key } => {
+                if self.cursor_offset > self.text.len() {
+                    self.cursor_offset = self.text.len();
                 }
-                Key::Backspace => {
-                    _ = self.text_before_cursor.pop();
-                    pass.request_layout();
-                    pass.request_render();
-                    pass.set_handled();
-                }
-                Key::Delete => {
-                    if !self.text_after_cursor.is_empty() {
-                        _ = self.text_after_cursor.remove(0);
-                        pass.request_layout();
-                        pass.request_render();
-                        pass.set_handled();
+                match key {
+                    Key::Char(ch) => {
+                        self.text.insert(self.cursor_offset, *ch);
+                        self.cursor_offset = self.cursor_offset.saturating_add(1);
                     }
-                }
-                Key::ArrowLeft => {
-                    if let Some(ch) = self.text_before_cursor.pop() {
-                        self.text_after_cursor.insert(0, ch);
-                        pass.request_layout();
-                        pass.request_render();
-                        pass.set_handled();
-                    }
-                }
-                Key::ArrowRight => {
-                    if let Some(ch) = {
-                        if self.text_after_cursor.len() == 0 {
-                            None
-                        } else {
-                            Some(self.text_after_cursor.remove(0))
+                    Key::Backspace => {
+                        if self.cursor_offset == 0 {
+                            return;
                         }
-                    } {
-                        self.text_before_cursor.push(ch);
-                        pass.request_layout();
-                        pass.request_render();
-                        pass.set_handled();
+                        _ = self.text.remove(self.cursor_offset.saturating_sub(1));
+                        self.cursor_offset = self.cursor_offset.saturating_sub(1);
+                    }
+                    Key::Delete => {
+                        if self.cursor_offset >= self.text.len() {
+                            return;
+                        }
+                        _ = self.text.remove(self.cursor_offset);
+                    }
+                    Key::ArrowLeft => {
+                        self.cursor_offset = self.cursor_offset.saturating_sub(1);
+                    }
+                    Key::ArrowRight => {
+                        if self.cursor_offset >= self.text.len() {
+                            return;
+                        }
+                        self.cursor_offset = self.cursor_offset.saturating_add(1);
+                    }
+                    _ => {
+                        return;
                     }
                 }
-                _ => {}
-            },
+                pass.request_layout();
+                pass.request_render();
+                pass.set_handled();
+            }
             KeyboardEvent::Up { key: _ } => {}
         }
     }
