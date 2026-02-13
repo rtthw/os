@@ -1,10 +1,12 @@
 //! # Emulator
 
+#![feature(linkage)]
 #![feature(rustc_private)]
 
 extern crate rustc_driver;
 extern crate rustc_error_codes;
 extern crate rustc_errors;
+extern crate rustc_feature;
 extern crate rustc_hir as hir;
 extern crate rustc_interface as interface;
 extern crate rustc_session as session;
@@ -79,7 +81,12 @@ fn main() -> Result<()> {
             });
 
             Ok(Box::new(App {
-                program: Program::load("example", EXAMPLE_SRC.to_string(), cc.egui_ctx.clone())?,
+                programs: vec![Program::load(
+                    "example",
+                    EXAMPLE_SRC.to_string(),
+                    cc.egui_ctx.clone(),
+                )?],
+                current_program: 0,
                 show_command_line: false,
                 command_line_input: String::new(),
             }))
@@ -93,7 +100,8 @@ fn main() -> Result<()> {
 
 
 struct App {
-    program: Program,
+    programs: Vec<Program>,
+    current_program: usize,
     show_command_line: bool,
     command_line_input: String,
 }
@@ -134,9 +142,14 @@ impl eframe::App for App {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        ui.collapsing("Drivers", |ui| {
-                            if ui.button(egui::RichText::new("Terminal").weak()).clicked() {
-                                println!("TODO");
+                        ui.collapsing("Programs", |ui| {
+                            for (i, program) in self.programs.iter().enumerate() {
+                                if ui
+                                    .button(egui::RichText::new(program.name).weak())
+                                    .clicked()
+                                {
+                                    self.current_program = i;
+                                }
                             }
                         });
                     });
@@ -151,7 +164,9 @@ impl eframe::App for App {
                             ui.heading("Home");
                             ui.separator();
 
-                            self.program.update(ui).expect("failed to update program");
+                            self.programs[self.current_program]
+                                .update(ui)
+                                .expect("failed to update program");
                         });
                 });
         });
