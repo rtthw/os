@@ -80,6 +80,8 @@ fn main() -> Result<()> {
 
             Ok(Box::new(App {
                 program: Program::load("example", EXAMPLE_SRC.to_string(), cc.egui_ctx.clone())?,
+                show_command_line: true,
+                command_line_input: String::new(),
             }))
         }),
     )
@@ -92,6 +94,8 @@ fn main() -> Result<()> {
 
 struct App {
     program: Program,
+    show_command_line: bool,
+    command_line_input: String,
 }
 
 impl eframe::App for App {
@@ -151,6 +155,34 @@ impl eframe::App for App {
                         });
                 });
         });
+        if self.show_command_line {
+            egui::Window::new("Command Line")
+                .title_bar(false)
+                .fade_in(true)
+                .fade_out(true)
+                .collapsible(false)
+                .auto_sized()
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    let response = ui.add(
+                        egui::TextEdit::singleline(&mut self.command_line_input)
+                            .code_editor()
+                            .hint_text("Enter a command..."),
+                    );
+                    if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        let input = std::mem::take(&mut self.command_line_input);
+                        println!("TODO: Run '{input}'");
+                        self.show_command_line = false;
+                    }
+
+                    // When the command line is showing, it should always have focus.
+                    response.request_focus();
+                });
+        } else {
+            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::CTRL, egui::Key::Slash)) {
+                self.show_command_line = true;
+            }
+        }
     }
 }
 
