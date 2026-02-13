@@ -16,7 +16,7 @@ mod compiler;
 use {
     abi::*,
     anyhow::Result,
-    eframe::egui::{self, Rect, pos2},
+    eframe::egui::{self, Rect, pos2, vec2},
     kernel::object::{Object, Ptr},
     std::{
         collections::HashMap,
@@ -80,7 +80,7 @@ fn main() -> Result<()> {
 
             Ok(Box::new(App {
                 program: Program::load("example", EXAMPLE_SRC.to_string(), cc.egui_ctx.clone())?,
-                show_command_line: true,
+                show_command_line: false,
                 command_line_input: String::new(),
             }))
         }),
@@ -283,7 +283,6 @@ impl Program {
             ui.centered_and_justified(|ui| {
                 ui.spinner();
             });
-
             return Ok(());
         }
 
@@ -301,30 +300,53 @@ impl Program {
             ui.set_height(ui.available_height());
 
             if self.editing {
-                ui.horizontal_wrapped(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.editing = false;
-                    }
-                    if ui.button("Confirm").clicked() {
-                        self.editing = false;
-                        self.start_compiling();
-                    }
-                });
+                ui.allocate_ui_with_layout(
+                    vec2(
+                        ui.available_size_before_wrap().x,
+                        ui.spacing().interact_size.y,
+                    ),
+                    egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true),
+                    |ui| {
+                        ui.add_space(IconStyle::SmallNormal.size());
+                        if ui.button("Confirm").clicked() {
+                            self.editing = false;
+                            self.start_compiling();
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.editing = false;
+                        }
+                    },
+                );
+                ui.separator();
                 ui.add(
                     egui::TextEdit::multiline(&mut self.source)
+                        .code_editor()
                         .font(egui::FontId::monospace(20.0))
                         .desired_width(ui.available_width()),
                 );
                 return;
             }
-            if ui.button("Edit").clicked() {
-                self.editing = true;
-            }
+            ui.allocate_ui_with_layout(
+                vec2(
+                    ui.available_size_before_wrap().x,
+                    ui.spacing().interact_size.y,
+                ),
+                egui::Layout::right_to_left(egui::Align::Center).with_main_wrap(true),
+                |ui| {
+                    ui.add_space(IconStyle::SmallNormal.size());
+                    if ui
+                        .button(icon(icons::PENCIL, IconStyle::SmallNormal).weak())
+                        .clicked()
+                    {
+                        self.editing = true;
+                    }
+                },
+            );
+            ui.separator();
             if !compile_success {
                 ui.centered_and_justified(|ui| {
                     ui.heading("Compilation failed, see logs");
                 });
-
                 return;
             }
 
