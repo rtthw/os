@@ -212,8 +212,37 @@ impl Rgba<u8> {
     pub const BLACK: Self = Self::rgb(0x00, 0x00, 0x00);
 
     #[inline]
+    pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self { r, g, b, a }
+    }
+
+    #[inline]
     pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b, a: 0xff }
+    }
+
+    #[inline]
+    pub const fn with_red(mut self, r: u8) -> Self {
+        self.r = r;
+        self
+    }
+
+    #[inline]
+    pub const fn with_green(mut self, g: u8) -> Self {
+        self.g = g;
+        self
+    }
+
+    #[inline]
+    pub const fn with_blue(mut self, b: u8) -> Self {
+        self.b = b;
+        self
+    }
+
+    #[inline]
+    pub const fn with_alpha(mut self, a: u8) -> Self {
+        self.a = a;
+        self
     }
 }
 

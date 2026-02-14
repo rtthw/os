@@ -119,7 +119,7 @@ impl Element for Flex {
                 bounds.max.x,
                 bounds.min.y + (baseline + 1.0),
             ),
-            Rgba::rgb(0x73, 0x73, 0x89),
+            Rgba::new(0x53, 0x53, 0x61, 0x77),
             0.0,
             Rgba::NONE,
         );
