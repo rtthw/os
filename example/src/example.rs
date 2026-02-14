@@ -30,9 +30,9 @@ manifest! {
                         .with(Label::new("C"), 0.0), 0.0)
                     .with(Flex::row()
                         .with_main_align(AxisAlignment::SpaceBetween)
-                        .with(Label::new("A"), 0.0)
-                        .with(Label::new("B"), 0.0)
-                        .with(Label::new("C"), 0.0), 0.0)
+                        .with(button("A"), 0.0)
+                        .with(button("B"), 0.0)
+                        .with(button("C"), 0.0), 0.0)
                     .with(Flex::row()
                         .with_main_align(AxisAlignment::SpaceEvenly)
                         .with(Label::new("A"), 0.0)
@@ -47,4 +47,35 @@ manifest! {
         ]))
     },
     dependencies: &[],
+}
+
+
+
+fn button(text: &str) -> OnHover<OnClick<Label>> {
+    OnHover::new(
+        OnClick::new(
+            Label::new(text)
+                .with_font_size(16.0)
+                .with_color(Rgba::rgb(0xaa, 0xaa, 0xad)),
+            |label, pass, mouse_down| {
+                if mouse_down {
+                    label.font_size = 24.0;
+                } else {
+                    label.font_size = 16.0;
+                }
+                pass.request_layout();
+                pass.request_render();
+                pass.set_handled();
+            },
+        ),
+        |label, pass, hovered| {
+            if hovered {
+                label.element.color = Rgba::rgb(0x73, 0x73, 0x89);
+            } else {
+                label.element.color = Rgba::rgb(0xaa, 0xaa, 0xad);
+            }
+            pass.request_render();
+            pass.set_handled();
+        },
+    )
 }
