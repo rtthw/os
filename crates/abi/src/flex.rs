@@ -105,6 +105,26 @@ impl Element for Flex {
         }
     }
 
+    #[cfg(debug_assertions)]
+    fn render(&mut self, pass: &mut crate::RenderPass<'_>) {
+        use crate::{Aabb2D, Rgba};
+
+        let bounds = pass.bounds();
+        let baseline = bounds.size().y - pass.baseline_offset();
+
+        pass.fill_quad(
+            Aabb2D::new(
+                bounds.min.x,
+                bounds.min.y + (baseline - 1.0),
+                bounds.max.x,
+                bounds.min.y + (baseline + 1.0),
+            ),
+            Rgba::rgb(0x73, 0x73, 0x89),
+            0.0,
+            Rgba::NONE,
+        );
+    }
+
     fn layout(&mut self, pass: &mut LayoutPass<'_>) {
         let gap_length = 3.0; // self.gap;
         let gap_count = self.elements.len().saturating_sub(1);

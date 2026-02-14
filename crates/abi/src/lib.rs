@@ -449,6 +449,7 @@ pub struct ElementState {
     pub id: u64,
 
     pub bounds: Aabb2D<f32>,
+    pub baseline_offset: f32,
     pub layout_bounds: Aabb2D<f32>,
     pub layout_baseline_offset: f32,
 
@@ -483,6 +484,7 @@ impl ElementState {
         Self {
             id,
             bounds: Aabb2D::ZERO,
+            baseline_offset: 0.0,
             layout_bounds: Aabb2D::ZERO,
             layout_baseline_offset: 0.0,
             scroll_translation: Xy::ZERO,
@@ -2506,6 +2508,7 @@ fn move_element(state: &mut ElementState, position: Xy<f32>) {
 
     let position = position.round();
     let end_point = end_point.round();
+    let baseline_offset = (end_point.y - state.layout_baseline_offset).round();
 
     if position != state.layout_bounds.min {
         state.transformed = true;
@@ -2513,6 +2516,7 @@ fn move_element(state: &mut ElementState, position: Xy<f32>) {
 
     state.layout_bounds.min = position;
     state.layout_bounds.max = end_point;
+    state.baseline_offset = baseline_offset;
 }
 
 pub struct MeasureContext<'pass> {
@@ -2678,7 +2682,7 @@ multi_impl! {
         }
 
         pub fn baseline_offset(&self) -> f32 {
-            self.state.layout_baseline_offset
+            self.state.layout_bounds.max.y - self.state.baseline_offset
         }
 
         pub fn set_baseline_offset(&mut self, offset: f32) {
