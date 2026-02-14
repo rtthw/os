@@ -2,6 +2,7 @@
 
 pub mod cursor_icon;
 pub mod elf;
+pub mod flex;
 pub mod layout;
 pub mod math;
 pub mod path;
@@ -13,6 +14,7 @@ pub mod type_map;
 
 pub use {
     cursor_icon::CursorIcon,
+    flex::{AxisAlignment, CrossAlignment, Flex, FlexParams},
     math::{Aabb2D, Axis, Transform2D, Xy},
     path::Path,
     stable_string::StableString,
@@ -448,6 +450,7 @@ pub struct ElementState {
 
     pub bounds: Aabb2D<f32>,
     pub layout_bounds: Aabb2D<f32>,
+    pub layout_baseline_offset: f32,
 
     pub scroll_translation: Xy<f32>,
     pub local_transform: Transform2D,
@@ -481,6 +484,7 @@ impl ElementState {
             id,
             bounds: Aabb2D::ZERO,
             layout_bounds: Aabb2D::ZERO,
+            layout_baseline_offset: 0.0,
             scroll_translation: Xy::ZERO,
             local_transform: Transform2D::IDENTITY,
             global_transform: Transform2D::IDENTITY,
@@ -2527,34 +2531,6 @@ impl MeasureContext<'_> {
     pub fn fonts_mut(&mut self) -> &mut dyn Fonts {
         self.fonts
     }
-
-    // TODO: Don't just default to the fallback here. Get something from the child
-    //       state?
-    pub fn resolve_length(
-        &mut self,
-        child_id: u64,
-        axis: Axis,
-        fallback_length: Length,
-        cross_length: Option<f32>,
-    ) -> f32 {
-        let child = self
-            .children
-            .get_mut(child_id)
-            .expect("invalid child ID provided to MeasureContext::resolve_length");
-        let element = &mut *child.element.element;
-        let state = &mut child.element.state;
-        let children = child.leaves;
-
-        let mut context = MeasureContext {
-            fonts: self.fonts,
-            state,
-            children,
-        };
-
-        fallback_length.exact().unwrap_or_else(|| {
-            resolve_axis_measurement(&mut context, element, axis, fallback_length, cross_length)
-        })
-    }
 }
 
 // TODO: Don't just default to the fallback here. Get something from the child
@@ -2643,6 +2619,40 @@ macro_rules! multi_impl {
     };
 }
 
+multi_impl! {
+    LayoutPass<'_>,
+    MeasureContext<'_>,
+    {
+        // TODO: Don't just default to the fallback here. Get something from the child
+        //       state?
+        pub fn resolve_length(
+            &mut self,
+            child_id: u64,
+            axis: Axis,
+            fallback_length: Length,
+            cross_length: Option<f32>,
+        ) -> f32 {
+            let child = self
+                .children
+                .get_mut(child_id)
+                .expect("invalid child ID provided to MeasureContext::resolve_length");
+            let element = &mut *child.element.element;
+            let state = &mut child.element.state;
+            let children = child.leaves;
+
+            let mut context = MeasureContext {
+                fonts: self.fonts,
+                state,
+                children,
+            };
+
+            fallback_length.exact().unwrap_or_else(|| {
+                resolve_axis_measurement(&mut context, element, axis, fallback_length, cross_length)
+            })
+        }
+    }
+}
+
 // Types with a `state: &mut ElementState` field.
 multi_impl! {
     AnimatePass<'_>,
@@ -2665,6 +2675,18 @@ multi_impl! {
 
         pub fn local_position(&self, point: Xy<f32>) -> Xy<f32> {
             self.state.global_transform.inverse() * point
+        }
+
+        pub fn baseline_offset(&self) -> f32 {
+            self.state.layout_baseline_offset
+        }
+
+        pub fn set_baseline_offset(&mut self, offset: f32) {
+            self.state.layout_baseline_offset = offset;
+        }
+
+        pub fn clear_baseline_offset(&mut self) {
+            self.state.layout_baseline_offset = 0.0;
         }
 
         pub fn request_render(&mut self) {
@@ -2698,6 +2720,10 @@ multi_impl! {
     {
         pub fn child(&self, id: u64) -> Option<tree::NodeRef<'_, ElementInfo>> {
             self.children.get(id)
+        }
+
+        pub fn expect_child(&self, id: u64) -> tree::NodeRef<'_, ElementInfo> {
+            self.children.get(id).expect("invalid ID passed to `expect_child`")
         }
 
         pub fn typed_child_mut<T: Element>(
