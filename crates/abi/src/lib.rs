@@ -621,6 +621,8 @@ impl<E: Element + 'static> TypedChildElement<E> {
     }
 }
 
+
+
 pub trait ExtensionElement {
     fn element(&self) -> &dyn Element;
     fn element_mut(&mut self) -> &mut dyn Element;
@@ -831,6 +833,34 @@ impl<T: ExtensionElement + 'static> Element for T {
     }
 }
 
+
+
+macro_rules! impl_deref_for_simple_extensions {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl<E: Element> Deref for $ty {
+                type Target = E;
+
+                #[inline]
+                fn deref(&self) -> &Self::Target {
+                    &self.element
+                }
+            }
+
+            impl<E: Element> DerefMut for $ty {
+                #[inline]
+                fn deref_mut(&mut self) -> &mut Self::Target {
+                    &mut self.element
+                }
+            }
+        )*
+    };
+}
+
+impl_deref_for_simple_extensions![OnClick<E>, OnHover<E>];
+
+
+
 pub struct OnHover<E: Element> {
     pub element: E,
     pub callback: fn(&mut E, &mut EventPass<'_>, bool),
@@ -900,6 +930,8 @@ impl<E: Element> ExtensionElement for OnClick<E> {
         }
     }
 }
+
+
 
 #[macro_export]
 macro_rules! column {

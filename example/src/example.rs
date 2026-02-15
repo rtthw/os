@@ -70,9 +70,9 @@ fn button(text: &str) -> OnHover<OnClick<Label>> {
         ),
         |label, pass, hovered| {
             if hovered {
-                label.element.color = Rgba::rgb(0x73, 0x73, 0x89);
+                label.color = Rgba::rgb(0x73, 0x73, 0x89);
             } else {
-                label.element.color = Rgba::rgb(0xaa, 0xaa, 0xad);
+                label.color = Rgba::rgb(0xaa, 0xaa, 0xad);
             }
             pass.request_render();
             pass.set_handled();
