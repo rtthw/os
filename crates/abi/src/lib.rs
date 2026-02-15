@@ -621,8 +621,215 @@ impl<E: Element + 'static> TypedChildElement<E> {
     }
 }
 
-// TODO: Create some sort of `ExtensionElement` trait that can be used to reduce
-// boilerplate.
+pub trait ExtensionElement {
+    fn element(&self) -> &dyn Element;
+    fn element_mut(&mut self) -> &mut dyn Element;
+
+    #[inline(always)]
+    fn children_ids(&self) -> Vec<u64> {
+        self.element().children_ids()
+    }
+
+    #[inline(always)]
+    fn update_children(&mut self, pass: &mut UpdatePass<'_>) {
+        self.element_mut().update_children(pass)
+    }
+
+    #[inline(always)]
+    fn accepts_pointer_events(&self) -> bool {
+        self.element().accepts_pointer_events()
+    }
+
+    #[inline(always)]
+    fn accepts_keyboard_events(&self) -> bool {
+        self.element().accepts_keyboard_events()
+    }
+
+    #[inline(always)]
+    fn accepts_focus_events(&self) -> bool {
+        self.element().accepts_focus_events()
+    }
+
+    #[inline(always)]
+    fn render(&mut self, pass: &mut RenderPass<'_>) {
+        self.element_mut().render(pass)
+    }
+
+    #[inline(always)]
+    fn render_overlay(&mut self, pass: &mut RenderPass<'_>) {
+        self.element_mut().render_overlay(pass)
+    }
+
+    #[inline(always)]
+    fn animate(&mut self, pass: &mut AnimatePass<'_>, dt: f64) {
+        self.element_mut().animate(pass, dt)
+    }
+
+    #[inline(always)]
+    fn layout(&mut self, pass: &mut LayoutPass<'_>) {
+        self.element_mut().layout(pass)
+    }
+
+    #[inline(always)]
+    fn measure(
+        &mut self,
+        context: &mut MeasureContext<'_>,
+        axis: Axis,
+        length_request: LengthRequest,
+        cross_length: Option<f32>,
+    ) -> f32 {
+        self.element_mut()
+            .measure(context, axis, length_request, cross_length)
+    }
+
+    #[inline(always)]
+    fn compose(&mut self, pass: &mut ComposePass<'_>) {
+        self.element_mut().compose(pass)
+    }
+
+    #[inline(always)]
+    fn cursor_icon(&self) -> CursorIcon {
+        self.element().cursor_icon()
+    }
+
+    #[inline(always)]
+    fn on_build(&mut self, pass: &mut UpdatePass<'_>) {
+        self.element_mut().on_build(pass);
+    }
+
+    #[inline(always)]
+    fn on_keyboard_event(&mut self, pass: &mut EventPass<'_>, event: &KeyboardEvent) {
+        self.element_mut().on_keyboard_event(pass, event)
+    }
+
+    #[inline(always)]
+    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>, event: &PointerEvent) {
+        self.element_mut().on_pointer_event(pass, event)
+    }
+
+    #[inline(always)]
+    fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
+        self.element_mut().on_hover(pass, hovered)
+    }
+
+    #[inline(always)]
+    fn on_child_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
+        self.element_mut().on_child_hover(pass, hovered)
+    }
+
+    #[inline(always)]
+    fn on_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
+        self.element_mut().on_focus(pass, focused)
+    }
+
+    #[inline(always)]
+    fn on_child_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
+        self.element_mut().on_child_focus(pass, focused)
+    }
+}
+
+impl<T: ExtensionElement + 'static> Element for T {
+    #[inline(always)]
+    fn children_ids(&self) -> Vec<u64> {
+        self.children_ids()
+    }
+
+    #[inline(always)]
+    fn update_children(&mut self, pass: &mut UpdatePass<'_>) {
+        self.update_children(pass)
+    }
+
+    #[inline(always)]
+    fn accepts_pointer_events(&self) -> bool {
+        self.accepts_pointer_events()
+    }
+
+    #[inline(always)]
+    fn accepts_keyboard_events(&self) -> bool {
+        self.accepts_keyboard_events()
+    }
+
+    #[inline(always)]
+    fn accepts_focus_events(&self) -> bool {
+        self.accepts_focus_events()
+    }
+
+    #[inline(always)]
+    fn render(&mut self, pass: &mut RenderPass<'_>) {
+        self.render(pass)
+    }
+
+    #[inline(always)]
+    fn render_overlay(&mut self, pass: &mut RenderPass<'_>) {
+        self.render_overlay(pass)
+    }
+
+    #[inline(always)]
+    fn animate(&mut self, pass: &mut AnimatePass<'_>, dt: f64) {
+        self.animate(pass, dt)
+    }
+
+    #[inline(always)]
+    fn layout(&mut self, pass: &mut LayoutPass<'_>) {
+        self.layout(pass)
+    }
+
+    #[inline(always)]
+    fn measure(
+        &mut self,
+        context: &mut MeasureContext<'_>,
+        axis: Axis,
+        length_request: LengthRequest,
+        cross_length: Option<f32>,
+    ) -> f32 {
+        self.measure(context, axis, length_request, cross_length)
+    }
+
+    #[inline(always)]
+    fn compose(&mut self, pass: &mut ComposePass<'_>) {
+        self.compose(pass)
+    }
+
+    #[inline(always)]
+    fn cursor_icon(&self) -> CursorIcon {
+        self.cursor_icon()
+    }
+
+    #[inline(always)]
+    fn on_build(&mut self, pass: &mut UpdatePass<'_>) {
+        self.on_build(pass);
+    }
+
+    #[inline(always)]
+    fn on_keyboard_event(&mut self, pass: &mut EventPass<'_>, event: &KeyboardEvent) {
+        self.on_keyboard_event(pass, event)
+    }
+
+    #[inline(always)]
+    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>, event: &PointerEvent) {
+        self.on_pointer_event(pass, event)
+    }
+
+    #[inline(always)]
+    fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
+        self.on_hover(pass, hovered)
+    }
+
+    #[inline(always)]
+    fn on_child_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
+        self.on_child_hover(pass, hovered)
+    }
+
+    #[inline(always)]
+    fn on_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
+        self.on_focus(pass, focused)
+    }
+
+    #[inline(always)]
+    fn on_child_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
+        self.on_child_focus(pass, focused)
+    }
+}
 
 pub struct OnHover<E: Element> {
     pub element: E,
@@ -636,107 +843,20 @@ impl<E: Element> OnHover<E> {
     }
 }
 
-impl<E: Element> Element for OnHover<E> {
+impl<E: Element> ExtensionElement for OnHover<E> {
     #[inline(always)]
-    fn children_ids(&self) -> Vec<u64> {
-        self.element.children_ids()
+    fn element(&self) -> &dyn Element {
+        &self.element
     }
 
     #[inline(always)]
-    fn update_children(&mut self, pass: &mut UpdatePass<'_>) {
-        self.element.update_children(pass)
-    }
-
-    #[inline(always)]
-    fn accepts_pointer_events(&self) -> bool {
-        self.element.accepts_pointer_events()
-    }
-
-    #[inline(always)]
-    fn accepts_keyboard_events(&self) -> bool {
-        self.element.accepts_keyboard_events()
-    }
-
-    #[inline(always)]
-    fn accepts_focus_events(&self) -> bool {
-        self.element.accepts_focus_events()
-    }
-
-    #[inline(always)]
-    fn render(&mut self, pass: &mut RenderPass<'_>) {
-        self.element.render(pass)
-    }
-
-    #[inline(always)]
-    fn render_overlay(&mut self, pass: &mut RenderPass<'_>) {
-        self.element.render_overlay(pass)
-    }
-
-    #[inline(always)]
-    fn animate(&mut self, pass: &mut AnimatePass<'_>, dt: f64) {
-        self.element.animate(pass, dt)
-    }
-
-    #[inline(always)]
-    fn layout(&mut self, pass: &mut LayoutPass<'_>) {
-        self.element.layout(pass)
-    }
-
-    #[inline(always)]
-    fn measure(
-        &mut self,
-        context: &mut MeasureContext<'_>,
-        axis: Axis,
-        length_request: LengthRequest,
-        cross_length: Option<f32>,
-    ) -> f32 {
-        self.element
-            .measure(context, axis, length_request, cross_length)
-    }
-
-    #[inline(always)]
-    fn compose(&mut self, pass: &mut ComposePass<'_>) {
-        self.element.compose(pass)
-    }
-
-    #[inline(always)]
-    fn cursor_icon(&self) -> CursorIcon {
-        self.element.cursor_icon()
-    }
-
-    #[inline(always)]
-    fn on_build(&mut self, pass: &mut UpdatePass<'_>) {
-        self.element.on_build(pass);
-    }
-
-    #[inline(always)]
-    fn on_keyboard_event(&mut self, pass: &mut EventPass<'_>, event: &KeyboardEvent) {
-        self.element.on_keyboard_event(pass, event)
-    }
-
-    #[inline(always)]
-    fn on_pointer_event(&mut self, pass: &mut EventPass<'_>, event: &PointerEvent) {
-        self.element.on_pointer_event(pass, event)
+    fn element_mut(&mut self) -> &mut dyn Element {
+        &mut self.element
     }
 
     #[inline(always)]
     fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
         (self.callback)(&mut self.element, pass, hovered)
-    }
-
-    #[inline(always)]
-    fn on_child_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
-        self.element.on_child_hover(pass, hovered)
-    }
-
-    #[inline(always)]
-    fn on_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
-        self.element.on_focus(pass, focused)
-    }
-
-    #[inline(always)]
-    fn on_child_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
-        self.element.on_child_focus(pass, focused)
     }
 }
 
@@ -752,82 +872,15 @@ impl<E: Element> OnClick<E> {
     }
 }
 
-impl<E: Element> Element for OnClick<E> {
+impl<E: Element> ExtensionElement for OnClick<E> {
     #[inline(always)]
-    fn children_ids(&self) -> Vec<u64> {
-        self.element.children_ids()
+    fn element(&self) -> &dyn Element {
+        &self.element
     }
 
     #[inline(always)]
-    fn update_children(&mut self, pass: &mut UpdatePass<'_>) {
-        self.element.update_children(pass)
-    }
-
-    #[inline(always)]
-    fn accepts_pointer_events(&self) -> bool {
-        self.element.accepts_pointer_events()
-    }
-
-    #[inline(always)]
-    fn accepts_keyboard_events(&self) -> bool {
-        self.element.accepts_keyboard_events()
-    }
-
-    #[inline(always)]
-    fn accepts_focus_events(&self) -> bool {
-        self.element.accepts_focus_events()
-    }
-
-    #[inline(always)]
-    fn render(&mut self, pass: &mut RenderPass<'_>) {
-        self.element.render(pass)
-    }
-
-    #[inline(always)]
-    fn render_overlay(&mut self, pass: &mut RenderPass<'_>) {
-        self.element.render_overlay(pass)
-    }
-
-    #[inline(always)]
-    fn animate(&mut self, pass: &mut AnimatePass<'_>, dt: f64) {
-        self.element.animate(pass, dt)
-    }
-
-    #[inline(always)]
-    fn layout(&mut self, pass: &mut LayoutPass<'_>) {
-        self.element.layout(pass)
-    }
-
-    #[inline(always)]
-    fn measure(
-        &mut self,
-        context: &mut MeasureContext<'_>,
-        axis: Axis,
-        length_request: LengthRequest,
-        cross_length: Option<f32>,
-    ) -> f32 {
-        self.element
-            .measure(context, axis, length_request, cross_length)
-    }
-
-    #[inline(always)]
-    fn compose(&mut self, pass: &mut ComposePass<'_>) {
-        self.element.compose(pass)
-    }
-
-    #[inline(always)]
-    fn cursor_icon(&self) -> CursorIcon {
-        self.element.cursor_icon()
-    }
-
-    #[inline(always)]
-    fn on_build(&mut self, pass: &mut UpdatePass<'_>) {
-        self.element.on_build(pass);
-    }
-
-    #[inline(always)]
-    fn on_keyboard_event(&mut self, pass: &mut EventPass<'_>, event: &KeyboardEvent) {
-        self.element.on_keyboard_event(pass, event)
+    fn element_mut(&mut self) -> &mut dyn Element {
+        &mut self.element
     }
 
     #[inline(always)]
@@ -845,26 +898,6 @@ impl<E: Element> Element for OnClick<E> {
             } => (self.callback)(&mut self.element, pass, false),
             other => self.element.on_pointer_event(pass, other),
         }
-    }
-
-    #[inline(always)]
-    fn on_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
-        self.element.on_hover(pass, hovered)
-    }
-
-    #[inline(always)]
-    fn on_child_hover(&mut self, pass: &mut EventPass<'_>, hovered: bool) {
-        self.element.on_child_hover(pass, hovered)
-    }
-
-    #[inline(always)]
-    fn on_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
-        self.element.on_focus(pass, focused)
-    }
-
-    #[inline(always)]
-    fn on_child_focus(&mut self, pass: &mut EventPass<'_>, focused: bool) {
-        self.element.on_child_focus(pass, focused)
     }
 }
 
