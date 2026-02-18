@@ -2056,12 +2056,6 @@ fn aabb2d_to_rect(bounds: abi::Aabb2D<f32>) -> Rect {
 
 
 #[allow(unused)]
-#[unsafe(export_name = "__ui_Label__children_ids")]
-pub extern "Rust" fn __label_children_ids(_label: &Label) -> Vec<u64> {
-    Vec::new()
-}
-
-#[allow(unused)]
 #[unsafe(export_name = "__ui_Label__render")]
 pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>) {
     pass.fill_quad(
@@ -2087,10 +2081,6 @@ pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>
         label.font_size,
     );
 }
-
-#[allow(unused)]
-#[unsafe(export_name = "__ui_Label__layout")]
-pub extern "Rust" fn __label_layout(_label: &mut Label, _pass: &mut LayoutPass<'_>) {}
 
 #[allow(unused)]
 #[unsafe(export_name = "__ui_Label__measure")]
@@ -2130,18 +2120,4 @@ pub extern "Rust" fn __label_measure(
     );
 
     used_size.value_for_axis(axis)
-}
-
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn label_calls() {
-        let label = abi::Label::new("");
-        // This should also print "shell::ui::Label::children_ids" twice.
-        assert_eq!(label.children_ids(), __label_children_ids(&label),);
-    }
 }

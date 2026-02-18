@@ -809,12 +809,6 @@ impl IconStyle {
 
 
 #[allow(unused)]
-#[unsafe(export_name = "__ui_Label__children_ids")]
-pub extern "Rust" fn __label_children_ids(_label: &Label) -> Vec<u64> {
-    Vec::new()
-}
-
-#[allow(unused)]
 #[unsafe(export_name = "__ui_Label__render")]
 pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>) {
     pass.fill_text(
@@ -824,10 +818,6 @@ pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>
         label.font_size,
     );
 }
-
-#[allow(unused)]
-#[unsafe(export_name = "__ui_Label__layout")]
-pub extern "Rust" fn __label_layout(_label: &mut Label, _pass: &mut LayoutPass<'_>) {}
 
 #[allow(unused)]
 #[unsafe(export_name = "__ui_Label__measure")]

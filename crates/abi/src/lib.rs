@@ -411,7 +411,8 @@ pub trait Element: Any {
     #[allow(unused)]
     fn animate(&mut self, pass: &mut AnimatePass<'_>, dt: f64) {}
 
-    fn layout(&mut self, pass: &mut LayoutPass<'_>);
+    #[allow(unused)]
+    fn layout(&mut self, pass: &mut LayoutPass<'_>) {}
 
     fn measure(
         &mut self,
@@ -1257,8 +1258,6 @@ impl Element for ScrollBar {
         );
     }
 
-    fn layout(&mut self, _pass: &mut LayoutPass<'_>) {}
-
     fn measure(
         &mut self,
         _context: &mut MeasureContext<'_>,
@@ -1551,10 +1550,6 @@ impl Label {
 }
 
 impl Element for Label {
-    fn children_ids(&self) -> Vec<u64> {
-        unsafe { __ui_Label__children_ids(self) }
-    }
-
     fn render(&mut self, pass: &mut RenderPass<'_>) {
         unsafe { __ui_Label__render(self, pass) }
     }
@@ -1567,10 +1562,6 @@ impl Element for Label {
     //     }
     //     pass.request_render();
     // }
-
-    fn layout(&mut self, pass: &mut LayoutPass<'_>) {
-        unsafe { __ui_Label__layout(self, pass) }
-    }
 
     fn measure(
         &mut self,
@@ -1622,11 +1613,7 @@ impl Element for Label {
 }
 
 unsafe extern "Rust" {
-    fn __ui_Label__children_ids(label: &Label) -> Vec<u64>;
-
     fn __ui_Label__render(label: &mut Label, pass: &mut RenderPass<'_>);
-
-    fn __ui_Label__layout(label: &mut Label, pass: &mut LayoutPass<'_>);
 
     fn __ui_Label__measure(
         label: &mut Label,
@@ -1710,8 +1697,6 @@ impl Element for LineInput {
             );
         }
     }
-
-    fn layout(&mut self, _pass: &mut LayoutPass<'_>) {}
 
     fn measure(
         &mut self,
