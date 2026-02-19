@@ -4,14 +4,14 @@ use std::ops::{Add, Mul, Sub};
 
 
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[repr(C)]
-pub struct Aabb2D<V> {
-    pub min: Xy<V>,
-    pub max: Xy<V>,
+pub struct Aabb2D {
+    pub min: Xy<f32>,
+    pub max: Xy<f32>,
 }
 
-impl Aabb2D<f32> {
+impl Aabb2D {
     pub const ZERO: Self = Self::new(0.0, 0.0, 0.0, 0.0);
 
     #[inline]
@@ -334,7 +334,7 @@ impl Transform2D {
         ])
     }
 
-    pub fn transform_area(self, area: Aabb2D<f32>) -> Aabb2D<f32> {
+    pub fn transform_area(self, area: Aabb2D) -> Aabb2D {
         let p00 = self * Xy::new(area.min.x, area.min.y);
         let p01 = self * Xy::new(area.min.x, area.max.y);
         let p10 = self * Xy::new(area.max.x, area.min.y);

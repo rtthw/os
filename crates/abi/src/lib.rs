@@ -110,7 +110,7 @@ macro_rules! declare {
 #[repr(C)]
 pub struct DriverInput {
     pub id: u64,
-    pub known_bounds: Aabb2D<f32>,
+    pub known_bounds: Aabb2D,
     pub events: [Option<DriverInputEvent>; DRIVER_INPUT_EVENT_CAPACITY],
     pub render: Render,
 }
@@ -118,7 +118,7 @@ pub struct DriverInput {
 pub const DRIVER_INPUT_EVENT_CAPACITY: usize = 16;
 
 impl DriverInput {
-    pub fn new(initial_bounds: Aabb2D<f32>) -> Self {
+    pub fn new(initial_bounds: Aabb2D) -> Self {
         Self {
             id: 0,
             known_bounds: initial_bounds,
@@ -149,7 +149,7 @@ impl DriverInput {
 pub enum DriverInputEvent {
     Pointer(PointerEvent),
     Other(u32),
-    WindowResize(Aabb2D<f32>),
+    WindowResize(Aabb2D),
 }
 
 
@@ -458,9 +458,9 @@ impl DerefMut for ElementInfo {
 pub struct ElementState {
     pub id: u64,
 
-    pub bounds: Aabb2D<f32>,
+    pub bounds: Aabb2D,
     pub baseline_offset: f32,
-    pub layout_bounds: Aabb2D<f32>,
+    pub layout_bounds: Aabb2D,
     pub layout_baseline_offset: f32,
 
     pub scroll_translation: Xy<f32>,
@@ -2383,7 +2383,7 @@ pub struct Render {
 
 #[derive(Clone, Debug)]
 pub struct RenderQuad {
-    pub bounds: Aabb2D<f32>,
+    pub bounds: Aabb2D,
     pub color: Rgba,
     pub border_width: f32,
     pub border_color: Rgba,
@@ -2392,7 +2392,7 @@ pub struct RenderQuad {
 #[derive(Clone, Debug)]
 pub struct RenderText {
     pub content: Arc<str>,
-    pub bounds: Aabb2D<f32>,
+    pub bounds: Aabb2D,
     pub color: Rgba,
     pub font_size: f32,
 }
@@ -2425,7 +2425,7 @@ impl CachedRender {
 pub enum RenderCommand {
     DrawChar(char),
     DrawQuad,
-    SetBounds(Aabb2D<f32>),
+    SetBounds(Aabb2D),
     SetForegroundColor(Rgba),
     SetBackgroundColor(Rgba),
     SetBorderColor(Rgba),
@@ -2434,7 +2434,7 @@ pub enum RenderCommand {
 }
 
 struct RenderPassVariables {
-    bounds: Aabb2D<f32>,
+    bounds: Aabb2D,
     font_size: f32,
     foreground_color: Rgba,
     background_color: Rgba,
@@ -2476,7 +2476,7 @@ impl<'view> RenderPass<'view> {
 
     pub fn fill_quad(
         &mut self,
-        bounds: Aabb2D<f32>,
+        bounds: Aabb2D,
         color: Rgba,
         border_width: f32,
         border_color: Rgba,
@@ -2510,7 +2510,7 @@ impl<'view> RenderPass<'view> {
     pub fn fill_text(
         &mut self,
         content: impl AsRef<str>,
-        bounds: Aabb2D<f32>,
+        bounds: Aabb2D,
         color: Rgba,
         font_size: f32,
     ) {
@@ -2972,7 +2972,7 @@ multi_impl! {
         }
 
         #[inline]
-        pub fn bounds(&self) -> Aabb2D<f32> {
+        pub fn bounds(&self) -> Aabb2D {
             self.state.bounds
         }
 

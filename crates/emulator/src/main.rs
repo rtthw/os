@@ -211,7 +211,7 @@ struct Program {
     compiling: Arc<AtomicBool>,
     latest_compile_succeeded: Arc<AtomicBool>,
     source: String,
-    known_bounds: Aabb2D<f32>,
+    known_bounds: Aabb2D,
     egui_context: egui::Context,
 }
 
@@ -627,14 +627,14 @@ fn rgba_to_color32(color: abi::Rgba) -> egui::Color32 {
     egui::Color32::from_rgba_premultiplied(color.r, color.g, color.b, color.a)
 }
 
-fn rect_to_aabb2d(bounds: Rect) -> abi::Aabb2D<f32> {
+fn rect_to_aabb2d(bounds: Rect) -> abi::Aabb2D {
     abi::Aabb2D {
         min: Xy::new(bounds.min.x, bounds.min.y),
         max: Xy::new(bounds.max.x, bounds.max.y),
     }
 }
 
-fn aabb2d_to_rect(bounds: abi::Aabb2D<f32>) -> Rect {
+fn aabb2d_to_rect(bounds: abi::Aabb2D) -> Rect {
     Rect::from_min_max(
         pos2(bounds.min.x, bounds.min.y),
         pos2(bounds.max.x, bounds.max.y),
