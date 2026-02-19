@@ -365,20 +365,6 @@ pub trait Fonts {
     ) -> Xy<f32>;
 }
 
-pub struct ViewSettings {
-    pub double_click_timeout: f64,
-}
-
-pub enum ViewEvent {
-    MouseMove { delta: Xy<f32> },
-    MouseEnter { node: u64 },
-    MouseLeave { node: u64 },
-    Click { node: u64 },
-    RightClick { node: u64 },
-    DoubleClick { node: u64 },
-    Focus { old: Option<u64>, new: u64 },
-}
-
 pub trait Element: Any {
     fn children_ids(&self) -> Vec<u64> {
         Vec::new()
@@ -544,11 +530,6 @@ impl ElementState {
         self.needs_layout |= child_state.needs_layout;
         self.needs_compose |= child_state.needs_compose;
     }
-}
-
-pub struct ElementProperties {
-    pub width: Option<Length>,
-    pub height: Option<Length>,
 }
 
 pub struct ElementBuilder {
