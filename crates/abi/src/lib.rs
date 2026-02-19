@@ -193,21 +193,15 @@ impl Into<Length> for LengthRequest {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
-pub struct Rgba<V> {
-    pub r: V,
-    pub g: V,
-    pub b: V,
-    pub a: V,
+pub struct Rgba {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
 }
 
-impl Rgba<u8> {
-    pub const NONE: Self = Self {
-        r: 0,
-        g: 0,
-        b: 0,
-        a: 0,
-    };
-
+impl Rgba {
+    pub const NONE: Self = Self::new(0, 0, 0, 0);
     pub const WHITE: Self = Self::rgb(0xff, 0xff, 0xff);
     pub const BLACK: Self = Self::rgb(0x00, 0x00, 0x00);
 
@@ -943,8 +937,8 @@ macro_rules! row {
 
 pub struct Column {
     children: Vec<ChildElement>,
-    background_color: Rgba<u8>,
-    border_color: Rgba<u8>,
+    background_color: Rgba,
+    border_color: Rgba,
     gap: f32,
 }
 
@@ -1063,8 +1057,8 @@ impl Element for Column {
 
 pub struct Row {
     children: Vec<ChildElement>,
-    background_color: Rgba<u8>,
-    border_color: Rgba<u8>,
+    background_color: Rgba,
+    border_color: Rgba,
     gap: f32,
 }
 
@@ -1496,7 +1490,7 @@ impl Element for VerticalScroll {
 pub struct Label {
     pub text: Arc<str>,
     pub font_size: f32,
-    pub color: Rgba<u8>,
+    pub color: Rgba,
     // pub visual_font_size: AnimatedF32,
     pub line_height: LineHeight,
     pub font_style: FontStyle,
@@ -1518,7 +1512,7 @@ impl Label {
         }
     }
 
-    pub fn with_color(mut self, color: Rgba<u8>) -> Self {
+    pub fn with_color(mut self, color: Rgba) -> Self {
         self.color = color;
         self
     }
@@ -2390,16 +2384,16 @@ pub struct Render {
 #[derive(Clone, Debug)]
 pub struct RenderQuad {
     pub bounds: Aabb2D<f32>,
-    pub color: Rgba<u8>,
+    pub color: Rgba,
     pub border_width: f32,
-    pub border_color: Rgba<u8>,
+    pub border_color: Rgba,
 }
 
 #[derive(Clone, Debug)]
 pub struct RenderText {
     pub content: Arc<str>,
     pub bounds: Aabb2D<f32>,
-    pub color: Rgba<u8>,
+    pub color: Rgba,
     pub font_size: f32,
 }
 
@@ -2432,9 +2426,9 @@ pub enum RenderCommand {
     DrawChar(char),
     DrawQuad,
     SetBounds(Aabb2D<f32>),
-    SetForegroundColor(Rgba<u8>),
-    SetBackgroundColor(Rgba<u8>),
-    SetBorderColor(Rgba<u8>),
+    SetForegroundColor(Rgba),
+    SetBackgroundColor(Rgba),
+    SetBorderColor(Rgba),
     SetBorderWidth(f32),
     SetFontSize(f32),
 }
@@ -2442,9 +2436,9 @@ pub enum RenderCommand {
 struct RenderPassVariables {
     bounds: Aabb2D<f32>,
     font_size: f32,
-    foreground_color: Rgba<u8>,
-    background_color: Rgba<u8>,
-    border_color: Rgba<u8>,
+    foreground_color: Rgba,
+    background_color: Rgba,
+    border_color: Rgba,
     border_width: f32,
 }
 
@@ -2483,9 +2477,9 @@ impl<'view> RenderPass<'view> {
     pub fn fill_quad(
         &mut self,
         bounds: Aabb2D<f32>,
-        color: Rgba<u8>,
+        color: Rgba,
         border_width: f32,
-        border_color: Rgba<u8>,
+        border_color: Rgba,
     ) {
         if bounds != self.vars.bounds {
             self.render.commands.push(RenderCommand::SetBounds(bounds));
@@ -2517,7 +2511,7 @@ impl<'view> RenderPass<'view> {
         &mut self,
         content: impl AsRef<str>,
         bounds: Aabb2D<f32>,
-        color: Rgba<u8>,
+        color: Rgba,
         font_size: f32,
     ) {
         if bounds != self.vars.bounds {

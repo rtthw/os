@@ -2035,7 +2035,7 @@ impl DriverInputHandle {
 
 
 
-fn rgba_to_color32(color: abi::Rgba<u8>) -> egui::Color32 {
+fn rgba_to_color32(color: abi::Rgba) -> egui::Color32 {
     egui::Color32::from_rgba_premultiplied(color.r, color.g, color.b, color.a)
 }
 
