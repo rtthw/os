@@ -405,6 +405,20 @@ impl SectionHeader {
     }
 }
 
+pub const SHF_WRITE: u64 = 0x1;
+pub const SHF_ALLOC: u64 = 0x2;
+pub const SHF_EXECINSTR: u64 = 0x4;
+pub const SHF_MERGE: u64 = 0x10;
+pub const SHF_STRINGS: u64 = 0x20;
+pub const SHF_INFO_LINK: u64 = 0x40;
+pub const SHF_LINK_ORDER: u64 = 0x80;
+pub const SHF_OS_NONCONFORMING: u64 = 0x100;
+pub const SHF_GROUP: u64 = 0x200;
+pub const SHF_TLS: u64 = 0x400;
+pub const SHF_COMPRESSED: u64 = 0x800;
+pub const SHF_MASKOS: u64 = 0x0ff00000;
+pub const SHF_MASKPROC: u64 = 0xf0000000;
+
 pub const SHT_LOOS: u32 = 0x60000000;
 pub const SHT_HIOS: u32 = 0x6fffffff;
 pub const SHT_LOPROC: u32 = 0x70000000;
@@ -503,6 +517,38 @@ impl Rela {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SymbolType {
+    NoType,
+    Object,
+    Func,
+    Section,
+    File,
+    Common,
+    Tls,
+    OsSpecific(u8),
+    ProcessorSpecific(u8),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SymbolBinding {
+    Local,
+    Global,
+    Weak,
+    OsSpecific(u8),
+    ProcessorSpecific(u8),
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u8)]
+pub enum SymbolVisibility {
+    #[default]
+    Default = 0,
+    Internal = 1,
+    Hidden = 2,
+    Protected = 3,
+}
+
 #[derive(Debug)]
 #[repr(C)]
 pub struct SymbolTableEntry {
@@ -515,6 +561,53 @@ pub struct SymbolTableEntry {
 }
 
 impl SymbolTableEntry {
+    /// Get the type (function, TLS, file, etc.) of this symbol.
+    pub fn get_type(&self) -> Result<SymbolType, &'static str> {
+        match self.info() & 0xf {
+            0 => Ok(SymbolType::NoType),
+            1 => Ok(SymbolType::Object),
+            2 => Ok(SymbolType::Func),
+            3 => Ok(SymbolType::Section),
+            4 => Ok(SymbolType::File),
+            5 => Ok(SymbolType::Common),
+            6 => Ok(SymbolType::Tls),
+            b @ 10..=12 => Ok(SymbolType::OsSpecific(b)),
+            b @ 13..=15 => Ok(SymbolType::ProcessorSpecific(b)),
+
+            _ => Err("invalid value for symbol type"),
+        }
+    }
+
+    /// Get the binding (local, global, weak, etc.) of this symbol.
+    pub fn get_binding(&self) -> Result<SymbolBinding, &'static str> {
+        match self.info() >> 4 {
+            0 => Ok(SymbolBinding::Local),
+            1 => Ok(SymbolBinding::Global),
+            2 => Ok(SymbolBinding::Weak),
+            b if (10..=12).contains(&b) => Ok(SymbolBinding::OsSpecific(b)),
+            b if (13..=15).contains(&b) => Ok(SymbolBinding::ProcessorSpecific(b)),
+
+            _ => Err("invalid value for symbol binding"),
+        }
+    }
+
+    /// Get the visibility (default, internal, hidden, or protected) of this
+    /// symbol.
+    ///
+    /// This cannot fail because there are no invalid values for symbol
+    /// visibility.
+    pub fn get_visibility(&self) -> SymbolVisibility {
+        match self.other & 0x3 {
+            x if x == SymbolVisibility::Default as _ => SymbolVisibility::Default,
+            x if x == SymbolVisibility::Internal as _ => SymbolVisibility::Internal,
+            x if x == SymbolVisibility::Hidden as _ => SymbolVisibility::Hidden,
+            x if x == SymbolVisibility::Protected as _ => SymbolVisibility::Protected,
+
+            // Covers all possible cases.
+            _ => unreachable!(),
+        }
+    }
+
     pub fn get_name<'a>(&'a self, file: &ElfFile<'a>) -> Result<&'a str, &'static str> {
         file.get_string(self.name)
     }
