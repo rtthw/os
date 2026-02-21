@@ -5,6 +5,7 @@ pub mod elf;
 pub mod flex;
 pub mod layout;
 pub mod math;
+pub mod mem;
 pub mod path;
 pub mod stable_string;
 pub mod stable_vec;
