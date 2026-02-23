@@ -1,5 +1,5 @@
 [package]
-name = "kernel"
+name = "linux-uapi"
 version.workspace = true
 edition.workspace = true
 

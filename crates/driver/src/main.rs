@@ -3,7 +3,7 @@
 use {
     abi::*,
     anyhow::{Result, bail},
-    kernel::{
+    linux_uapi::{
         object::Object,
         shm::{Mutex, SharedMemory},
     },

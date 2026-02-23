@@ -8,5 +8,5 @@ abi.workspace = true
 anyhow = "1"
 epaint_default_fonts = "0.33.3"
 fontdue = "0.9.3"
-kernel.workspace = true
 libc = { version = "0.2", default-features = false }
+linux-uapi.workspace = true

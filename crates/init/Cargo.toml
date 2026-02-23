@@ -4,4 +4,4 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-kernel.workspace = true
+linux-uapi.workspace = true

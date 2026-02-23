@@ -1,6 +1,6 @@
 //! # Init System
 
-use kernel::{
+use linux_uapi::{
     Result,
     c_str::NULL_CSTR,
     file::File,
@@ -87,7 +87,7 @@ fn main() {
 
 
 fn setup_mount_points() -> Result<()> {
-    use kernel::mount::{MOVE, MountFlags, NODEV, NOEXEC, NOSUID};
+    use linux_uapi::mount::{MOVE, MountFlags, NODEV, NOEXEC, NOSUID};
 
     println!("\x1b[2minit\x1b[0m: Mounting dev, proc, and sys filesystems...");
 
@@ -137,7 +137,7 @@ fn setup_mount_points() -> Result<()> {
     println!("\x1b[2minit\x1b[0m: Mounting rootfs...");
 
     if mkdir(c"/rootfs", 0) < 0 {
-        return Err(kernel::Error::latest());
+        return Err(linux_uapi::Error::latest());
     }
 
     mount(
@@ -161,23 +161,23 @@ fn setup_mount_points() -> Result<()> {
     println!("\x1b[2minit\x1b[0m: Setting up the new root directory...");
 
     if chdir(c"rootfs") < 0 {
-        return Err(kernel::Error::latest());
+        return Err(linux_uapi::Error::latest());
     }
 
-    let old_root_fd = File::open(c"/", kernel::file::O_RDONLY)?;
+    let old_root_fd = File::open(c"/", linux_uapi::file::O_RDONLY)?;
 
     // Move the `rootfs` mount into place.
-    mount(c"/rootfs", c"/", c"", kernel::mount::MOVE, NULL_CSTR)?;
+    mount(c"/rootfs", c"/", c"", linux_uapi::mount::MOVE, NULL_CSTR)?;
 
     // Change the root directory to `/rootfs`.
     if chroot(c".") < 0 {
-        return Err(kernel::Error::latest());
+        return Err(linux_uapi::Error::latest());
     }
 
     // Current directory technically no longer exists (was `/rootfs`), so change it
     // to be what `/rootfs` now is.
     if chdir(c"/") < 0 {
-        return Err(kernel::Error::latest());
+        return Err(linux_uapi::Error::latest());
     }
 
     // Mount the home directory.
@@ -194,10 +194,10 @@ fn setup_mount_points() -> Result<()> {
             cleanup_initramfs(old_root_fd)?;
             exit(0)
         }
-        -1 => Err(kernel::Error::latest()),
+        -1 => Err(linux_uapi::Error::latest()),
         _ => {
             if close(unsafe { old_root_fd.into_raw() }) < 0 {
-                Err(kernel::Error::latest())
+                Err(linux_uapi::Error::latest())
             } else {
                 Ok(())
             }
@@ -206,7 +206,7 @@ fn setup_mount_points() -> Result<()> {
 }
 
 fn setup_shared_memory() -> Result<()> {
-    use kernel::mount::{NODEV, NOSUID};
+    use linux_uapi::mount::{NODEV, NOSUID};
 
     _ = mkdir(c"/dev/shm", 0);
     mount(
@@ -226,39 +226,39 @@ fn cleanup_initramfs(old_root_fd: File) -> Result<()> {
     if unlinkat(dirfd, c"dev", AT_REMOVEDIR) < 0 {
         println!(
             "\x1b[2minit\x1b[0m: Failed to unlink old dev: {}",
-            kernel::Error::latest()
+            linux_uapi::Error::latest()
         );
     }
     if unlinkat(dirfd, c"proc", AT_REMOVEDIR) < 0 {
         println!(
             "\x1b[2minit\x1b[0m: Failed to unlink old proc: {}",
-            kernel::Error::latest()
+            linux_uapi::Error::latest()
         );
     }
     if unlinkat(dirfd, c"sys", AT_REMOVEDIR) < 0 {
         println!(
             "\x1b[2minit\x1b[0m: Failed to unlink old sys: {}",
-            kernel::Error::latest()
+            linux_uapi::Error::latest()
         );
     }
 
     if unlinkat(dirfd, c"sbin/init", 0) < 0 {
         println!(
             "\x1b[2minit\x1b[0m: Failed to unlink old sbin/init: {}",
-            kernel::Error::latest()
+            linux_uapi::Error::latest()
         );
     }
     if unlinkat(dirfd, c"sbin", AT_REMOVEDIR) < 0 {
         println!(
             "\x1b[2minit\x1b[0m: Failed to unlink old sbin: {}",
-            kernel::Error::latest()
+            linux_uapi::Error::latest()
         );
     }
 
     if close(dirfd) < 0 {
         println!(
             "\x1b[2minit\x1b[0m: Failed to close old root: {}",
-            kernel::Error::latest()
+            linux_uapi::Error::latest()
         );
     }
 
@@ -278,8 +278,8 @@ fn print_filesystem() -> Result<()> {
     ];
 
     fn inner(dir: &str, depth: usize) -> Result<()> {
-        for entry in std::fs::read_dir(dir).map_err(|_| kernel::Error::NOENT)? {
-            let entry = entry.map_err(|_| kernel::Error::NOENT)?;
+        for entry in std::fs::read_dir(dir).map_err(|_| linux_uapi::Error::NOENT)? {
+            let entry = entry.map_err(|_| linux_uapi::Error::NOENT)?;
             let path = entry.path().to_str().unwrap().to_string();
             let name = path
                 .rsplit_once('/')
@@ -287,7 +287,11 @@ fn print_filesystem() -> Result<()> {
 
             println!("{}\x1b[2m/\x1b[0m{}", "    ".repeat(depth), name);
 
-            if entry.file_type().map_err(|_| kernel::Error::BADF)?.is_dir() {
+            if entry
+                .file_type()
+                .map_err(|_| linux_uapi::Error::BADF)?
+                .is_dir()
+            {
                 if IGNORE.contains(&path.as_str()) {
                     println!("{}\x1b[2m/...\x1b[0m", "    ".repeat(depth + 1));
                     return Ok(());
@@ -306,7 +310,7 @@ fn print_filesystem() -> Result<()> {
 }
 
 fn handle_sigchld(shell: &mut std::process::Child) {
-    use kernel::proc::{WaitStatus, wait_for_children_once};
+    use linux_uapi::proc::{WaitStatus, wait_for_children_once};
 
     'reap_terminated_children: loop {
         if let Ok(status) = wait_for_children_once() {

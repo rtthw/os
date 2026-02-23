@@ -19,7 +19,7 @@ use {
     abi::*,
     anyhow::Result,
     eframe::egui::{self, Rect, pos2, vec2},
-    kernel::object::{Object, Ptr},
+    linux_uapi::object::{Object, Ptr},
     std::{
         collections::HashMap,
         sync::{Arc, atomic::AtomicBool},

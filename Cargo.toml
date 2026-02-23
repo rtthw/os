@@ -8,4 +8,4 @@ edition = "2024"
 
 [workspace.dependencies]
 abi = { path = "crates/abi" }
-kernel = { path = "crates/kernel" }
+linux-uapi = { path = "crates/linux-uapi" }

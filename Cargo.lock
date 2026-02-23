@@ -813,8 +813,8 @@ dependencies = [
  "anyhow",
  "epaint_default_fonts",
  "fontdue",
- "kernel",
  "libc",
+ "linux-uapi",
 ]
 
 [[package]]
@@ -1005,7 +1005,7 @@ dependencies = [
  "anyhow",
  "eframe",
  "egui-phosphor",
- "kernel",
+ "linux-uapi",
 ]
 
 [[package]]
@@ -1658,7 +1658,7 @@ dependencies = [
 name = "init"
 version = "0.1.0"
 dependencies = [
- "kernel",
+ "linux-uapi",
 ]
 
 [[package]]
@@ -1701,13 +1701,6 @@ checksum = "464a3709c7f55f1f721e5389aa6ea4e3bc6aba669353300af094b29ffbdde1d8"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "kernel"
-version = "0.1.0"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -1777,6 +1770,13 @@ name = "linux-raw-sys"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
+
+[[package]]
+name = "linux-uapi"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "litemap"
@@ -2699,8 +2699,8 @@ dependencies = [
  "gl_generator",
  "glow",
  "glutin",
- "kernel",
  "libc",
+ "linux-uapi",
  "log",
  "raw-window-handle",
  "slotmap",

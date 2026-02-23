@@ -5,7 +5,7 @@ use std::os::fd::AsRawFd as _;
 
 use {
     anyhow::Result,
-    kernel::{
+    linux_uapi::{
         epoll::{Event, EventPoll},
         file::File,
     },

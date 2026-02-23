@@ -45,7 +45,7 @@ use {
         prelude::{NotCurrentGlContext as _, PossiblyCurrentGlContext as _},
         surface::GlSurface as _,
     },
-    kernel::{
+    linux_uapi::{
         epoll::{Event, EventPoll},
         file::File,
         object::Object,
@@ -1080,7 +1080,7 @@ impl<'a, D> EventLoop<'a, D> {
         Ok(())
     }
 
-    fn poll(&mut self, timeout: i32) -> Result<Vec<Event>, kernel::Error> {
+    fn poll(&mut self, timeout: i32) -> Result<Vec<Event>, linux_uapi::Error> {
         let _event_count = self.poll.wait(&mut self.event_buffer, timeout)?;
 
         Ok(self.event_buffer.drain(..).collect())
@@ -1099,7 +1099,7 @@ impl<'a, D> EventLoop<'a, D> {
                         break 'poll_for_events events;
                     }
                     // If the poll was interrupted, retry until the timeout expires.
-                    Err(error) if error == kernel::Error::INTR => {
+                    Err(error) if error == linux_uapi::Error::INTR => {
                         let total_polling_time = now.elapsed().as_millis() as i32;
 
                         if total_polling_time >= timeout {
@@ -1678,7 +1678,7 @@ fn run_driver_tests() -> Result<()> {
         size_of::<DriverInput>()
             + size_of::<*mut ()>() // Initialized flag.
             + size_of::<*mut ()>() // Input flag.
-            + kernel::shm::Mutex::<DriverInput>::HEADER_SIZE,
+            + linux_uapi::shm::Mutex::<DriverInput>::HEADER_SIZE,
     )?;
     let mut raw_ptr = driver_map.as_ptr();
     let is_map_initialized: &mut AtomicU8 = unsafe { &mut *(raw_ptr as *mut u8 as *mut AtomicU8) };
@@ -1691,7 +1691,7 @@ fn run_driver_tests() -> Result<()> {
     // Initialize the shared driver map.
     is_map_initialized.store(0, Ordering::Relaxed);
     next_input_id.store(0, Ordering::Relaxed);
-    let mutex = unsafe { kernel::shm::Mutex::<DriverInput>::new(raw_ptr)? };
+    let mutex = unsafe { linux_uapi::shm::Mutex::<DriverInput>::new(raw_ptr)? };
     {
         let mut guard = mutex.lock()?;
         let input: &mut DriverInput = unsafe { &mut **guard };
@@ -1790,7 +1790,7 @@ impl Program {
             size_of::<DriverInput>()
                 + size_of::<*mut ()>() // Initialized flag.
                 + size_of::<*mut ()>() // Event ID.
-                + kernel::shm::Mutex::<DriverInput>::HEADER_SIZE,
+                + linux_uapi::shm::Mutex::<DriverInput>::HEADER_SIZE,
         )?;
 
         let mut raw_ptr = block.as_ptr();
