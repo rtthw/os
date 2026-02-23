@@ -7,6 +7,7 @@ use std::{
 
 
 /// An array of bytes within memory.
+#[derive(Debug)]
 pub struct MemoryMap {
     ptr: *mut u8,
     len: usize,

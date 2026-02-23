@@ -247,6 +247,23 @@ pub struct SectionHeader {
     entry_size: u64,
 }
 
+impl fmt::Display for SectionHeader {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Section header:")?;
+        writeln!(f, "    name:             {:?}", self.name)?;
+        writeln!(f, "    type:             {:?}", self.get_type())?;
+        writeln!(f, "    flags:            {:?}", self.flags)?;
+        writeln!(f, "    address:          {:?}", self.address)?;
+        writeln!(f, "    offset:           {:?}", self.offset)?;
+        writeln!(f, "    size:             {:?}", self.size)?;
+        writeln!(f, "    link:             {:?}", self.link)?;
+        writeln!(f, "    align:            {:?}", self.align)?;
+        writeln!(f, "    entry size:       {:?}", self.entry_size)?;
+
+        Ok(())
+    }
+}
+
 impl SectionHeader {
     pub fn parse<'a>(
         input: &'a [u8],
