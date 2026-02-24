@@ -137,7 +137,7 @@ impl Loader {
         let mut read_write_map_lock = read_write_mapping.lock();
 
         let object = Arc::new(Mutex::new(LoadedObject {
-            name: rustc_demangle::demangle(object_name).as_str().into(),
+            name: rustc_demangle::demangle(object_name).to_string().into(),
             sections: HashMap::new(),
             global_sections: BTreeSet::new(),
             data_sections: BTreeSet::new(),
@@ -246,7 +246,7 @@ impl Loader {
                 loaded_sections.insert(
                     section_index,
                     Arc::new(LoadedSection {
-                        name: rustc_demangle::demangle(name).as_str().into(),
+                        name: rustc_demangle::demangle(name).to_string().into(),
                         kind: SectionKind::Text,
                         size: section_size,
                         addr: section_addr,
@@ -283,7 +283,7 @@ impl Loader {
                 };
 
                 let tls_section = Arc::new(LoadedSection {
-                    name: rustc_demangle::demangle(name).as_str().into(),
+                    name: rustc_demangle::demangle(name).to_string().into(),
                     kind,
                     size: section_size,
                     addr: 0, // See below.
@@ -327,7 +327,7 @@ impl Loader {
                 loaded_sections.insert(
                     section_index,
                     Arc::new(LoadedSection {
-                        name: rustc_demangle::demangle(name).as_str().into(),
+                        name: rustc_demangle::demangle(name).to_string().into(),
                         kind: if is_bss {
                             SectionKind::Bss
                         } else {
@@ -364,7 +364,7 @@ impl Loader {
                 loaded_sections.insert(
                     section_index,
                     Arc::new(LoadedSection {
-                        name: rustc_demangle::demangle(name).as_str().into(),
+                        name: rustc_demangle::demangle(name).to_string().into(),
                         kind: SectionKind::Rodata,
                         size: section_size,
                         addr: section_addr,
