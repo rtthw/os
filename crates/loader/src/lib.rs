@@ -10,6 +10,12 @@
 // #[macro_use]
 // extern crate alloc;
 
+use std::{
+    collections::{BTreeSet, HashMap},
+    ops::Range,
+    sync::{Arc, Weak},
+};
+
 #[cfg(target_arch = "x86_64")]
 use abi::elf::Rela;
 use {
@@ -21,10 +27,6 @@ use {
         mem::MemoryMap,
     },
     spin::Mutex,
-    std::{
-        collections::{BTreeSet, HashMap},
-        sync::{Arc, Weak},
-    },
 };
 
 
@@ -728,4 +730,78 @@ struct SectionMappings {
     executable: MemoryMap,
     read_only: MemoryMap,
     read_write: MemoryMap,
+}
+
+
+
+pub fn crate_names_in_symbol(symbol_name: &str) -> Vec<&str> {
+    let mut ranges = crate_name_ranges_in_symbol(symbol_name);
+    ranges.dedup();
+
+    ranges
+        .into_iter()
+        .filter_map(|range| symbol_name.get(range))
+        .collect()
+}
+
+fn crate_name_ranges_in_symbol(symbol_name: &str) -> Vec<Range<usize>> {
+    let mut ranges: Vec<Range<usize>> = Vec::new();
+    let mut start_bound = Some(0);
+    while let Some(start) = start_bound {
+        // The crate name will be right before the first occurrence of "::".
+        let end = symbol_name
+            .get(start..)
+            .and_then(|s| s.find("::"))
+            .map(|end_index| start + end_index);
+
+        // If the substring (start..end) contains " as ", skip it and let the next
+        // iteration of the loop handle it to avoid counting it twice.
+        if let Some(end) = end {
+            let substring = symbol_name.get(start..end);
+            if substring.is_some_and(|s| !s.contains(" as ")) {
+                // Find the beginning of the crate name, searching backwards from `end`. If
+                // there was no non-name character, then the crate name started at the beginning
+                // of `substring`.
+                let start = substring
+                    .and_then(|s| s.rfind(|ch: char| !(ch.is_alphanumeric() || ch == '_')))
+                    // Move forward to the actual start of the crate name.
+                    .map(|start_index| start + start_index + 1)
+                    .unwrap_or(start);
+
+                ranges.push(start..end);
+            }
+        }
+
+        // Advance to the next substring.
+        start_bound = symbol_name
+            .get(start..)
+            .and_then(|s| s.find(" as "))
+            .map(|start_index| start + start_index + " as ".len());
+    }
+
+    ranges
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn crate_names_from_symbol_names() {
+        macro_rules! check {
+            ($sym:literal == [$($name:literal),*]) => {
+                assert_eq!(crate_names_in_symbol($sym), vec![$($name),*] as Vec<&str>);
+            };
+        }
+
+        check!("foo::Bar" == ["foo"]);
+        check!("foo::bar::Thing" == ["foo"]);
+        check!("<foo::Foo as bar::Bar>::run" == ["foo", "bar"]);
+        check!("<usize as bar::Foo>::do_something" == ["bar"]);
+        check!("std::ops::Range::<u32>::from" == ["std"]);
+        check!("<alloc::boxed::Box<T>>::into_inner" == ["alloc"]);
+        check!("u64" == []);
+    }
 }
