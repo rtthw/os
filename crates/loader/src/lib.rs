@@ -10,6 +10,8 @@
 // #[macro_use]
 // extern crate alloc;
 
+#[cfg(target_arch = "x86_64")]
+use abi::elf::Rela;
 use {
     abi::{
         elf::{
@@ -28,12 +30,14 @@ use {
 
 
 /// A set of loaded [objects](LoadedObject) and [sections](LoadedSection).
+#[derive(Debug)]
 pub struct Loader {
     objects: Mutex<HashMap<Arc<str>, Arc<LoadedObject>>>,
     sections: Mutex<HashMap<Arc<str>, Weak<LoadedSection>>>,
 }
 
 /// An object that has been loaded into memory.
+#[derive(Debug)]
 pub struct LoadedObject {
     /// The demangled name of this object.
     pub name: Arc<str>,
@@ -52,6 +56,7 @@ pub struct LoadedObject {
 }
 
 /// An object section that has been loaded into memory.
+#[derive(Debug)]
 pub struct LoadedSection {
     /// The demangled name of this section.
     pub name: Arc<str>,
@@ -88,6 +93,14 @@ impl Loader {
 
     pub fn get_section(&self, name: &str) -> Option<Weak<LoadedSection>> {
         self.sections.lock().get(name).cloned()
+    }
+
+    pub fn get_or_load_section(&self, name: &str) -> Weak<LoadedSection> {
+        if let Some(section) = self.sections.lock().get(name) {
+            return section.clone();
+        }
+
+        panic!("failed to load `{name}`")
     }
 
     pub fn load_object(
@@ -458,10 +471,77 @@ impl Loader {
 
     fn relocate_object_sections(
         &self,
-        _elf_file: &ElfFile,
-        _object: &Arc<Mutex<LoadedObject>>,
+        elf_file: &ElfFile,
+        object: &Arc<Mutex<LoadedObject>>,
     ) -> Result<(), &'static str> {
-        Err("TODO: Loader::relocate_object_sections")
+        let object = object.lock();
+        let symbol_table = elf_file.get_symbol_table()?;
+
+        for section in elf_file.section_iter().filter(|section| {
+            section.get_type() == Ok(SectionHeaderType::Rela) && section.size() != 0
+        }) {
+            let rela_array = match section.get_data(elf_file) {
+                Ok(SectionData::Rela(rela_arr)) => rela_arr,
+                _ => {
+                    return Err("found `rela` section that wasn't able to be parsed");
+                }
+            };
+
+            let target_section_index = section.info() as usize;
+            let target_section = object
+                .sections
+                .get(&target_section_index)
+                .ok_or("target section was not loaded for `rela` section")?;
+
+            {
+                let mut target_section_mapping = target_section.mapping.lock();
+                let target_slice = target_section_mapping
+                    .as_slice_mut(0, target_section.mapping_offset + target_section.size);
+
+                for rela_entry in rela_array {
+                    let source_entry = &symbol_table[rela_entry.get_symbol_table_index() as usize];
+                    let source_index = source_entry.shndx() as usize;
+                    let source_value = source_entry.value() as usize;
+
+                    let source_section = match object.sections.get(&source_index) {
+                        Some(section) => Ok(section.clone()),
+                        None => {
+                            let name = source_entry
+                                .get_name(&elf_file)
+                                .map_err(|_| "couldn't get name of source section")?;
+                            let name = if name.starts_with(".data.rel.ro.") {
+                                name.get(".data.rel.ro.".len()..).ok_or(
+                                    "couldn't get name of `.data.rel.ro.`
+                                section",
+                                )?
+                            } else {
+                                name
+                            };
+
+                            let demangled_name = rustc_demangle::demangle(name).to_string();
+
+                            println!("SOURCE: {demangled_name}, TARGET: {}", target_section.name);
+
+                            self.get_or_load_section(&demangled_name)
+                                .upgrade()
+                                .ok_or("couldn't get section for relocation entry")
+                        }
+                    }?;
+
+                    let target_offset =
+                        target_section.mapping_offset + rela_entry.get_offset() as usize;
+
+                    write_relocation(
+                        rela_entry,
+                        target_slice,
+                        target_offset,
+                        source_section.addr + source_value,
+                    )?;
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn add_sections<'a, I>(&self, sections: I) -> usize
@@ -483,6 +563,62 @@ impl Loader {
 
         added_count
     }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn write_relocation(
+    relocation_entry: &Rela,
+    target_slice: &mut [u8],
+    target_offset: usize,
+    source_addr: usize,
+) -> Result<(), &'static str> {
+    // https://docs.rs/goblin/latest/src/goblin/elf/constants_relocation.rs.html
+    const R_X86_64_64: u32 = 1;
+    const R_X86_64_PC32: u32 = 2;
+    const R_X86_64_PLT32: u32 = 4;
+    const R_X86_64_32: u32 = 10;
+    const R_X86_64_PC64: u32 = 24;
+
+    let source_addr = source_addr as u64;
+    match relocation_entry.get_type() {
+        R_X86_64_32 => {
+            let target_range = target_offset..(target_offset + size_of::<u32>());
+            let target_ref = &mut target_slice[target_range];
+            let source_value = source_addr.wrapping_add(relocation_entry.get_addend()) as u32;
+
+            target_ref.copy_from_slice(&source_value.to_ne_bytes());
+        }
+        R_X86_64_PC32 | R_X86_64_PLT32 => {
+            let target_range = target_offset..(target_offset + size_of::<u32>());
+            let target_ref = &mut target_slice[target_range];
+            let source_value = source_addr
+                .wrapping_add(relocation_entry.get_addend())
+                .wrapping_sub(target_ref.as_ptr() as usize as u64)
+                as u32;
+
+            target_ref.copy_from_slice(&source_value.to_ne_bytes());
+        }
+        R_X86_64_64 => {
+            let target_range = target_offset..(target_offset + size_of::<u64>());
+            let target_ref = &mut target_slice[target_range];
+            let source_value = source_addr.wrapping_add(relocation_entry.get_addend());
+
+            target_ref.copy_from_slice(&source_value.to_ne_bytes());
+        }
+        R_X86_64_PC64 => {
+            let target_range = target_offset..(target_offset + size_of::<u64>());
+            let target_ref = &mut target_slice[target_range];
+            let source_val = source_addr
+                .wrapping_add(relocation_entry.get_addend())
+                .wrapping_sub(target_ref.as_ptr() as usize as u64);
+
+            target_ref.copy_from_slice(&source_val.to_ne_bytes());
+        }
+
+        _ => return Err("unsupported relocation type"),
+    }
+
+    Ok(())
 }
 
 
