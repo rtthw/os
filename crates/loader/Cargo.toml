@@ -5,6 +5,5 @@ edition.workspace = true
 
 [dependencies]
 abi.workspace = true
-hashbrown = "0.16.1"
 rustc-demangle = "0.1.27"
 spin = "0.10.0"
