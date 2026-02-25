@@ -24,7 +24,7 @@ use {
             ElfFile, ObjectFileType, SHF_ALLOC, SHF_EXECINSTR, SHF_TLS, SHF_WRITE, SectionData,
             SectionHeaderType, SymbolBinding, SymbolType,
         },
-        mem::MemoryMap,
+        mem::{MapFlags, MemoryMap},
     },
     spin::Mutex,
 };
@@ -719,10 +719,16 @@ fn allocate_section_mappings(elf_file: &ElfFile) -> Result<SectionMappings, &'st
         (executable_len, read_only_len, read_write_len)
     };
 
+    // HACK: Mappings should be optional, this is just a workaround for the
+    //       possibility of an empty mapping.
+    let executable_len = executable_len.max(1);
+    let read_only_len = read_only_len.max(1);
+    let read_write_len = read_write_len.max(1);
+
     Ok(SectionMappings {
-        executable: MemoryMap::alloc_zeroed(executable_len)?,
-        read_only: MemoryMap::alloc_zeroed(read_only_len)?,
-        read_write: MemoryMap::alloc_zeroed(read_write_len)?,
+        executable: MemoryMap::alloc_zeroed(executable_len, MapFlags::READ_WRITE_EXEC)?,
+        read_only: MemoryMap::alloc_zeroed(read_only_len, MapFlags::READ_WRITE)?,
+        read_write: MemoryMap::alloc_zeroed(read_write_len, MapFlags::READ_WRITE)?,
     })
 }
 
