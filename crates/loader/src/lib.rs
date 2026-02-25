@@ -6,12 +6,14 @@
 //! [loader]: https://en.wikipedia.org/wiki/Loader_(computing)
 
 // #![no_std]
+#![feature(fn_ptr_trait)]
 
 // #[macro_use]
 // extern crate alloc;
 
 use std::{
     collections::{BTreeSet, HashMap},
+    marker::FnPtr,
     ops::Range,
     sync::{Arc, Weak},
 };
@@ -522,8 +524,6 @@ impl Loader {
 
                             let demangled_name = rustc_demangle::demangle(name).to_string();
 
-                            println!("SOURCE: {demangled_name}, TARGET: {}", target_section.name);
-
                             self.get_or_load_section(&demangled_name)
                                 .upgrade()
                                 .ok_or("couldn't get section for relocation entry")
@@ -621,6 +621,24 @@ fn write_relocation(
     }
 
     Ok(())
+}
+
+impl LoadedSection {
+    pub unsafe fn as_function<F: FnPtr>(&self) -> Result<&F, &'static str> {
+        if self.kind != SectionKind::Text {
+            return Err("tried to interpret non-text section as function");
+        }
+
+        let map = self.mapping.lock();
+
+        let end = self.mapping_offset + self.size;
+        if end > map.len() {
+            return Err("function section is too large for its mapping, this is a logic error");
+        }
+
+        // SAFETY: It's up to the caller to make sure the type signature matches.
+        Ok(unsafe { core::mem::transmute(&(map.addr() + self.mapping_offset)) })
+    }
 }
 
 
