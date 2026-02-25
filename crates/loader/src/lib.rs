@@ -99,6 +99,14 @@ impl Loader {
         self.sections.lock().get(name).cloned()
     }
 
+    pub fn get_section_ending_with(&self, postfix: &str) -> Option<Weak<LoadedSection>> {
+        self.sections
+            .lock()
+            .iter()
+            .find(|(name, _section)| name.ends_with(postfix))
+            .map(|(_name, section)| section.clone())
+    }
+
     pub fn get_or_load_section(&self, name: &str) -> Weak<LoadedSection> {
         if let Some(section) = self.sections.lock().get(name) {
             return section.clone();
