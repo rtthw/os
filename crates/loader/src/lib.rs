@@ -848,7 +848,31 @@ fn crate_name_ranges_in_symbol(symbol_name: &str) -> Vec<Range<usize>> {
                     .map(|start_index| start + start_index + 1)
                     .unwrap_or(start);
 
-                ranges.push(start..end);
+                if start != end {
+                    ranges.push(start..end);
+                }
+            }
+        }
+
+        if let Some(end) = symbol_name
+            .get(start..)
+            .and_then(|s| s.find("["))
+            .map(|end_index| start + end_index)
+        {
+            let substring = symbol_name.get(start..end);
+            if substring.is_some() {
+                // Find the beginning of the crate name, searching backwards from `end`. If
+                // there was no non-name character, then the crate name started at the beginning
+                // of `substring`.
+                let start = substring
+                    .and_then(|s| s.rfind(|ch: char| !(ch.is_alphanumeric() || ch == '_')))
+                    // Move forward to the actual start of the crate name.
+                    .map(|start_index| start + start_index + 1)
+                    .unwrap_or(start);
+
+                if start != end {
+                    ranges.push(start..end);
+                }
             }
         }
 
@@ -880,9 +904,10 @@ mod tests {
         check!("foo::bar::Thing" == ["foo"]);
         check!("<foo::Foo as bar::Bar>::run" == ["foo", "bar"]);
         check!("<usize as bar::Foo>::do_something" == ["bar"]);
-        check!("std::ops::Range::<u32>::from" == ["std"]);
-        check!("<alloc::boxed::Box<T>>::into_inner" == ["alloc"]);
+        check!("std::ops::Range::<&[u32]>::from" == ["std"]);
+        check!("<alloc::boxed::Box<[T]>>::into_inner" == ["alloc"]);
         check!("u64" == []);
+        check!("loader[deadbeef]::crate_names_in_symbol" == ["loader"]);
     }
 
     #[test]
