@@ -25,12 +25,11 @@ cp ../target/x86_64-unknown-uefi/release/kernel.efi esp/efi/boot/bootx64.efi
 qemu-system-x86_64 \
     -m 1G \
     -rtc base=utc \
-    -display sdl \
+    -display gtk,show-tabs=on \
     -drive if=pflash,format=raw,readonly=on,file=firmware/uefi/OVMF_CODE.fd \
     -drive if=pflash,format=raw,readonly=on,file=firmware/uefi/OVMF_VARS.fd \
     -drive format=raw,file=fat:rw:esp \
     -device virtio-keyboard \
     -device virtio-mouse \
-    -device virtio-net-pci,netdev=network0 -netdev user,id=network0 \
     -vga virtio \
     -serial stdio
