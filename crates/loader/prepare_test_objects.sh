@@ -1,21 +1,21 @@
 #!/bin/sh
 
+set -ex
 
-SCRIPT_DIR=${0%/*}
-INPUT_DIR="tests/input"
-OUTPUT_DIR="tests/output"
+rustc tests/input/add_one.rs \
+    --out-dir=tests/output \
+    --crate-type=lib \
+    --emit=link,obj \
+    -C panic=abort \
+    -C relocation-model=static \
+    -Z share-generics=no
 
-mkdir -p $OUTPUT_DIR
-
-for filename in $(ls $INPUT_DIR); do
-    path="$INPUT_DIR/$filename"
-    echo "Compiling '$filename'..."
-    rustc \
-        --out-dir=$OUTPUT_DIR \
-        --crate-type=rlib \
-        --emit=obj \
-        -Cpanic=abort \
-        -Zshare-generics=no \
-        $path
-    echo "\t...OK"
-done
+rustc tests/input/depends_on_add_one.rs \
+    --out-dir=tests/output \
+    --crate-type=lib \
+    --emit=obj \
+    -L tests/output \
+    -l add_one \
+    -C panic=abort \
+    -C relocation-model=static \
+    -Z share-generics=no
