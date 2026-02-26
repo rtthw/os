@@ -3,7 +3,7 @@ use loader::*;
 #[test]
 fn add_one() {
     let bytes = include_bytes!("output/add_one.o").to_vec();
-    let loader = Loader::new();
+    let loader = Loader::new("tests/output");
     let _object = loader.load_object("add_one", &bytes).unwrap();
     let section = loader
         .get_section_ending_with("add_one")

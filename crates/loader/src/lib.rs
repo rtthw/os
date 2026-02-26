@@ -36,7 +36,8 @@ use {
 /// A set of loaded [objects](LoadedObject) and [sections](LoadedSection).
 #[derive(Debug)]
 pub struct Loader {
-    objects: Mutex<HashMap<Arc<str>, Arc<LoadedObject>>>,
+    search_path: String,
+    objects: Mutex<HashMap<Arc<str>, Arc<Mutex<LoadedObject>>>>,
     sections: Mutex<HashMap<Arc<str>, Weak<LoadedSection>>>,
 }
 
@@ -84,14 +85,36 @@ pub struct LoadedSection {
 
 
 impl Loader {
-    pub fn new() -> Self {
+    pub fn new(search_path: &str) -> Self {
         Self {
+            search_path: search_path.into(),
             objects: Mutex::new(HashMap::new()),
             sections: Mutex::new(HashMap::new()),
         }
     }
 
-    pub fn get_object(&self, name: &str) -> Option<Weak<LoadedObject>> {
+    // FIXME: This shouldn't be fallible.
+    pub fn find_object_files(&self, prefix: &str) -> Result<Vec<String>, &'static str> {
+        let mut paths = Vec::new();
+        for entry in
+            std::fs::read_dir(&self.search_path).map_err(|_| "failed to read search directory")?
+        {
+            let Ok(entry) = entry else {
+                continue;
+            };
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| "found invalid file name in search directory")?;
+            if name.starts_with(prefix) && name.ends_with(".o") {
+                paths.push(name);
+            }
+        }
+
+        Ok(paths)
+    }
+
+    pub fn get_object(&self, name: &str) -> Option<Weak<Mutex<LoadedObject>>> {
         self.objects.lock().get(name).map(Arc::downgrade)
     }
 
@@ -112,6 +135,28 @@ impl Loader {
             return section.clone();
         }
 
+        for crate_name in crate_names_in_symbol(name) {
+            println!("SYM @ `{name}` = '{crate_name}'");
+            for object_file_name in self.find_object_files(crate_name).unwrap() {
+                let object_name = object_file_name
+                    .strip_suffix(".o")
+                    .expect("Loader::find_object_files should only return names ending with '.o'");
+                // Skip already loaded objects.
+                if self.get_object(object_name).is_some() {
+                    continue;
+                }
+                println!("LOADING OBJECT '{object_name}' @ `{name}`");
+                self.load_object(
+                    object_name,
+                    &std::fs::read(format!("{}/{object_file_name}", self.search_path)).unwrap(),
+                )
+                .unwrap();
+                if let Some(section) = self.sections.lock().get(name) {
+                    return section.clone();
+                }
+            }
+        }
+
         panic!("failed to load `{name}`")
     }
 
@@ -122,6 +167,9 @@ impl Loader {
     ) -> Result<Arc<Mutex<LoadedObject>>, &'static str> {
         let (object, elf_file) = self.load_object_sections(object_name, object_bytes)?;
         self.add_sections(object.lock().sections.values());
+        self.objects
+            .lock()
+            .insert(object_name.into(), Arc::clone(&object));
         self.relocate_object_sections(&elf_file, &object)?;
 
         Ok(object)
@@ -835,5 +883,14 @@ mod tests {
         check!("std::ops::Range::<u32>::from" == ["std"]);
         check!("<alloc::boxed::Box<T>>::into_inner" == ["alloc"]);
         check!("u64" == []);
+    }
+
+    #[test]
+    fn searching() {
+        let loader = Loader::new("tests/output");
+        assert_eq!(
+            loader.find_object_files("add_"),
+            Ok(vec!["add_one.o".to_string()]),
+        );
     }
 }
