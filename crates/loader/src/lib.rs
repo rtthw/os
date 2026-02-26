@@ -635,11 +635,12 @@ fn write_relocation(
     const R_X86_64_PC32: u32 = 2;
     const R_X86_64_PLT32: u32 = 4;
     const R_X86_64_32: u32 = 10;
+    const R_X86_64_32S: u32 = 11;
     const R_X86_64_PC64: u32 = 24;
 
     let source_addr = source_addr as u64;
     match relocation_entry.get_type() {
-        R_X86_64_32 => {
+        R_X86_64_32 | R_X86_64_32S => {
             let target_range = target_offset..(target_offset + size_of::<u32>());
             let target_ref = &mut target_slice[target_range];
             let source_value = source_addr.wrapping_add(relocation_entry.get_addend()) as u32;
