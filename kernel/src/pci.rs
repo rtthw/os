@@ -47,6 +47,10 @@ impl Device {
             (_, _) => "Unknown device",
         }
     }
+
+    pub fn capabilities(&self) -> Vec<Capability> {
+        get_capabilities(self.bus, self.device, 0)
+    }
 }
 
 impl Debug for Device {
@@ -67,7 +71,20 @@ impl Debug for Device {
             .field("bars", &self.bars)
             .field("interrupt_line", &self.interrupt_line)
             .field("interrupt_pin", &self.interrupt_pin)
+            .field("capabilities", &self.capabilities())
             .finish()
+    }
+}
+
+#[derive(Clone)]
+pub struct Capability {
+    pub id: u8,
+    pub offset: u8,
+}
+
+impl Debug for Capability {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!("{} @ {:#x}", self.id, self.offset))
     }
 }
 
@@ -145,4 +162,40 @@ fn get_ids(bus: u8, device: u8, function: u8) -> (u16, u16) {
     let vendor_id = (value & 0xFFFF) as u16;
 
     (device_id, vendor_id)
+}
+
+fn get_capabilities(bus: u8, device: u8, function: u8) -> Vec<Capability> {
+    let mut offset = {
+        let mut word = unsafe { read(bus, device, function, 0x34) };
+        word = *u32_set_bit(u32_set_bit(&mut word, 0, false), 1, false);
+        u32_bit_range(word, 0, 8) as u8
+    };
+
+    let mut capabilities = Vec::new();
+    while offset != 0 {
+        let word = unsafe { read(bus, device, function, offset) };
+        let id = u32_bit_range(word, 0, 8) as u8;
+        capabilities.push(Capability { id, offset });
+        offset = u32_bit_range(word, 8, 16) as u8;
+    }
+
+    capabilities
+}
+
+const fn u32_bit_range(word: u32, start: usize, end: usize) -> u32 {
+    assert!(start != end);
+    let bits = word << (32 - end) >> (32 - end);
+    bits >> start
+}
+
+const fn u32_set_bit(word: &mut u32, bit: usize, value: bool) -> &mut u32 {
+    assert!(bit < 32);
+
+    if value {
+        *word |= 1 << bit;
+    } else {
+        *word &= !(1 << bit);
+    }
+
+    word
 }
