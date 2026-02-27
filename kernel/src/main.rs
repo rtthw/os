@@ -1,11 +1,15 @@
 #![no_main]
 #![no_std]
 
+#[macro_use]
+extern crate alloc;
+
 mod allocator;
+mod pci;
 mod serial;
 
 use {
-    log::{debug, info},
+    log::{debug, info, trace},
     uefi::{mem::memory_map::MemoryMap as _, prelude::*},
 };
 
@@ -41,7 +45,9 @@ fn main() -> Status {
 
     info!("Setting up devices...");
 
-    // TODO
+    for pci_device in pci::enumerate_devices() {
+        trace!("PCI Device: {pci_device:?}");
+    }
 
     info!("Starting main loop...");
 
