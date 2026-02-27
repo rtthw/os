@@ -1,6 +1,7 @@
 #![no_main]
 #![no_std]
 
+mod allocator;
 mod serial;
 
 use {
@@ -25,14 +26,18 @@ fn main() -> Status {
         .filter(|desc| desc.ty == boot::MemoryType::CONVENTIONAL)
         .max_by_key(|desc| desc.page_count)
         .expect("no suitable memory region available");
+    let heap_addr = heap_desc.phys_start as usize;
+    let heap_size = 4096 * heap_desc.page_count as usize;
+
     debug!(
         "Initializing heap at {:#x} ({} pages, {} bytes)...",
-        heap_desc.phys_start,
-        heap_desc.page_count,
-        heap_desc.page_count * 4096,
+        heap_addr, heap_desc.page_count, heap_size,
     );
 
-    // TODO
+    #[allow(static_mut_refs)]
+    unsafe {
+        allocator::ALLOCATOR.init(heap_addr, heap_size);
+    }
 
     info!("Setting up devices...");
 
