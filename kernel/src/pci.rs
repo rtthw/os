@@ -9,8 +9,9 @@ const VENDOR_INTEL: u16 = 0x8086;
 
 #[derive(Clone)]
 pub struct Device {
-    pub device: u8,
     pub bus: u8,
+    pub device: u8,
+    pub function: u8,
     pub device_id: u16,
     pub vendor_id: u16,
     pub class: u16,
@@ -66,6 +67,7 @@ impl Debug for Device {
                 },
             )
             .field("bus", &self.bus)
+            .field("function", &self.function)
             .field("class", &self.class)
             .field("header_type", &self.header_type)
             .field("bars", &self.bars)
@@ -109,7 +111,7 @@ fn get_device(bus: u8, device: u8) -> Option<Device> {
         return None;
     }
 
-    let class = unsafe { read(bus, device, 0, 0x8) };
+    let class = unsafe { read(bus, device, function, 0x8) };
     let class = (class >> 16) & 0x0000FFFF;
     let class = class as u16;
 
@@ -118,19 +120,20 @@ fn get_device(bus: u8, device: u8) -> Option<Device> {
 
     let mut bars = [0, 0, 0, 0, 0, 0];
     unsafe {
-        bars[0] = read(bus, device, 0, 0x10);
-        bars[1] = read(bus, device, 0, 0x14);
-        bars[2] = read(bus, device, 0, 0x18);
-        bars[3] = read(bus, device, 0, 0x1C);
-        bars[4] = read(bus, device, 0, 0x20);
-        bars[5] = read(bus, device, 0, 0x24);
+        bars[0] = read(bus, device, function, 0x10);
+        bars[1] = read(bus, device, function, 0x14);
+        bars[2] = read(bus, device, function, 0x18);
+        bars[3] = read(bus, device, function, 0x1C);
+        bars[4] = read(bus, device, function, 0x20);
+        bars[5] = read(bus, device, function, 0x24);
     }
 
     let last_row = unsafe { read(bus, device, 0, 0x3C) };
 
     Some(Device {
-        device,
         bus,
+        device,
+        function,
         device_id,
         vendor_id,
         class,
@@ -141,14 +144,14 @@ fn get_device(bus: u8, device: u8) -> Option<Device> {
     })
 }
 
-unsafe fn read(bus: u8, device: u8, func: u8, offset: u8) -> u32 {
+unsafe fn read(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
     let bus = bus as u32;
     let device = device as u32;
-    let func = func as u32;
+    let function = function as u32;
     let offset = offset as u32;
 
     let address =
-        ((bus << 16) | (device << 11) | (func << 8) | (offset & 0xFC) | 0x80000000) as u32;
+        ((bus << 16) | (device << 11) | (function << 8) | (offset & 0xFC) | 0x80000000) as u32;
 
     unsafe {
         Port::<u32>::new(0xCF8).write(address);
