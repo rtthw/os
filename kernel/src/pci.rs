@@ -133,6 +133,42 @@ impl Device {
             })
         }
     }
+
+    pub unsafe fn read(&self, offset: u8) -> u32 {
+        unsafe { read(self.bus, self.device, self.function, offset) }
+    }
+
+    pub unsafe fn write(&self, offset: u8, value: u32) {
+        unsafe { write(self.bus, self.device, self.function, offset, value) }
+    }
+
+    pub unsafe fn read_struct<T: Clone>(&self, offset: u8) -> T {
+        let size = size_of::<T>();
+        assert_eq!(size % 4, 0);
+        let num_words = size / 4;
+
+        let buf: Vec<u32> = (0..num_words)
+            .map(|i| {
+                let i: u8 = i.try_into().unwrap();
+                unsafe { self.read(offset + 4 * i) }
+            })
+            .collect();
+
+        let ptr = buf.as_ptr() as *const T;
+
+        unsafe { ptr.as_ref().unwrap().clone() }
+    }
+
+    pub fn set_msix(&self, enabled: bool) {
+        let Some(cap) = self.capabilities().into_iter().find(|cap| cap.id == 0x11) else {
+            return;
+        };
+
+        let mut word = unsafe { read(self.bus, self.device, self.function, cap.offset) };
+        word = *u32_set_bit(&mut word, 31, enabled);
+
+        unsafe { write(self.bus, self.device, self.function, cap.offset, word) };
+    }
 }
 
 impl Debug for Device {

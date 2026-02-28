@@ -7,6 +7,7 @@ extern crate alloc;
 mod allocator;
 mod pci;
 mod serial;
+mod virtio;
 
 use {
     log::{debug, info, trace},
@@ -55,6 +56,11 @@ fn main() -> Status {
 
     for pci_device in pci::enumerate_devices() {
         trace!("PCI Device: {pci_device:?}");
+        if pci_device.vendor_id == 0x1af4 && pci_device.device_id == 0x1050 {
+            let mut virtio_device = virtio::Device::new(pci_device);
+            let _control_queue: virtio::Virtqueue<64, 128> =
+                virtio_device.initialize(0, |dev| dev.initialize_queue(0));
+        }
     }
 
     info!("Starting main loop...");
