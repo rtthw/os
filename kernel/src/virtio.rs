@@ -4,14 +4,15 @@
 //!
 //! [VirtIO 1.3 specification]: https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.pdf
 
-use core::ptr::{read_volatile, write_volatile};
-
 use {
-    alloc::boxed::Box,
+    alloc::{borrow::ToOwned as _, boxed::Box},
+    core::ptr::{read_volatile, write_volatile},
+    tinyvec::ArrayVec,
     x86_64::{PhysAddr, VirtAddr},
 };
 
 use crate::{get_memory_mapper, pci};
+
 
 const VIRTIO_F_VERSION_1: u32 = 0x1;
 
@@ -23,6 +24,7 @@ pub const DEVICE_STATUS_FEATURES_OK: u8 = 8;
 pub const DEVICE_STATUS_NEEDS_RESET: u8 = 64;
 pub const DEVICE_STATUS_FAILED: u8 = 128;
 
+#[derive(Debug)]
 pub struct Device {
     pci_device: pci::Device,
     common_config_cap: VirtioCapability,
@@ -75,13 +77,11 @@ impl Device {
         }
     }
 
-    pub fn initialize<R>(
-        &mut self,
-        feature_bits: u32,
-        mut setup_fn: impl FnOnce(&mut Self) -> R,
-    ) -> R {
+    pub fn initialize<R>(&mut self, feature_bits: u32, setup_fn: impl FnOnce(&mut Self) -> R) -> R {
         // 1. Reset the device.
         self.write_status(DEVICE_STATUS_RESET);
+
+        self.pci_device.set_msix(false);
 
         // 2. Set the ACKNOWLEDGE status bit: the guest OS has noticed the device
         self.write_status(DEVICE_STATUS_ACKNOWLEDGE);
@@ -165,7 +165,7 @@ impl Device {
             storage,
             pop_index: 0,
             notify_addr,
-            avail_desc: [true; QUEUE_SIZE],
+            available_descriptors: [true; QUEUE_SIZE],
         }
     }
 
@@ -209,8 +209,8 @@ pub struct VirtioCapability {
     virtio_cap: VirtioPciCap,
 }
 
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
-#[derive(Clone, Copy)]
 pub struct VirtioPciCommonCfg {
     pub device_feature_select: u32,
     pub device_feature: u32,
@@ -234,8 +234,8 @@ pub struct VirtioPciCommonCfg {
     pub queue_device: u64,
 }
 
-#[repr(C)]
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 struct VirtioPciCap {
     cap_vndr: u8,
     cap_next: u8,
@@ -267,14 +267,181 @@ fn addr_in_bar(pci_device: &pci::Device, virtio_cap: &VirtioPciCap) -> VirtAddr 
 
 
 
+#[derive(Debug)]
 pub struct Virtqueue<const QUEUE_SIZE: usize, const BUFFER_SIZE: usize> {
     index: u16,
     storage: Box<VirtqueueStorage<QUEUE_SIZE>>,
     pop_index: usize,
     notify_addr: VirtAddr,
-    avail_desc: [bool; QUEUE_SIZE],
+    available_descriptors: [bool; QUEUE_SIZE],
 }
 
+impl<const QUEUE_SIZE: usize, const BUFFER_SIZE: usize> Virtqueue<QUEUE_SIZE, BUFFER_SIZE> {
+    pub unsafe fn notify_device(&self) {
+        let queue_index: u8 = self.index.try_into().unwrap();
+        let ptr = self.notify_addr.as_mut_ptr();
+        unsafe {
+            write_volatile(ptr, queue_index as u16);
+        }
+    }
+
+    pub unsafe fn push<const N: usize, T: Clone + Default>(
+        &mut self,
+        messages: &[VirtqueueMessage<T>; N],
+    ) -> Result<(), ()> {
+        assert!(N > 0);
+
+        let mut desc_indices = [0usize; N];
+        for i in 0..N {
+            match self.take_descriptor() {
+                Some(desc_index) => desc_indices[i] = desc_index,
+                None => {
+                    log::debug!("FAILED PUSH @ {i}");
+                    // Couldn't reserve the required number of descriptors.
+                    for desc_index in &desc_indices[..i] {
+                        self.return_descriptor(*desc_index);
+                    }
+
+                    return Err(());
+                }
+            }
+        }
+
+        for (message_index, message) in messages.into_iter().enumerate() {
+            let desc_index = desc_indices[message_index];
+
+            let desc_ref = self.storage.descriptor_area.0.get_mut(desc_index).unwrap();
+
+            let mut desc = unsafe { read_volatile(desc_ref) };
+
+            let buffer = match message {
+                VirtqueueMessage::DeviceRead { data, len } => {
+                    desc.flags = 0x0;
+                    desc.len = len.unwrap_or(size_of::<T>()) as u32;
+                    data.clone()
+                }
+                VirtqueueMessage::DeviceWrite => {
+                    desc.flags = 0x2;
+                    desc.len = size_of::<T>() as u32;
+                    T::default()
+                }
+            };
+
+            let mapper = get_memory_mapper();
+
+            unsafe {
+                let virt_addr = mapper.physical_to_virtual(PhysAddr::new(desc.addr));
+                let mut desc_buffer: Box<T> = Box::from_raw(virt_addr.as_mut_ptr());
+                *desc_buffer = buffer;
+                Box::leak(desc_buffer);
+            }
+
+            if message_index < N - 1 {
+                desc.next = desc_indices[message_index + 1] as u16;
+                desc.flags |= 0x1;
+            }
+
+            unsafe {
+                write_volatile(desc_ref, desc);
+            }
+        }
+
+        unsafe {
+            let ring_index = read_volatile(&self.storage.driver_area.idx) as usize;
+
+            write_volatile(
+                self.storage
+                    .driver_area
+                    .ring
+                    .get_mut(ring_index % QUEUE_SIZE)
+                    .unwrap(),
+                desc_indices[0] as u16,
+            );
+
+            let old_index = read_volatile(&self.storage.driver_area.idx);
+            write_volatile(&mut self.storage.driver_area.idx, old_index + 1);
+        }
+
+        Ok(())
+    }
+
+    pub unsafe fn pop<const N: usize, T: Clone + Default>(&mut self) -> Option<[T; N]> {
+        let mapper = get_memory_mapper();
+
+        let new_index = unsafe { read_volatile(&self.storage.device_area.idx) } as usize;
+
+        if new_index == self.pop_index {
+            return None;
+        }
+
+        let index = self.pop_index;
+        let element = unsafe {
+            read_volatile(
+                self.storage
+                    .device_area
+                    .ring
+                    .get(index % QUEUE_SIZE)
+                    .unwrap(),
+            )
+        };
+
+        // log::debug!("ELEM: {:?}", element);
+
+        let mut out = ArrayVec::<[T; N]>::new();
+        let mut desc_index = element.id as usize;
+
+        loop {
+            let desc =
+                unsafe { read_volatile(self.storage.descriptor_area.0.get(desc_index).unwrap()) };
+
+            // log::debug!("DESC: {:?}", desc);
+
+            unsafe {
+                let virt_addr = mapper.physical_to_virtual(PhysAddr::new(desc.addr));
+                let desc_buffer: Box<T> = Box::from_raw(virt_addr.as_mut_ptr());
+                out.push(*desc_buffer.to_owned());
+                Box::leak(desc_buffer);
+            };
+
+            let next_desc = desc.next.into();
+
+            self.return_descriptor(desc_index);
+
+            if next_desc != 0 {
+                desc_index = next_desc
+            } else {
+                break;
+            }
+        }
+
+        self.pop_index += 1;
+
+        Some(out.into_inner())
+    }
+
+    fn take_descriptor(&mut self) -> Option<usize> {
+        for (desc_index, available) in self.available_descriptors.iter_mut().enumerate() {
+            if *available {
+                *available = false;
+                return Some(desc_index);
+            }
+        }
+
+        None
+    }
+
+    fn return_descriptor(&mut self, desc_index: usize) {
+        self.available_descriptors[desc_index] = true;
+    }
+}
+
+#[derive(Clone)]
+pub enum VirtqueueMessage<T: Clone + Default> {
+    DeviceWrite,
+    DeviceRead { data: T, len: Option<usize> },
+}
+
+#[derive(Debug)]
 struct VirtqueueStorage<const SIZE: usize> {
     descriptor_area: VirtqueueDescTable<SIZE>,
     driver_area: VirtqueueAvailableRing<SIZE>,
@@ -301,6 +468,7 @@ impl<const SIZE: usize> VirtqueueStorage<SIZE> {
     }
 }
 
+#[derive(Debug)]
 #[repr(C, align(16))]
 pub struct VirtqueueDescTable<const SIZE: usize>([VirtqueueDesc; SIZE]);
 
@@ -322,6 +490,7 @@ impl VirtqueueDesc {
     };
 }
 
+#[derive(Debug)]
 #[repr(C, align(2))]
 struct VirtqueueAvailableRing<const SIZE: usize> {
     flags: u16,
@@ -330,6 +499,7 @@ struct VirtqueueAvailableRing<const SIZE: usize> {
     used_event: u16,
 }
 
+#[derive(Debug)]
 #[repr(C, align(4))]
 struct VirtqueueUsedRing<const SIZE: usize> {
     flags: u16,
@@ -338,8 +508,8 @@ struct VirtqueueUsedRing<const SIZE: usize> {
     avail_event: u16,
 }
 
-#[repr(C)]
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 struct VirtqueueUsedElement {
     /// Index of start of used descriptor chain.
     id: u32,
