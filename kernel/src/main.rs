@@ -8,6 +8,7 @@ mod allocator;
 mod pci;
 mod serial;
 mod virtio;
+mod virtio_gpu;
 
 use {
     log::{debug, info, trace},
@@ -54,14 +55,23 @@ fn main() -> Status {
 
     info!("Setting up devices...");
 
-    for pci_device in pci::enumerate_devices() {
-        trace!("PCI Device: {pci_device:?}");
-        if pci_device.vendor_id == 0x1af4 && pci_device.device_id == 0x1050 {
-            let mut virtio_device = virtio::Device::new(pci_device);
-            let _control_queue: virtio::Virtqueue<64, 128> =
-                virtio_device.initialize(0, |dev| dev.initialize_queue(0));
-        }
-    }
+    let mut pci_devices = pci::enumerate_devices();
+
+    let mut virtio_gpu = {
+        let index = pci_devices
+            .iter()
+            .position(|dev| dev.vendor_id == 0x1af4 && dev.device_id == 0x1050)
+            .expect("failed to find VirtIO GPU");
+        let pci_device = pci_devices.swap_remove(index);
+        virtio_gpu::Device::new(pci_device)
+    };
+
+    let display_mode = virtio_gpu.active_display_mode().unwrap();
+    trace!("DISPLAY_MODE: {display_mode:#?}");
+
+    let mut framebuffer = virtio_gpu::Framebuffer::new(&display_mode);
+    virtio_gpu.initialize_framebuffer(&mut framebuffer);
+    virtio_gpu.flush(&mut framebuffer);
 
     info!("Starting main loop...");
 
@@ -70,6 +80,7 @@ fn main() -> Status {
         if false {
             break;
         }
+        virtio_gpu.flush(&mut framebuffer);
     }
 
     Status::SUCCESS
