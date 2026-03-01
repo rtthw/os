@@ -13,6 +13,7 @@ mod virtio_gpu;
 mod virtio_input;
 
 use {
+    crate::virtio_gpu::Color,
     alloc::vec::Vec,
     log::{debug, info, trace, warn},
     spin::Once,
@@ -84,6 +85,9 @@ fn main() -> Status {
 
     info!("Starting main loop...");
 
+    let mut mouse_x = framebuffer.width() / 2;
+    let mut mouse_y = framebuffer.height() / 2;
+
     'main_loop: loop {
         for input_device in virtio_inputs.iter_mut() {
             for input_event in input_device.poll() {
@@ -105,11 +109,15 @@ fn main() -> Status {
                     input::EV_REL => match input_event.code {
                         input::REL_X => {
                             let delta = input_event.value as i32;
-                            trace!("MOUSE_MOVE_X: delta = {delta}");
+                            mouse_x = 0
+                                .max((framebuffer.width() as i32 - 1).min(mouse_x as i32 + delta))
+                                as u32;
                         }
                         input::REL_Y => {
                             let delta = input_event.value as i32;
-                            trace!("MOUSE_MOVE_Y: delta = {delta}");
+                            mouse_y = 0
+                                .max((framebuffer.height() as i32 - 1).min(mouse_y as i32 + delta))
+                                as u32;
                         }
                         input::REL_WHEEL => {
                             let delta = input_event.value as i32;
@@ -123,6 +131,17 @@ fn main() -> Status {
                         warn!("Unhandled input event: {other:?}");
                     }
                 }
+            }
+        }
+
+        {
+            let mut pixels = framebuffer.pixels();
+            pixels.fill(Color::gray(0x11));
+            for x in mouse_x..(mouse_x + 5) {
+                pixels.get_mut(x, mouse_y).map(|c| *c = Color::WHITE);
+            }
+            for y in (mouse_y + 1)..(mouse_y + 7) {
+                pixels.get_mut(mouse_x, y).map(|c| *c = Color::WHITE);
             }
         }
 

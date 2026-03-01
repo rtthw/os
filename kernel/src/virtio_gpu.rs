@@ -226,6 +226,97 @@ impl Framebuffer {
             height,
         }
     }
+
+    #[inline]
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+
+    #[inline]
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn pixels(&mut self) -> Pixels<'_> {
+        assert_eq!(self.pixels.len(), (self.width * self.height * 4) as usize);
+        let slice = unsafe {
+            let (head, body, tail) = self.pixels.align_to_mut::<Color>();
+            assert_eq!(head.len(), 0);
+            assert_eq!(tail.len(), 0);
+            body
+        };
+
+        Pixels {
+            slice,
+            slice_width: self.width,
+            slice_height: self.height,
+        }
+    }
+}
+
+pub struct Pixels<'fb> {
+    slice: &'fb mut [Color],
+    slice_width: u32,
+    slice_height: u32,
+}
+
+impl Pixels<'_> {
+    pub fn fill(&mut self, color: Color) {
+        self.slice.fill(color);
+    }
+
+    pub fn get_mut(&mut self, x: u32, y: u32) -> Option<&mut Color> {
+        if self.slice_width <= x || self.slice_height <= y {
+            return None;
+        }
+        let index = (y * self.slice_width + x) as usize;
+
+        Some(&mut self.slice[index])
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(transparent)]
+pub struct Color([u8; 4]);
+
+impl Color {
+    pub const WHITE: Self = Self::rgb(255, 255, 255);
+
+    #[inline]
+    pub const fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self([r, g, b, a])
+    }
+
+    #[inline]
+    pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
+        Self::new(r, g, b, 255)
+    }
+
+    #[inline]
+    pub const fn gray(value: u8) -> Self {
+        Self::rgb(value, value, value)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub struct Rect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl Rect {
+    #[inline]
+    pub const fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
 }
 
 
@@ -332,15 +423,6 @@ impl Default for Message {
         let x = MaybeUninit::<Self>::zeroed();
         unsafe { x.assume_init() }
     }
-}
-
-#[derive(Clone, Copy, Debug)]
-#[repr(C)]
-pub struct Rect {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
