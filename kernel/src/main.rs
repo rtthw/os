@@ -13,7 +13,8 @@ mod virtio_gpu;
 mod virtio_input;
 
 use {
-    log::{debug, info, trace},
+    alloc::vec::Vec,
+    log::{debug, info, trace, warn},
     spin::Once,
     uefi::{mem::memory_map::MemoryMap as _, prelude::*},
     x86_64::{
@@ -83,11 +84,48 @@ fn main() -> Status {
 
     info!("Starting main loop...");
 
-    loop {
-        // TODO
-        if false {
-            break;
+    'main_loop: loop {
+        for input_device in virtio_inputs.iter_mut() {
+            for input_event in input_device.poll() {
+                match input_event.type_ {
+                    // Just ignore sync events for now.
+                    input::EV_SYN => {
+                        continue;
+                    }
+                    input::EV_KEY => match input_event.code {
+                        input::KEY_ESC => {
+                            break 'main_loop;
+                        }
+                        _ => {
+                            if input_event.value == 0 {
+                                trace!("KEY_PRESS: code = {}", input_event.code);
+                            }
+                        }
+                    },
+                    input::EV_REL => match input_event.code {
+                        input::REL_X => {
+                            let delta = input_event.value as i32;
+                            trace!("MOUSE_MOVE_X: delta = {delta}");
+                        }
+                        input::REL_Y => {
+                            let delta = input_event.value as i32;
+                            trace!("MOUSE_MOVE_Y: delta = {delta}");
+                        }
+                        input::REL_WHEEL => {
+                            let delta = input_event.value as i32;
+                            trace!("MOUSE_WHEEL: delta = {delta}");
+                        }
+
+                        _ => warn!("Unhandled pointer event code {}", input_event.code),
+                    },
+
+                    other => {
+                        warn!("Unhandled input event: {other:?}");
+                    }
+                }
+            }
         }
+
         virtio_gpu.flush(&mut framebuffer);
     }
 
