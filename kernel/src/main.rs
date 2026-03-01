@@ -5,6 +5,7 @@
 extern crate alloc;
 
 mod allocator;
+mod input;
 mod pci;
 mod serial;
 mod virtio;
