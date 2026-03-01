@@ -31,7 +31,10 @@ fn main() -> Status {
     log::set_max_level(log::LevelFilter::Trace);
     log::set_logger(&serial::SerialLogger).unwrap();
 
-    uefi::helpers::init().unwrap();
+    uefi::system::with_stdout(|stdout| {
+        stdout.clear().unwrap();
+    });
+
     let memory_map = unsafe { boot::exit_boot_services(Some(boot::MemoryType::LOADER_DATA)) };
 
     info!("Creating memory allocator...");
