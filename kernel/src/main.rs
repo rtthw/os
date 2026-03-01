@@ -9,6 +9,7 @@ mod pci;
 mod serial;
 mod virtio;
 mod virtio_gpu;
+mod virtio_input;
 
 use {
     log::{debug, info, trace},
@@ -72,6 +73,12 @@ fn main() -> Status {
     let mut framebuffer = virtio_gpu::Framebuffer::new(&display_mode);
     virtio_gpu.initialize_framebuffer(&mut framebuffer);
     virtio_gpu.flush(&mut framebuffer);
+
+    let mut virtio_inputs = pci_devices
+        .into_iter()
+        .filter(|dev| dev.vendor_id == 0x1af4 && dev.device_id == 0x1040 + 18)
+        .map(|pci_device| virtio_input::Device::new(pci_device))
+        .collect::<Vec<_>>();
 
     info!("Starting main loop...");
 
