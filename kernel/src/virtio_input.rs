@@ -4,10 +4,7 @@ use core::ops::{Deref, DerefMut};
 
 use alloc::vec::Vec;
 
-use crate::{
-    pci,
-    virtio::{self, VirtqueueMessage},
-};
+use crate::virtio::{self, VirtqueueMessage};
 
 
 const INPUT_EVENT_SIZE: usize = size_of::<InputEvent>();

@@ -12,7 +12,7 @@ use alloc::boxed::Box;
 use {core::mem::MaybeUninit, x86_64::VirtAddr};
 
 use crate::{
-    get_memory_mapper, pci,
+    get_memory_mapper,
     virtio::{self, VirtqueueMessage},
 };
 

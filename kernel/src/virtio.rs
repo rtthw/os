@@ -11,7 +11,7 @@ use {
     x86_64::{PhysAddr, VirtAddr},
 };
 
-use crate::{get_memory_mapper, pci};
+use crate::get_memory_mapper;
 
 
 const VIRTIO_F_VERSION_1: u32 = 0x1;

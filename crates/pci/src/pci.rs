@@ -1,6 +1,14 @@
 //! # Peripheral Component Interconnect (PCI)
 
-use {alloc::vec::Vec, core::fmt::Debug, x86_64::instructions::port::Port};
+#![no_std]
+
+#[macro_use]
+extern crate alloc;
+
+use {
+    alloc::vec::Vec,
+    core::{arch::asm, fmt::Debug},
+};
 
 
 
@@ -270,6 +278,31 @@ fn get_device(bus: u8, device: u8) -> Option<Device> {
     })
 }
 
+unsafe fn read_from_port() -> u32 {
+    let value: u32;
+    unsafe {
+        asm!(
+            "in eax, dx",
+            out("eax") value,
+            in("dx") 0xCFC,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+
+    value
+}
+
+unsafe fn write_to_port(port: u16, value: u32) {
+    unsafe {
+        asm!(
+            "out dx, eax",
+            in("dx") port,
+            in("eax") value,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+}
+
 unsafe fn read(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
     let bus = bus as u32;
     let device = device as u32;
@@ -280,8 +313,8 @@ unsafe fn read(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
         ((bus << 16) | (device << 11) | (function << 8) | (offset & 0xFC) | 0x80000000) as u32;
 
     unsafe {
-        Port::<u32>::new(0xCF8).write(address);
-        Port::<u32>::new(0xCFC).read()
+        write_to_port(0xCF8, address);
+        read_from_port()
     }
 }
 
@@ -295,8 +328,8 @@ unsafe fn write(bus: u8, device: u8, function: u8, offset: u8, value: u32) {
         ((bus << 16) | (device << 11) | (function << 8) | (offset & 0xfc) | 0x80000000) as u32;
 
     unsafe {
-        Port::<u32>::new(0xCF8).write(address);
-        Port::<u32>::new(0xCFC).write(value);
+        write_to_port(0xCF8, address);
+        write_to_port(0xCFC, value);
     }
 }
 
