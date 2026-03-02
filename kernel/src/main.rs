@@ -16,7 +16,7 @@ use {
     alloc::vec::Vec,
     log::{debug, info, trace, warn},
     spin::Once,
-    uefi::{mem::memory_map::MemoryMap as _, prelude::*},
+    uefi::{boot::MemoryType, mem::memory_map::MemoryMap as _, prelude::*},
     x86_64::{
         PhysAddr, VirtAddr,
         structures::paging::{OffsetPageTable, PageTable, Translate as _, mapper::TranslateResult},
@@ -36,14 +36,78 @@ fn main() -> Status {
 
     let memory_map = unsafe { boot::exit_boot_services(Some(boot::MemoryType::LOADER_DATA)) };
 
+    assert!(
+        memory_map
+            .entries()
+            .is_sorted_by(|a, b| a.phys_start < b.phys_start),
+    );
+
     info!("Creating memory allocator...");
 
     // Initialize the memory mapper.
     let _ = get_memory_mapper();
 
+    let mut current_usable_region: Option<(u64, u64)> = None;
+    let mut prev_desc_end = 0;
+    let mut prev_desc_ty = memory_map
+        .entries()
+        .next()
+        .expect("memory map should not be empty")
+        .ty;
+
+    for desc in memory_map.entries() {
+        if prev_desc_end < desc.phys_start {
+            warn!(
+                "Found unmapped memory @ {:#x}..{:#x} ({:#x} bytes) [{:?} -> {:?}]",
+                prev_desc_end,
+                desc.phys_start,
+                desc.phys_start - prev_desc_end,
+                prev_desc_ty,
+                desc.ty,
+            );
+        }
+
+        let usable_after_boot = matches!(
+            desc.ty,
+            MemoryType::CONVENTIONAL
+                | MemoryType::LOADER_CODE
+                | MemoryType::LOADER_DATA
+                | MemoryType::BOOT_SERVICES_CODE
+                | MemoryType::BOOT_SERVICES_DATA,
+        );
+
+        if let Some((current_start, current_page_count)) = &mut current_usable_region {
+            if usable_after_boot {
+                *current_page_count += desc.page_count;
+            } else {
+                info!(
+                    "Usable memory region @ {:#x} ({} pages, {} bytes)",
+                    current_start,
+                    current_page_count,
+                    *current_page_count * 4096,
+                );
+                current_usable_region = None;
+            }
+        } else if usable_after_boot {
+            current_usable_region = Some((desc.phys_start, desc.page_count));
+        }
+
+        prev_desc_end = desc.phys_start + desc.page_count * 4096;
+        prev_desc_ty = desc.ty;
+    }
+
+    if let Some((current_start, current_page_count)) = current_usable_region.take() {
+        info!(
+            "Usable memory region @ {:#x} ({} pages, {} bytes)",
+            current_start,
+            current_page_count,
+            current_page_count * 4096,
+        );
+    }
+
     let heap_desc = memory_map
         .entries()
-        .filter(|desc| desc.ty == boot::MemoryType::CONVENTIONAL)
+        .filter(|desc| desc.ty == MemoryType::CONVENTIONAL)
         .max_by_key(|desc| desc.page_count)
         .expect("no suitable memory region available");
     let heap_addr = heap_desc.phys_start as usize;
