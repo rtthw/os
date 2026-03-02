@@ -1001,6 +1001,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "elf"
+version = "0.1.0"
+
+[[package]]
 name = "emath"
 version = "0.33.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
