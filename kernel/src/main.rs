@@ -6,6 +6,7 @@ extern crate alloc;
 
 mod acpi;
 mod allocator;
+mod clock;
 mod input;
 mod serial;
 mod virtio;
@@ -13,7 +14,10 @@ mod virtio_gpu;
 mod virtio_input;
 
 use {
-    crate::virtio_gpu::Color,
+    crate::{
+        clock::{ClockSpeed, SystemClock},
+        virtio_gpu::Color,
+    },
     alloc::vec::Vec,
     log::{debug, info, trace, warn},
     spin::Once,
@@ -142,6 +146,24 @@ fn main() -> Status {
 
     acpi::setup(rsdp_address);
 
+    // trace!(
+    //     "Raw time before clock init: {:.3} secs",
+    //     unsafe { clock::raw_cpu_cycle() } as f64 / 1.0_e10,
+    // );
+    info!("Estimating boot processor speed...");
+    let bp_speed = ClockSpeed::guess();
+    info!(
+        "Boot processor frequency: {:.3} GHz",
+        bp_speed.frequency_gigahertz(),
+    );
+    let clock = SystemClock::new(bp_speed);
+    trace!("Time after clock init: {:.3} secs", clock.time());
+    clock.delay(0.1);
+    trace!(
+        "Time after clock delayed 0.1 seconds: {:.3} secs",
+        clock.time(),
+    );
+
     info!("Setting up devices...");
 
     let mut pci_devices = pci::enumerate_devices();
@@ -167,6 +189,8 @@ fn main() -> Status {
         .filter(|dev| dev.vendor_id == 0x1af4 && dev.device_id == 0x1040 + 18)
         .map(|pci_device| virtio_input::Device::new(pci_device))
         .collect::<Vec<_>>();
+
+    trace!("Time after devices init: {:.3} secs", clock.time());
 
     info!("Starting main loop...");
 
