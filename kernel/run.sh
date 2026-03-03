@@ -24,6 +24,7 @@ cp ../target/x86_64-unknown-uefi/release/kernel.efi esp/efi/boot/bootx64.efi
 
 qemu-system-x86_64 \
     -m 1G \
+    -smp 4 \
     -rtc base=utc \
     -display gtk,show-tabs=on \
     -drive if=pflash,format=raw,readonly=on,file=firmware/uefi/OVMF_CODE.fd \

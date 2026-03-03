@@ -4,6 +4,7 @@
 #[macro_use]
 extern crate alloc;
 
+mod acpi;
 mod allocator;
 mod input;
 mod serial;
@@ -16,7 +17,9 @@ use {
     alloc::vec::Vec,
     log::{debug, info, trace, warn},
     spin::Once,
-    uefi::{boot::MemoryType, mem::memory_map::MemoryMap as _, prelude::*},
+    uefi::{
+        boot::MemoryType, mem::memory_map::MemoryMap as _, prelude::*, system::with_config_table,
+    },
     x86_64::{
         PhysAddr, VirtAddr,
         structures::paging::{OffsetPageTable, PageTable, Translate as _, mapper::TranslateResult},
@@ -122,6 +125,22 @@ fn main() -> Status {
     unsafe {
         allocator::ALLOCATOR.init(heap_addr, heap_size);
     }
+
+    let rsdp_address = with_config_table(|config_entries| {
+        let mut iter = config_entries.iter();
+        iter.find(|entry| matches!(entry.guid, uefi::table::cfg::ConfigTableEntry::ACPI2_GUID))
+            .or_else(|| {
+                iter.find(|entry| {
+                    matches!(entry.guid, uefi::table::cfg::ConfigTableEntry::ACPI_GUID)
+                })
+            })
+            .expect("failed to find RDSP entry")
+            .address as usize
+    });
+
+    info!("Found RSDP @ {rsdp_address:#x}");
+
+    acpi::setup(rsdp_address);
 
     info!("Setting up devices...");
 
