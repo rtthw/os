@@ -1,9 +1,15 @@
 //! # System Clock
 
+use core::{
+    pin::Pin,
+    task::{Context, Poll},
+};
+
 use uefi::runtime::get_time;
 
 
 
+#[derive(Clone)]
 pub struct SystemClock {
     period_secs: f64,
 }
@@ -22,7 +28,17 @@ impl SystemClock {
 
     pub fn delay(&self, secs: f64) {
         let start_time = self.time();
-        while self.time() - start_time < secs {}
+        while self.time() - start_time < secs {
+            core::hint::spin_loop();
+        }
+    }
+
+    pub fn delay_future(&self, secs: f64) -> Delay {
+        Delay {
+            clock: self.clone(),
+            seconds: secs,
+            start_time: self.time(),
+        }
     }
 }
 
@@ -69,5 +85,26 @@ impl ClockSpeed {
     #[inline]
     pub const fn frequency_gigahertz(&self) -> f64 {
         1.0 / self.period_seconds() / 1.0_e9
+    }
+}
+
+
+
+pub struct Delay {
+    clock: SystemClock,
+    seconds: f64,
+    start_time: f64,
+}
+
+impl Future for Delay {
+    type Output = ();
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if self.clock.time() - self.start_time < self.seconds {
+            cx.waker().wake_by_ref();
+            Poll::Pending
+        } else {
+            Poll::Ready(())
+        }
     }
 }

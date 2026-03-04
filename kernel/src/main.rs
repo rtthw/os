@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+#![allow(unused)]
 
 #[macro_use]
 extern crate alloc;
@@ -7,6 +8,7 @@ extern crate alloc;
 mod acpi;
 mod allocator;
 mod clock;
+mod executor;
 mod input;
 mod serial;
 mod virtio;
@@ -184,7 +186,7 @@ fn main() -> Status {
     virtio_gpu.initialize_framebuffer(&mut framebuffer);
     virtio_gpu.flush(&mut framebuffer);
 
-    let mut virtio_inputs = pci_devices
+    let virtio_inputs = pci_devices
         .into_iter()
         .filter(|dev| dev.vendor_id == 0x1af4 && dev.device_id == 0x1040 + 18)
         .map(|pci_device| virtio_input::Device::new(pci_device))
@@ -194,11 +196,42 @@ fn main() -> Status {
 
     info!("Starting main loop...");
 
+    let mut executor = executor::Executor::new();
+
+    let clock_clone = clock.clone();
+    executor.spawn(async move {
+        for i in 1..=5 {
+            clock_clone.delay_future(2.0).await;
+            trace!("every_two_seconds: {i}");
+        }
+    });
+    executor.spawn(async move { main_loop(clock, virtio_gpu, framebuffer, virtio_inputs).await });
+
+    loop {
+        executor.tick();
+    }
+}
+
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    log::error!("{}", info);
+    loop {}
+}
+
+
+
+async fn main_loop(
+    clock: SystemClock,
+    mut gpu: virtio_gpu::Device,
+    mut framebuffer: virtio_gpu::Framebuffer,
+    mut input_devices: Vec<virtio_input::Device>,
+) {
     let mut mouse_x = framebuffer.width() / 2;
     let mut mouse_y = framebuffer.height() / 2;
 
     'main_loop: loop {
-        for input_device in virtio_inputs.iter_mut() {
+        for input_device in input_devices.iter_mut() {
             for input_event in input_device.poll() {
                 match input_event.type_ {
                     // Just ignore sync events for now.
@@ -254,17 +287,10 @@ fn main() -> Status {
             }
         }
 
-        virtio_gpu.flush(&mut framebuffer);
+        gpu.flush(&mut framebuffer);
+
+        clock.delay_future(0.01).await;
     }
-
-    Status::SUCCESS
-}
-
-#[cfg(not(test))]
-#[panic_handler]
-fn panic(info: &core::panic::PanicInfo) -> ! {
-    log::error!("{}", info);
-    loop {}
 }
 
 
