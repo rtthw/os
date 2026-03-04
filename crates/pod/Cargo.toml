@@ -1,10 +1,9 @@
 [package]
-name = "elf"
+name = "pod"
 version.workspace = true
 edition.workspace = true
 
 [lib]
-path = "src/elf.rs"
+path = "src/pod.rs"
 
 [dependencies]
-pod = { path = "../pod" }

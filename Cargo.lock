@@ -1023,6 +1023,9 @@ dependencies = [
 [[package]]
 name = "elf"
 version = "0.1.0"
+dependencies = [
+ "pod",
+]
 
 [[package]]
 name = "emath"
@@ -2530,6 +2533,10 @@ dependencies = [
  "flate2",
  "miniz_oxide",
 ]
+
+[[package]]
+name = "pod"
+version = "0.1.0"
 
 [[package]]
 name = "polling"

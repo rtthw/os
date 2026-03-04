@@ -50,7 +50,7 @@ impl<'a> ElfFile<'a> {
             return Err("expected `.strtab` to be a string table");
         }
 
-        Ok(read_str(&header.raw_data(self)[(index as usize)..]))
+        Ok(pod::read_str(&header.raw_data(self)[(index as usize)..]))
     }
 
     pub fn get_section_header(&self, index: u16) -> Result<&'a SectionHeader, &'static str> {
@@ -71,7 +71,7 @@ impl<'a> ElfFile<'a> {
 
     pub fn get_shstr(&self, index: u32) -> Result<&'a str, &'static str> {
         self.get_shstr_table().map(|shstr_table| unsafe {
-            str::from_utf8_unchecked(read_until_null(&shstr_table[(index as usize)..]))
+            str::from_utf8_unchecked(pod::read_until_null(&shstr_table[(index as usize)..]))
         })
     }
 
@@ -111,7 +111,7 @@ impl<'a> Header<'a> {
             return Err("File is shorter than ELF header");
         }
 
-        let ident: &'a HeaderIdent = unsafe { pod_read(&bytes[..HEADER_IDENT_SIZE]) };
+        let ident: &'a HeaderIdent = unsafe { pod::read(&bytes[..HEADER_IDENT_SIZE]) };
 
         if ident.magic != MAGIC_NUM {
             return Err("Invalid magic number");
@@ -121,7 +121,7 @@ impl<'a> Header<'a> {
         }
 
         let body: &'a HeaderBody =
-            unsafe { pod_read(&bytes[HEADER_IDENT_SIZE..HEADER_IDENT_SIZE + HEADER_BODY_SIZE]) };
+            unsafe { pod::read(&bytes[HEADER_IDENT_SIZE..HEADER_IDENT_SIZE + HEADER_BODY_SIZE]) };
 
         Ok(Header { ident, body })
     }
@@ -287,7 +287,7 @@ impl SectionHeader {
             return Err("File is shorter than section header offset");
         }
 
-        Ok(unsafe { pod_read(&input[start..end]) })
+        Ok(unsafe { pod::read(&input[start..end]) })
     }
 
     pub fn get_name<'a>(&self, file: &ElfFile<'a>) -> Result<&'a str, &'static str> {
@@ -337,26 +337,26 @@ impl SectionHeader {
                 | SectionHeaderType::User(_) => SectionData::Undefined(self.raw_data(file)),
                 SectionHeaderType::SymTab => {
                     let data = self.raw_data(file);
-                    SectionData::SymbolTable(read_array(data))
+                    SectionData::SymbolTable(pod::read_array(data))
                 }
                 SectionHeaderType::DynSym => {
                     let data = self.raw_data(file);
-                    SectionData::DynSymbolTable(read_array(data))
+                    SectionData::DynSymbolTable(pod::read_array(data))
                 }
                 SectionHeaderType::StrTab => SectionData::StrArray(self.raw_data(file)),
                 SectionHeaderType::InitArray
                 | SectionHeaderType::FiniArray
                 | SectionHeaderType::PreInitArray => {
                     let data = self.raw_data(file);
-                    SectionData::FnArray(read_array(data))
+                    SectionData::FnArray(pod::read_array(data))
                 }
                 SectionHeaderType::Rela => {
                     let data = self.raw_data(file);
-                    SectionData::Rela(read_array(data))
+                    SectionData::Rela(pod::read_array(data))
                 }
                 SectionHeaderType::Rel => {
                     let data = self.raw_data(file);
-                    SectionData::Rel(read_array(data))
+                    SectionData::Rel(pod::read_array(data))
                 }
                 SectionHeaderType::Dynamic => {
                     todo!()
@@ -367,12 +367,12 @@ impl SectionHeader {
                     let data = self.raw_data(file);
                     unsafe {
                         let flags: &'a u32 = core::mem::transmute(&data[0]);
-                        let indices: &'a [u32] = read_array(&data[4..]);
+                        let indices: &'a [u32] = pod::read_array(&data[4..]);
                         SectionData::Group { flags, indices }
                     }
                 }
                 SectionHeaderType::SymTabShIndex => {
-                    SectionData::SymTabShIndex(read_array(self.raw_data(file)))
+                    SectionData::SymTabShIndex(pod::read_array(self.raw_data(file)))
                 }
                 SectionHeaderType::Note => todo!(),
                 SectionHeaderType::Hash => todo!(),
@@ -687,72 +687,9 @@ impl SymbolTableEntry {
 
 
 
-pub unsafe trait Pod: Sized {}
-
-unsafe impl Pod for u8 {}
-unsafe impl Pod for u16 {}
-unsafe impl Pod for u32 {}
-unsafe impl Pod for u64 {}
-unsafe impl Pod for u128 {}
-
-unsafe impl Pod for i8 {}
-unsafe impl Pod for i16 {}
-unsafe impl Pod for i32 {}
-unsafe impl Pod for i64 {}
-unsafe impl Pod for i128 {}
-
-unsafe impl Pod for HeaderIdent {}
-unsafe impl Pod for HeaderBody {}
-unsafe impl Pod for SectionHeader {}
-unsafe impl Pod for Rel {}
-unsafe impl Pod for Rela {}
-unsafe impl Pod for SymbolTableEntry {}
-
-unsafe fn pod_read<T: Pod>(bytes: &[u8]) -> &T {
-    assert!(size_of::<T>() <= bytes.len());
-    let addr = bytes.as_ptr() as usize;
-    // Alignment is always a power of 2, so we can use bit ops instead of a mod
-    // here.
-    assert!((addr & (align_of::<T>() - 1)) == 0);
-
-    unsafe { &*(bytes.as_ptr() as *const T) }
-}
-
-fn read_until_null(input: &[u8]) -> &[u8] {
-    for (i, byte) in input.iter().enumerate() {
-        if *byte == 0 {
-            return &input[..i];
-        }
-    }
-
-    panic!("no null byte found in input");
-}
-
-fn read_str(input: &[u8]) -> &str {
-    core::str::from_utf8(read_str_bytes(input)).expect("invalid UTF-8 string")
-}
-
-fn read_str_bytes(input: &[u8]) -> &[u8] {
-    for (i, byte) in input.iter().enumerate() {
-        if *byte == 0 {
-            return &input[..i];
-        }
-    }
-
-    panic!("no null byte in input");
-}
-
-fn read_array<T: Pod>(input: &[u8]) -> &[T] {
-    let element_size = size_of::<T>();
-    assert!(element_size > 0, "can't read arrays of zero-sized types");
-    assert!(input.len() % element_size == 0);
-    let addr = input.as_ptr() as usize;
-    assert!(addr & (align_of::<T>() - 1) == 0);
-
-    unsafe { read_array_unsafe(input) }
-}
-
-unsafe fn read_array_unsafe<T: Sized>(input: &[u8]) -> &[T] {
-    let ptr = input.as_ptr() as *const T;
-    unsafe { core::slice::from_raw_parts(ptr, input.len() / size_of::<T>()) }
-}
+unsafe impl pod::Pod for HeaderIdent {}
+unsafe impl pod::Pod for HeaderBody {}
+unsafe impl pod::Pod for SectionHeader {}
+unsafe impl pod::Pod for Rel {}
+unsafe impl pod::Pod for Rela {}
+unsafe impl pod::Pod for SymbolTableEntry {}
