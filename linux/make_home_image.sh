@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Make a static home directory for use with QEMU.
 #

@@ -1,4 +1,5 @@
 /build
 /kernel/esp
 /kernel/firmware/uefi
+/linux/build
 /target

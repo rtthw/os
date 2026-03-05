@@ -6,6 +6,7 @@
 <summary>Table of Contents</summary>
 
 - [Unnamed Operating System](#unnamed-operating-system)
+  - [Running](#running)
   - [Learn More](#learn-more)
   - [License](#license)
 
@@ -15,7 +16,14 @@
 
 # Unnamed Operating System
 
-*TODO*
+*TODO: Write introduction.*
+
+## Running
+
+The OS can be run in one of two ways:
+
+1. On bare metal hardware (work in progress). Go to [the `kernel` directory](./kernel) of this repository for more information.
+2. On the Linux kernel, as a Linux distribution. Go to [the `linux` directory](./linux) of this repository for more information.
 
 ## Learn More
 

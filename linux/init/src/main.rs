@@ -1,4 +1,4 @@
-//! # Init System
+//! # Linux Init Process (PID1)
 
 use linux_uapi::{
     Result,
@@ -179,6 +179,8 @@ fn setup_mount_points() -> Result<()> {
     if chdir(c"/") < 0 {
         return Err(linux_uapi::Error::latest());
     }
+
+    println!("\x1b[2minit\x1b[0m: Mounting the home directory...");
 
     // Mount the home directory.
     mount(
