@@ -23,12 +23,8 @@ use std::{
     os::fd::AsRawFd as _,
     ptr::NonNull,
     str::FromStr as _,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
-    },
+    sync::Arc,
     time::Instant,
-    u64,
 };
 
 use {
@@ -49,7 +45,6 @@ use {
         epoll::{Event, EventPoll},
         file::File,
         object::Object,
-        shm::{Mutex, SharedMemory},
     },
 };
 
@@ -63,18 +58,12 @@ fn main() -> Result<()> {
     log::Logger::default().init()?;
 
     run_abi_tests().context("failed to run ABI tests")?;
-    run_driver_tests().context("failed to run app driver tests")?;
 
     info!("Starting shell...");
 
     std::thread::sleep(std::time::Duration::from_secs(1));
 
     let egui_context = egui::Context::default();
-
-    info!("Compiling example program...");
-
-    let example_program_text = std::fs::read_to_string("/lib/example.rs")?;
-    let example_program = Program::load("example", example_program_text)?;
 
     let gpu = GraphicsCard::open("/dev/dri/card0")?;
 
@@ -438,7 +427,6 @@ fn main() -> Result<()> {
         cursor_icon: CursorIcon::Default,
         cursor_data,
         cursor_buffer,
-        example_program,
         egui_context,
     };
 
@@ -610,7 +598,6 @@ pub struct Shell {
     cursor_icon: CursorIcon,
     cursor_data: HashMap<CursorIcon, CursorData>,
     cursor_buffer: gbm::BufferObject<()>,
-    example_program: Program,
     egui_context: egui::Context,
 }
 
@@ -629,23 +616,6 @@ impl Shell {
                 self.input_state.mouse_pos.y as _,
             ),
         )?;
-
-        if let Some(_handle) = self.example_program.handle.as_ref() {
-            for event in &self.input_state.events {
-                match event {
-                    egui::Event::PointerMoved(egui::Pos2 { x, y }) => {
-                        self.example_program
-                            .driver_input
-                            .send_event(DriverInputEvent::Pointer(abi::PointerEvent::Move {
-                                position: abi::Xy::new(*x, *y)
-                                    - self.example_program.known_bounds.position(),
-                            }))
-                            .unwrap();
-                    }
-                    _ => {}
-                }
-            }
-        }
 
         let (width, height) = self.output.mode.size();
         let size = vec2(width as _, height as _);
@@ -743,10 +713,6 @@ impl Shell {
                                     let line: String = self.input_buffer.drain(..).collect();
                                     println!("{}", line);
                                 }
-
-                                self.example_program
-                                    .update(ui)
-                                    .expect("failed to update example program");
                             });
                     });
             });
@@ -768,14 +734,7 @@ impl Shell {
             self.output.renderer.gl.finish();
         }
 
-        let next_icon = if self.example_program.known_bounds.contains(Xy::new(
-            self.input_state.mouse_pos.x,
-            self.input_state.mouse_pos.y,
-        )) {
-            CursorIcon::Default // TODO: Driver output.
-        } else {
-            cursor::egui_to_abi_cursor_icon(full_output.platform_output.cursor_icon)
-        };
+        let next_icon = cursor::egui_to_abi_cursor_icon(full_output.platform_output.cursor_icon);
         if self.cursor_icon != next_icon {
             self.cursor_icon = next_icon;
 
@@ -1563,30 +1522,6 @@ impl Output {
 
 
 
-abi::declare! {
-    mod shell {
-        fn debug(text: &str) {
-            debug!(target: "extern", "{text}")
-        }
-
-        fn error(text: &str) {
-            error!(target: "extern", "{text}")
-        }
-
-        fn info(text: &str) {
-            info!(target: "extern", "{text}")
-        }
-
-        fn trace(text: &str) {
-            trace!(target: "extern", "{text}")
-        }
-
-        fn warn(text: &str) {
-            warn!(target: "extern", "{text}")
-        }
-    }
-}
-
 fn run_abi_tests() -> Result<()> {
     use std::{any::TypeId, mem::transmute};
 
@@ -1667,457 +1602,4 @@ fn run_abi_tests() -> Result<()> {
     info!("All ABI tests passed");
 
     Ok(())
-}
-
-fn run_driver_tests() -> Result<()> {
-    info!("Running application driver tests...");
-
-    // Create the shared driver map.
-    let driver_map = SharedMemory::create(
-        "/shmem_test",
-        size_of::<DriverInput>()
-            + size_of::<*mut ()>() // Initialized flag.
-            + size_of::<*mut ()>() // Input flag.
-            + linux_uapi::shm::Mutex::<DriverInput>::HEADER_SIZE,
-    )?;
-    let mut raw_ptr = driver_map.as_ptr();
-    let is_map_initialized: &mut AtomicU8 = unsafe { &mut *(raw_ptr as *mut u8 as *mut AtomicU8) };
-    raw_ptr = unsafe { raw_ptr.add(size_of::<*mut ()>()) };
-    let next_input_id: &mut AtomicU64 = unsafe { &mut *(raw_ptr as *mut AtomicU64) };
-
-    // Make `raw_ptr` point to the mutex base.
-    raw_ptr = unsafe { raw_ptr.add(size_of::<*mut ()>()) };
-
-    // Initialize the shared driver map.
-    is_map_initialized.store(0, Ordering::Relaxed);
-    next_input_id.store(0, Ordering::Relaxed);
-    let mutex = unsafe { linux_uapi::shm::Mutex::<DriverInput>::new(raw_ptr)? };
-    {
-        let mut guard = mutex.lock()?;
-        let input: &mut DriverInput = unsafe { &mut **guard };
-        *input = DriverInput::new(Aabb2D::ZERO);
-    }
-    is_map_initialized.store(1, Ordering::Relaxed);
-
-    let mut driver_child = std::process::Command::new("/sbin/driver")
-        .arg("test")
-        .spawn()?;
-
-    // Wait for the driver to start up.
-    std::thread::sleep(std::time::Duration::from_secs(2));
-
-    for trial_num in 1..=1 {
-        println!("\tTrial #{trial_num} starting...");
-
-        let start_time = Instant::now();
-
-        let event_count = 10_000;
-        let work_time = std::time::Duration::from_nanos(2);
-        let mut missed_events = 0;
-
-        for i in 1..(event_count + 1) {
-            let num = i + ((trial_num - 1) * event_count);
-            if i % 10_000 == 0 {
-                println!("\t\tReached event #{},000", num / 1_000);
-            }
-
-            // Send the event.
-            '_lock_scope: {
-                let mut guard = mutex.lock()?;
-                let input: &mut DriverInput = unsafe { &mut **guard };
-                if let Some(_missed_event) = input.push_event(DriverInputEvent::Other(num)) {
-                    warn!("\tDriver missed input event #{num}");
-                    missed_events += 1;
-                    match driver_child.try_wait()? {
-                        Some(exit_status) => {
-                            bail!("Test driver exited early with status: {exit_status}");
-                        }
-                        None => {}
-                    }
-                }
-            }
-
-            // Notify the driver.
-            next_input_id.store(i as _, Ordering::Relaxed);
-
-            // Simulate some work.
-            std::thread::sleep(work_time);
-        }
-
-        let time_taken = Instant::now().duration_since(start_time) - (work_time * event_count);
-        println!(
-            "\tTrial #{trial_num} took {} ms, and missed {missed_events} event(s)",
-            time_taken.as_millis(),
-        );
-    }
-
-    // Trigger the end of the driver's main loop.
-    next_input_id.store(u64::MAX, Ordering::Relaxed);
-
-    // Make sure the driver exits cleanly.
-    let driver_output = driver_child.wait_with_output()?;
-    if !driver_output.status.success() {
-        if let Some(code) = driver_output.status.code() {
-            bail!("driver tests failed with exit code {code}");
-        } else {
-            bail!("driver tests failed without exiting");
-        }
-    }
-
-    info!("All application driver tests passed");
-
-    Ok(())
-}
-
-
-
-struct Program {
-    name: &'static str,
-    handle: Option<ProgramHandle>,
-    editing: bool,
-    waiting_on_recompile: bool,
-    compiling_flag: Arc<AtomicBool>,
-    compile_success_flag: Arc<AtomicBool>,
-    text: String,
-    known_bounds: abi::Aabb2D,
-    driver_input: DriverInputHandle,
-}
-
-impl Program {
-    fn load(name: &'static str, text: String) -> Result<Self> {
-        let block = SharedMemory::create(
-            format!("/shmem_{}", name).as_str(),
-            size_of::<DriverInput>()
-                + size_of::<*mut ()>() // Initialized flag.
-                + size_of::<*mut ()>() // Event ID.
-                + linux_uapi::shm::Mutex::<DriverInput>::HEADER_SIZE,
-        )?;
-
-        let mut raw_ptr = block.as_ptr();
-        let input_initialized: &mut AtomicU8 =
-            unsafe { &mut *(raw_ptr as *mut u8 as *mut AtomicU8) };
-        raw_ptr = unsafe { raw_ptr.add(size_of::<*mut ()>()) };
-        let event_id = raw_ptr as *mut AtomicU64;
-        let next_event_id: &mut AtomicU64 = unsafe { &mut *event_id };
-
-        // Make `raw_ptr` point to the mutex base.
-        raw_ptr = unsafe { raw_ptr.add(size_of::<*mut ()>()) };
-
-        // Initialize the shared driver map.
-        input_initialized.store(0, Ordering::Relaxed);
-        next_event_id.store(0, Ordering::Relaxed);
-        let mutex = unsafe { Mutex::<DriverInput>::new(raw_ptr)? };
-        {
-            let mut guard = mutex.lock()?;
-            let input: &mut DriverInput = unsafe { &mut **guard };
-            *input = DriverInput::new(Aabb2D::ZERO);
-        }
-        input_initialized.store(1, Ordering::Relaxed);
-
-        let mut this = Self {
-            name,
-            handle: None,
-            editing: false,
-            waiting_on_recompile: false,
-            compiling_flag: Arc::new(AtomicBool::new(false)),
-            compile_success_flag: Arc::new(AtomicBool::new(true)),
-            text,
-            known_bounds: abi::Aabb2D::default(),
-            driver_input: DriverInputHandle {
-                event_id,
-                mutex,
-                _block: block,
-            },
-        };
-
-        this.start_compiling();
-
-        Ok(this)
-    }
-
-    fn start_compiling(&mut self) {
-        self.waiting_on_recompile = true;
-        self.compiling_flag
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-
-        let compiling_flag = self.compiling_flag.clone();
-        let compile_success_flag = self.compile_success_flag.clone();
-        let content = self.text.clone();
-        let input_filename = format!("{}.rs", self.name);
-        let output_filename = format!("{}.so", self.name);
-
-        std::thread::spawn(move || {
-            compile_success_flag.swap(
-                compiler::run(&content, &input_filename, &output_filename).is_ok(),
-                std::sync::atomic::Ordering::SeqCst,
-            );
-            compiling_flag.swap(false, std::sync::atomic::Ordering::SeqCst);
-        });
-    }
-
-    fn reload(&mut self) -> Result<()> {
-        if let Some(mut handle) = self.handle.take() {
-            handle.child.kill()?;
-            let output = handle.child.wait_with_output()?;
-            println!("OUTPUT: {output:?}");
-        }
-
-        let child = std::process::Command::new("/sbin/driver")
-            .arg(self.name)
-            .spawn()?;
-
-        self.handle = Some(ProgramHandle { child });
-
-        Ok(())
-    }
-
-    fn update(&mut self, ui: &mut egui::Ui) -> Result<()> {
-        if self
-            .compiling_flag
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            ui.centered_and_justified(|ui| {
-                ui.spinner();
-            });
-
-            return Ok(());
-        }
-
-        let compile_success = self
-            .compile_success_flag
-            .load(std::sync::atomic::Ordering::Relaxed);
-
-        if self.waiting_on_recompile && compile_success {
-            self.waiting_on_recompile = false;
-            self.reload()?;
-        }
-
-        egui::Frame::group(ui.style()).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.set_height(ui.available_height());
-
-            if self.editing {
-                ui.horizontal_wrapped(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.editing = false;
-                    }
-                    if ui.button("Confirm").clicked() {
-                        self.editing = false;
-                        self.start_compiling();
-                    }
-                });
-                ui.add(
-                    egui::TextEdit::multiline(&mut self.text)
-                        .font(egui::FontId::monospace(20.0))
-                        .desired_width(ui.available_width()),
-                );
-                return;
-            }
-            if ui.button("Edit").clicked() {
-                self.editing = true;
-            }
-            if !compile_success {
-                ui.centered_and_justified(|ui| {
-                    ui.heading("Compilation failed, see logs");
-                });
-
-                return;
-            }
-
-            let window_bounds = rect_to_aabb2d(ui.available_rect_before_wrap());
-            if self.known_bounds != window_bounds {
-                self.known_bounds = window_bounds;
-                self.driver_input
-                    .send_event(DriverInputEvent::WindowResize(window_bounds))
-                    .unwrap();
-            }
-
-            {
-                let input = unsafe { &mut **self.driver_input.mutex.lock().unwrap() };
-
-                let mut bounds = self.known_bounds;
-                let mut text = String::new();
-                let mut font_size = 16.0;
-                let mut foreground_color = Rgba::WHITE;
-                let mut background_color = Rgba::BLACK;
-                let mut border_color = Rgba::NONE;
-                let mut border_width = 0.0;
-
-                let painter = ui.painter();
-                for command in input.render.commands.iter() {
-                    if !matches!(command, RenderCommand::DrawChar(_)) && !text.is_empty() {
-                        let pos = bounds.position() + self.known_bounds.position();
-                        painter
-                            .with_clip_rect(aabb2d_to_rect(
-                                bounds.translate(self.known_bounds.position()),
-                            ))
-                            .text(
-                                pos2(pos.x, pos.y),
-                                egui::Align2::LEFT_TOP,
-                                std::mem::take(&mut text),
-                                egui::FontId {
-                                    size: font_size,
-                                    family: egui::FontFamily::Proportional,
-                                },
-                                rgba_to_color32(foreground_color),
-                            );
-                    }
-
-                    match command {
-                        RenderCommand::DrawChar(ch) => text.push(*ch),
-                        RenderCommand::DrawQuad => {
-                            painter.rect(
-                                aabb2d_to_rect(bounds.translate(self.known_bounds.position())),
-                                3,
-                                rgba_to_color32(background_color),
-                                egui::Stroke::new(border_width, rgba_to_color32(border_color)),
-                                egui::StrokeKind::Inside,
-                            );
-                        }
-                        RenderCommand::SetBounds(aabb2d) => bounds = *aabb2d,
-                        RenderCommand::SetForegroundColor(rgba) => foreground_color = *rgba,
-                        RenderCommand::SetBackgroundColor(rgba) => background_color = *rgba,
-                        RenderCommand::SetBorderColor(rgba) => border_color = *rgba,
-                        RenderCommand::SetBorderWidth(width) => border_width = *width,
-                        RenderCommand::SetFontSize(size) => font_size = *size,
-                    }
-                }
-
-                // We need to manually check the text length because the render commands could
-                // end with a `DrawChar`, which wouldn't be checked in the loop above.
-                if !text.is_empty() {
-                    let pos = bounds.position() + self.known_bounds.position();
-                    painter
-                        .with_clip_rect(aabb2d_to_rect(
-                            bounds.translate(self.known_bounds.position()),
-                        ))
-                        .text(
-                            pos2(pos.x, pos.y),
-                            egui::Align2::LEFT_TOP,
-                            std::mem::take(&mut text),
-                            egui::FontId {
-                                size: font_size,
-                                family: egui::FontFamily::Proportional,
-                            },
-                            rgba_to_color32(foreground_color),
-                        );
-                }
-            }
-        });
-
-        Ok(())
-    }
-}
-
-struct ProgramHandle {
-    child: std::process::Child,
-}
-
-struct DriverInputHandle {
-    event_id: *mut AtomicU64,
-    mutex: Mutex<DriverInput>,
-    _block: SharedMemory,
-}
-
-impl DriverInputHandle {
-    fn send_event(&mut self, event: DriverInputEvent) -> Result<()> {
-        let input = unsafe { &mut **self.mutex.lock()? };
-        if let Some(missed_event) = input.push_event(event) {
-            warn!("Driver missed an event: {missed_event:?}");
-        }
-
-        // Notify the driver by incrementing the event ID.
-        unsafe { (&mut *self.event_id).fetch_add(1, Ordering::SeqCst) };
-
-        Ok(())
-    }
-}
-
-
-
-fn rgba_to_color32(color: abi::Rgba) -> egui::Color32 {
-    egui::Color32::from_rgba_premultiplied(color.r, color.g, color.b, color.a)
-}
-
-fn rect_to_aabb2d(bounds: Rect) -> abi::Aabb2D {
-    abi::Aabb2D {
-        min: Xy::new(bounds.min.x, bounds.min.y),
-        max: Xy::new(bounds.max.x, bounds.max.y),
-    }
-}
-
-fn aabb2d_to_rect(bounds: abi::Aabb2D) -> Rect {
-    Rect::from_min_max(
-        pos2(bounds.min.x, bounds.min.y),
-        pos2(bounds.max.x, bounds.max.y),
-    )
-}
-
-
-
-#[allow(unused)]
-#[unsafe(export_name = "__ui_Label__render")]
-pub extern "Rust" fn __label_render(label: &mut Label, pass: &mut RenderPass<'_>) {
-    pass.fill_quad(
-        pass.bounds(),
-        Rgba {
-            r: 11,
-            g: 11,
-            b: 11,
-            a: 255,
-        },
-        0.0,
-        Rgba::NONE,
-    );
-    pass.fill_text(
-        label.text.clone(),
-        pass.bounds(),
-        Rgba {
-            r: 177,
-            g: 177,
-            b: 177,
-            a: 255,
-        },
-        label.font_size,
-    );
-}
-
-#[allow(unused)]
-#[unsafe(export_name = "__ui_Label__measure")]
-pub extern "Rust" fn __label_measure(
-    label: &mut Label,
-    context: &mut MeasureContext<'_>,
-    axis: Axis,
-    length_request: LengthRequest,
-    cross_length: Option<f32>,
-) -> f32 {
-    let id = context.id();
-    let fonts = context.fonts_mut();
-    // For exact measurements, we round up so the `FontsImpl` doesn't wrap
-    // unnecessarily.
-    let max_advance = match axis {
-        Axis::Horizontal => match length_request {
-            LengthRequest::MinContent => Some(0.0),
-            LengthRequest::MaxContent => None,
-            LengthRequest::FitContent(space) => Some((space + 0.5).round()),
-        },
-        Axis::Vertical => match length_request {
-            LengthRequest::MinContent => cross_length.or(Some(0.0)),
-            LengthRequest::MaxContent | LengthRequest::FitContent(_) => {
-                cross_length.map(|l| (l + 0.5).round())
-            }
-        },
-    };
-    let used_size = fonts.measure_text(
-        id,
-        &label.text,
-        max_advance,
-        label.font_size,
-        label.line_height,
-        label.font_style,
-        label.alignment,
-        label.wrap_mode,
-    );
-
-    used_size.value_for_axis(axis)
 }
