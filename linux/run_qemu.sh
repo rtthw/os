@@ -34,7 +34,7 @@ mkdir -p initrd
 cd initrd
     # Create the core directories.
     mkdir -p dev proc sbin sys
-    mkdir -p ../rootfs/sbin ../rootfs/usr/bin ../rootfs/lib
+    mkdir -p ../rootfs/sbin ../rootfs/usr/bin ../rootfs/lib ../rootfs/home
 
     # Put the init program where the kernel can find it.
     cp ../../../target/x86_64-unknown-linux-musl/release/init sbin/
