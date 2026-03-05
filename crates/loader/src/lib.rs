@@ -35,10 +35,10 @@ use {
 
 /// A set of loaded [objects](LoadedObject) and [sections](LoadedSection).
 #[derive(Debug)]
-pub struct Loader {
-    search_path: String,
+pub struct Loader<P: ObjectProvider> {
     objects: Mutex<HashMap<Arc<str>, Arc<Mutex<LoadedObject>>>>,
     sections: Mutex<HashMap<Arc<str>, Weak<LoadedSection>>>,
+    provider: P,
 }
 
 /// An object that has been loaded into memory.
@@ -82,36 +82,22 @@ pub struct LoadedSection {
     pub owner: Weak<Mutex<LoadedObject>>,
 }
 
+pub trait ObjectProvider {
+    /// Get a list of object names that match the given prefix.
+    fn list_objects(&self, prefix: &str) -> Result<Vec<String>, &'static str>;
+    /// Read the bytes of the object with the given name.
+    fn read_object(&self, name: &str) -> Result<Vec<u8>, &'static str>;
+}
 
 
-impl Loader {
-    pub fn new(search_path: &str) -> Self {
+
+impl<P: ObjectProvider> Loader<P> {
+    pub fn new(provider: P) -> Self {
         Self {
-            search_path: search_path.into(),
             objects: Mutex::new(HashMap::new()),
             sections: Mutex::new(HashMap::new()),
+            provider,
         }
-    }
-
-    // FIXME: This shouldn't be fallible.
-    pub fn find_object_files(&self, prefix: &str) -> Result<Vec<String>, &'static str> {
-        let mut paths = Vec::new();
-        for entry in
-            std::fs::read_dir(&self.search_path).map_err(|_| "failed to read search directory")?
-        {
-            let Ok(entry) = entry else {
-                continue;
-            };
-            let name = entry
-                .file_name()
-                .into_string()
-                .map_err(|_| "found invalid file name in search directory")?;
-            if name.starts_with(prefix) && name.ends_with(".o") {
-                paths.push(name);
-            }
-        }
-
-        Ok(paths)
     }
 
     pub fn get_object(&self, name: &str) -> Option<Weak<Mutex<LoadedObject>>> {
@@ -136,19 +122,14 @@ impl Loader {
         }
 
         for crate_name in crate_names_in_symbol(name) {
-            println!("SYM @ `{name}` = '{crate_name}'");
-            for object_file_name in self.find_object_files(crate_name).unwrap() {
-                let object_name = object_file_name
-                    .strip_suffix(".o")
-                    .expect("Loader::find_object_files should only return names ending with '.o'");
+            for object_name in self.provider.list_objects(crate_name).unwrap() {
                 // Skip already loaded objects.
-                if self.get_object(object_name).is_some() {
+                if self.get_object(&object_name).is_some() {
                     continue;
                 }
-                println!("LOADING OBJECT '{object_name}' @ `{name}`");
                 self.load_object(
-                    object_name,
-                    &std::fs::read(format!("{}/{object_file_name}", self.search_path)).unwrap(),
+                    &object_name,
+                    &self.provider.read_object(&object_name).unwrap(),
                 )
                 .unwrap();
                 if let Some(section) = self.sections.lock().get(name) {
@@ -909,14 +890,5 @@ mod tests {
         check!("<alloc::boxed::Box<[T]>>::into_inner" == ["alloc"]);
         check!("u64" == []);
         check!("loader[deadbeef]::crate_names_in_symbol" == ["loader"]);
-    }
-
-    #[test]
-    fn searching() {
-        let loader = Loader::new("tests/output");
-        assert_eq!(
-            loader.find_object_files("add_"),
-            Ok(vec!["add_one.o".to_string()]),
-        );
     }
 }
