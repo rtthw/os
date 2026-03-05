@@ -3,10 +3,11 @@
 use linux_uapi::{
     Result,
     c_str::NULL_CSTR,
+    constants::AT_REMOVEDIR,
     file::File,
     mount::mount,
     proc::Process,
-    raw::{AT_REMOVEDIR, chdir, chroot, close, exit, fork, mkdir, setsid, unlinkat},
+    raw::{chdir, chroot, close, exit, fork, mkdir, setsid, unlinkat},
     signal::{Signal, SignalMask},
 };
 

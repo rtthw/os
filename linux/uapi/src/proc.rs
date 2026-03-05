@@ -1,4 +1,4 @@
-use crate::{Error, Result, Signal, raw, traits};
+use crate::{Error, Result, Signal, constants, raw, traits};
 
 
 
@@ -54,7 +54,7 @@ impl Process {
 
 pub fn wait_for_children_once() -> Result<WaitStatus> {
     let mut status: i32 = 0;
-    let result = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
+    let result = unsafe { libc::waitpid(-1, &mut status, constants::WNOHANG) };
     WaitStatus::from_raw(status, result)
 }
 
@@ -83,22 +83,22 @@ impl WaitStatus {
         match result {
             0 => Ok(Self::Running),
             -1 => Err(Error::latest()),
-            pid => Ok(if libc::WIFEXITED(status) {
+            pid => Ok(if constants::WIFEXITED(status) {
                 Self::Exited {
                     proc: Process { id: pid },
-                    code: libc::WEXITSTATUS(status),
+                    code: constants::WEXITSTATUS(status),
                 }
-            } else if libc::WIFSIGNALED(status) {
+            } else if constants::WIFSIGNALED(status) {
                 Self::Signaled {
                     proc: Process { id: pid },
-                    sig: Signal::from_raw(libc::WTERMSIG(status))?,
-                    core_dumped: libc::WCOREDUMP(status),
+                    sig: Signal::from_raw(constants::WTERMSIG(status))?,
+                    core_dumped: constants::WCOREDUMP(status),
                 }
-            } else if libc::WIFSTOPPED(status) {
+            } else if constants::WIFSTOPPED(status) {
                 // TODO: Handle `ptrace` stops.
                 Self::Stopped {
                     proc: Process { id: pid },
-                    sig: Signal::from_raw(libc::WSTOPSIG(status))?,
+                    sig: Signal::from_raw(constants::WSTOPSIG(status))?,
                 }
             } else {
                 Self::Continued {

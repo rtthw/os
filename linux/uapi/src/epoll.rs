@@ -2,7 +2,7 @@
 
 use alloc::vec::Vec;
 
-use crate::{Error, Result, file::File, traits::AsFile};
+use crate::{Error, Result, constants, file::File, traits::AsFile};
 
 
 
@@ -20,7 +20,7 @@ impl AsFile for EventPoll {
 impl EventPoll {
     // https://www.man7.org/linux/man-pages/man2/epoll_create.2.html
     pub fn create() -> Result<EventPoll> {
-        let res = unsafe { libc::epoll_create1(libc::O_CLOEXEC) };
+        let res = unsafe { libc::epoll_create1(constants::O_CLOEXEC) };
         if res == -1 {
             Err(Error::latest())
         } else {
@@ -34,7 +34,7 @@ impl EventPoll {
         let res = unsafe {
             libc::epoll_ctl(
                 self.fd,
-                libc::EPOLL_CTL_ADD,
+                constants::EPOLL_CTL_ADD,
                 fd.fd,
                 ptr as *mut libc::epoll_event,
             )
@@ -93,10 +93,10 @@ impl Event {
     pub fn new(data: u64, readable: bool, writable: bool) -> Self {
         let mut flags = 0;
         if readable {
-            flags |= libc::EPOLLIN | libc::EPOLLPRI;
+            flags |= constants::EPOLLIN | constants::EPOLLPRI;
         }
         if writable {
-            flags |= libc::EPOLLOUT;
+            flags |= constants::EPOLLOUT;
         }
 
         Self {
@@ -112,10 +112,10 @@ impl Event {
     }
 
     pub fn readable(&self) -> bool {
-        self.raw.events & (libc::EPOLLIN | libc::EPOLLPRI) as u32 != 0
+        self.raw.events & (constants::EPOLLIN | constants::EPOLLPRI) as u32 != 0
     }
 
     pub fn writable(&self) -> bool {
-        self.raw.events & libc::EPOLLOUT as u32 != 0
+        self.raw.events & constants::EPOLLOUT as u32 != 0
     }
 }

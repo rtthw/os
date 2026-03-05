@@ -1,6 +1,6 @@
 //! # Signal Handling
 
-use crate::{Error, Result, file::File, traits};
+use crate::{Error, Result, constants, file::File, traits};
 
 
 
@@ -191,7 +191,8 @@ impl SignalMask {
 
     // https://www.man7.org/linux/man-pages/man2/sigprocmask.2.html
     pub fn block(&self) -> Result<()> {
-        let res = unsafe { libc::sigprocmask(libc::SIG_BLOCK, &self.raw, core::ptr::null_mut()) };
+        let res =
+            unsafe { libc::sigprocmask(constants::SIG_BLOCK, &self.raw, core::ptr::null_mut()) };
         if res == -1 {
             Err(Error::latest())
         } else {
@@ -217,7 +218,7 @@ impl SignalMask {
     pub fn thread_set_mask(&self) -> Result<()> {
         let res = unsafe {
             libc::pthread_sigmask(
-                libc::SIG_SETMASK,
+                constants::SIG_SETMASK,
                 &self.raw as *const libc::sigset_t,
                 core::ptr::null_mut(),
             )
@@ -233,7 +234,7 @@ impl SignalMask {
     pub fn thread_block(&self) -> Result<()> {
         let res = unsafe {
             libc::pthread_sigmask(
-                libc::SIG_BLOCK,
+                constants::SIG_BLOCK,
                 &self.raw as *const libc::sigset_t,
                 core::ptr::null_mut(),
             )
@@ -249,7 +250,7 @@ impl SignalMask {
     pub fn thread_unblock(&self) -> Result<()> {
         let res = unsafe {
             libc::pthread_sigmask(
-                libc::SIG_UNBLOCK,
+                constants::SIG_UNBLOCK,
                 &self.raw as *const libc::sigset_t,
                 core::ptr::null_mut(),
             )
@@ -284,7 +285,7 @@ impl SignalFile {
             libc::signalfd(
                 -1, // Create a new file descriptor.
                 &mask.raw,
-                libc::SFD_CLOEXEC,
+                constants::SFD_CLOEXEC,
             )
         };
         if res == -1 {
@@ -299,7 +300,7 @@ impl SignalFile {
             libc::signalfd(
                 -1, // Create a new file descriptor.
                 &mask.raw,
-                libc::SFD_CLOEXEC | libc::SFD_NONBLOCK,
+                constants::SFD_CLOEXEC | constants::SFD_NONBLOCK,
             )
         };
         if res == -1 {

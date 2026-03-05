@@ -2,9 +2,6 @@ use core::{ffi::CStr, ptr};
 
 
 
-pub const AT_REMOVEDIR: i32 = libc::AT_REMOVEDIR;
-
-
 pub fn errno() -> i32 {
     unsafe { *libc::__errno_location() }
 }

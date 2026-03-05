@@ -4,7 +4,7 @@ use core::ffi::CStr;
 
 use alloc::ffi::CString;
 
-use crate::c_str::AsCStr;
+use crate::{c_str::AsCStr, constants};
 
 
 
@@ -22,7 +22,10 @@ impl Object {
     {
         Ok(path
             .map_cstr(|path| unsafe {
-                Self::open_with_path_ptr(path.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL)
+                Self::open_with_path_ptr(
+                    path.as_ptr(),
+                    constants::RTLD_LAZY | constants::RTLD_LOCAL,
+                )
             })
             .map_err(|error| unsafe {
                 // SAFETY: Error descriptions are all valid ASCII.
@@ -31,7 +34,12 @@ impl Object {
     }
 
     pub unsafe fn open_this() -> Result<Self, CString> {
-        unsafe { Self::open_with_path_ptr(core::ptr::null(), libc::RTLD_LAZY | libc::RTLD_LOCAL) }
+        unsafe {
+            Self::open_with_path_ptr(
+                core::ptr::null(),
+                constants::RTLD_LAZY | constants::RTLD_LOCAL,
+            )
+        }
     }
 
     unsafe fn open_with_path_ptr(path: *const i8, flags: i32) -> Result<Self, CString> {

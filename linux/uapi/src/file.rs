@@ -1,6 +1,7 @@
 use crate::{
     Error, Result,
     c_str::AsCStr,
+    constants,
     proc::{ProcessGroup, Session},
     raw,
 };
@@ -27,13 +28,13 @@ impl File {
 
 impl File {
     pub const STDIN: Self = Self {
-        fd: libc::STDIN_FILENO,
+        fd: constants::STDIN_FILENO,
     };
     pub const STDOUT: Self = Self {
-        fd: libc::STDOUT_FILENO,
+        fd: constants::STDOUT_FILENO,
     };
     pub const STDERR: Self = Self {
-        fd: libc::STDERR_FILENO,
+        fd: constants::STDERR_FILENO,
     };
 }
 
@@ -127,7 +128,7 @@ impl File {
 
     // https://www.man7.org/linux/man-pages/man2/TIOCNOTTY.2const.html
     pub fn release_terminal_control(&self) -> Result<()> {
-        let ret = unsafe { libc::ioctl(self.fd, libc::TIOCNOTTY) };
+        let ret = unsafe { libc::ioctl(self.fd, constants::TIOCNOTTY) };
         if ret == -1 {
             Err(Error::latest())
         } else {
@@ -137,7 +138,7 @@ impl File {
 
     // https://www.man7.org/linux/man-pages/man2/TIOCSCTTY.2const.html
     pub fn take_terminal_control(&self) -> Result<()> {
-        let ret = unsafe { libc::ioctl(self.fd, libc::TIOCSCTTY, 1) };
+        let ret = unsafe { libc::ioctl(self.fd, constants::TIOCSCTTY, 1) };
         if ret == -1 {
             Err(Error::latest())
         } else {
@@ -173,26 +174,26 @@ impl OpenFlags {
     }
 }
 
-pub const O_APPEND: OpenFlags = OpenFlags(libc::O_APPEND);
-pub const O_ASYNC: OpenFlags = OpenFlags(libc::O_ASYNC);
-pub const O_CLOEXEC: OpenFlags = OpenFlags(libc::O_CLOEXEC);
-pub const O_CREAT: OpenFlags = OpenFlags(libc::O_CREAT);
-pub const O_DIRECT: OpenFlags = OpenFlags(libc::O_DIRECT);
-pub const O_DIRECTORY: OpenFlags = OpenFlags(libc::O_DIRECTORY);
-pub const O_DSYNC: OpenFlags = OpenFlags(libc::O_DSYNC);
-pub const O_EXCL: OpenFlags = OpenFlags(libc::O_EXCL);
-pub const O_LARGEFILE: OpenFlags = OpenFlags(libc::O_LARGEFILE);
-pub const O_NOATIME: OpenFlags = OpenFlags(libc::O_NOATIME);
-pub const O_NOCTTY: OpenFlags = OpenFlags(libc::O_NOCTTY);
-pub const O_NOFOLLOW: OpenFlags = OpenFlags(libc::O_NOFOLLOW);
-pub const O_NONBLOCK: OpenFlags = OpenFlags(libc::O_NONBLOCK);
-pub const O_PATH: OpenFlags = OpenFlags(libc::O_PATH);
-pub const O_RDONLY: OpenFlags = OpenFlags(libc::O_RDONLY);
-pub const O_RDWR: OpenFlags = OpenFlags(libc::O_RDWR);
-pub const O_SYNC: OpenFlags = OpenFlags(libc::O_SYNC);
-pub const O_TMPFILE: OpenFlags = OpenFlags(libc::O_TMPFILE);
-pub const O_TRUNC: OpenFlags = OpenFlags(libc::O_TRUNC);
-pub const O_WRONLY: OpenFlags = OpenFlags(libc::O_WRONLY);
+pub const O_APPEND: OpenFlags = OpenFlags(constants::O_APPEND);
+pub const O_ASYNC: OpenFlags = OpenFlags(constants::O_ASYNC);
+pub const O_CLOEXEC: OpenFlags = OpenFlags(constants::O_CLOEXEC);
+pub const O_CREAT: OpenFlags = OpenFlags(constants::O_CREAT);
+pub const O_DIRECT: OpenFlags = OpenFlags(constants::O_DIRECT);
+pub const O_DIRECTORY: OpenFlags = OpenFlags(constants::O_DIRECTORY);
+pub const O_DSYNC: OpenFlags = OpenFlags(constants::O_DSYNC);
+pub const O_EXCL: OpenFlags = OpenFlags(constants::O_EXCL);
+pub const O_LARGEFILE: OpenFlags = OpenFlags(constants::O_LARGEFILE);
+pub const O_NOATIME: OpenFlags = OpenFlags(constants::O_NOATIME);
+pub const O_NOCTTY: OpenFlags = OpenFlags(constants::O_NOCTTY);
+pub const O_NOFOLLOW: OpenFlags = OpenFlags(constants::O_NOFOLLOW);
+pub const O_NONBLOCK: OpenFlags = OpenFlags(constants::O_NONBLOCK);
+pub const O_PATH: OpenFlags = OpenFlags(constants::O_PATH);
+pub const O_RDONLY: OpenFlags = OpenFlags(constants::O_RDONLY);
+pub const O_RDWR: OpenFlags = OpenFlags(constants::O_RDWR);
+pub const O_SYNC: OpenFlags = OpenFlags(constants::O_SYNC);
+pub const O_TMPFILE: OpenFlags = OpenFlags(constants::O_TMPFILE);
+pub const O_TRUNC: OpenFlags = OpenFlags(constants::O_TRUNC);
+pub const O_WRONLY: OpenFlags = OpenFlags(constants::O_WRONLY);
 
 impl core::ops::BitOr for OpenFlags {
     type Output = Self;

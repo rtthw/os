@@ -5,6 +5,7 @@
 extern crate alloc;
 
 pub mod c_str;
+pub mod constants;
 pub mod epoll;
 mod error;
 pub mod file;
@@ -15,8 +16,6 @@ pub mod raw;
 pub mod shm;
 pub mod signal;
 pub mod traits;
-
-
 
 pub use {error::Error, signal::Signal};
 

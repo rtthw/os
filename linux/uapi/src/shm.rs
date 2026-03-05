@@ -2,7 +2,7 @@
 
 use core::ops::{Deref, DerefMut};
 
-use crate::{Error, Result, c_str::AsCStr};
+use crate::{Error, Result, c_str::AsCStr, constants};
 
 
 
@@ -22,10 +22,10 @@ impl SharedMemory {
         let res = name.map_cstr(|name| unsafe {
             libc::shm_open(
                 name.as_ptr(),
-                libc::O_CREAT
-                    | libc::O_EXCL  // Exclusive access (errors if collision).
-                    | libc::O_RDWR, // Allow resize.
-                libc::S_IRUSR | libc::S_IWUSR, // Read/write permissions.
+                constants::O_CREAT
+                    | constants::O_EXCL  // Exclusive access (errors if collision).
+                    | constants::O_RDWR, // Allow resize.
+                constants::S_IRUSR | constants::S_IWUSR, // Read/write permissions.
             )
         })?;
         if res == -1 {
@@ -51,8 +51,8 @@ impl SharedMemory {
                 core::ptr::null_mut(), /* Address, NULL means "choose the next page-aligned
                                         * address". */
                 map.size,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_SHARED,
+                constants::PROT_READ | constants::PROT_WRITE,
+                constants::MAP_SHARED,
                 map.fd,
                 0, // Offset.
             )
@@ -67,7 +67,7 @@ impl SharedMemory {
 
     pub fn open<S: AsCStr + ?Sized>(name: &S) -> Result<Self> {
         let res = name.map_cstr(|name| unsafe {
-            libc::shm_open(name.as_ptr(), libc::O_RDWR, libc::S_IRUSR)
+            libc::shm_open(name.as_ptr(), constants::O_RDWR, constants::S_IRUSR)
         })?;
 
         let mut map = Self {
@@ -94,13 +94,13 @@ impl SharedMemory {
             libc::mmap(
                 core::ptr::null_mut(), // Address, see `create` for details.
                 map.size,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_SHARED,
+                constants::PROT_READ | constants::PROT_WRITE,
+                constants::MAP_SHARED,
                 map.fd,
                 0, // Offset.
             )
         };
-        if res == libc::MAP_FAILED {
+        if res == constants::MAP_FAILED {
             return Err(Error::latest());
         }
         map.ptr = res as *mut _;
@@ -157,7 +157,7 @@ impl<T: Sized> Mutex<T> {
         let mut lock_attr = unsafe { lock_attr.assume_init() };
 
         let res = unsafe {
-            libc::pthread_mutexattr_setpshared(&mut lock_attr, libc::PTHREAD_PROCESS_SHARED)
+            libc::pthread_mutexattr_setpshared(&mut lock_attr, constants::PTHREAD_PROCESS_SHARED)
         };
         if res != 0 {
             return Err(Error::from_raw(res));
