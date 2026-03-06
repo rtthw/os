@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*", "example", "kernel", "linux/init", "linux/shell", "linux/uapi"]
+members = ["bootloader", "crates/*", "example", "kernel", "kernel-next", "linux/init", "linux/shell", "linux/uapi"]
 
 [workspace.package]
 version = "0.1.0"

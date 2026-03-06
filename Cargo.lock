@@ -514,6 +514,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "bootloader"
+version = "0.1.0"
+dependencies = [
+ "elf",
+ "itertools",
+ "lazy_static",
+ "log",
+ "spin 0.10.0",
+ "uart_16550",
+ "uefi",
+ "x86_64",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1028,6 +1042,12 @@ dependencies = [
  "web-sys",
  "winit",
 ]
+
+[[package]]
+name = "either"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "elf"
@@ -1736,6 +1756,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1795,6 +1824,19 @@ dependencies = [
  "pci",
  "spin 0.10.0",
  "tinyvec",
+ "uart_16550",
+ "uefi",
+ "x86_64",
+]
+
+[[package]]
+name = "kernel-next"
+version = "0.1.0"
+dependencies = [
+ "lazy_static",
+ "linked_list_allocator",
+ "log",
+ "spin 0.10.0",
  "uart_16550",
  "uefi",
  "x86_64",
