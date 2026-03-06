@@ -30,6 +30,13 @@ impl<'a> ElfFile<'a> {
         }
     }
 
+    pub fn program_iter(&self) -> impl Iterator<Item = &ProgramHeader> + '_ {
+        ProgramIter {
+            file: self,
+            next_index: 0,
+        }
+    }
+
     pub fn find_section_by_name(&self, name: &str) -> Option<&SectionHeader> {
         for sect in self.section_iter() {
             if let Ok(sect_name) = sect.get_name(self) {
@@ -55,6 +62,10 @@ impl<'a> ElfFile<'a> {
 
     pub fn get_section_header(&self, index: u16) -> Result<&'a SectionHeader, &'static str> {
         SectionHeader::parse(self.input, self.header, index)
+    }
+
+    pub fn get_program_header(&self, index: u16) -> Result<&'a ProgramHeader, &'static str> {
+        ProgramHeader::parse(self.input, self.header, index)
     }
 
     pub fn get_shstr_table(&self) -> Result<&'a [u8], &'static str> {
@@ -687,9 +698,123 @@ impl SymbolTableEntry {
 
 
 
+#[derive(Debug, Clone)]
+pub struct ProgramIter<'b, 'a: 'b> {
+    pub file: &'b ElfFile<'a>,
+    pub next_index: u16,
+}
+
+impl<'b, 'a> Iterator for ProgramIter<'b, 'a> {
+    type Item = &'a ProgramHeader;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let count = self.file.header.body.ph_count;
+        if self.next_index >= count {
+            return None;
+        }
+
+        let result = self.file.get_program_header(self.next_index);
+        self.next_index += 1;
+        result.ok()
+    }
+}
+
+#[derive(Copy, Clone, Debug, Default)]
+#[repr(C)]
+pub struct ProgramHeader {
+    pub type_: u32,
+    pub flags: u32,
+    pub offset: u64,
+    pub virtual_addr: u64,
+    pub physical_addr: u64,
+    pub file_size: u64,
+    pub mem_size: u64,
+    pub align: u64,
+}
+
+impl ProgramHeader {
+    pub fn parse<'a>(
+        input: &'a [u8],
+        header: Header<'a>,
+        index: u16,
+    ) -> Result<&'a ProgramHeader, &'static str> {
+        let body = &header.body;
+        if !(index < body.ph_count && body.ph_offset > 0 && body.ph_entry_size > 0) {
+            return Err("there are no program headers in this file");
+        }
+
+        let start = body.ph_offset as usize + index as usize * body.ph_entry_size as usize;
+        let end = start + body.ph_entry_size as usize;
+
+        Ok(unsafe { pod::read(&input[start..end]) })
+    }
+
+    pub fn get_type(&self) -> Result<ProgramHeaderType, &'static str> {
+        match self.type_ {
+            0 => Ok(ProgramHeaderType::Null),
+            1 => Ok(ProgramHeaderType::Load),
+            2 => Ok(ProgramHeaderType::Dynamic),
+            3 => Ok(ProgramHeaderType::Interp),
+            4 => Ok(ProgramHeaderType::Note),
+            5 => Ok(ProgramHeaderType::ShLib),
+            6 => Ok(ProgramHeaderType::Phdr),
+            7 => Ok(ProgramHeaderType::Tls),
+            PROGRAM_HEADER_TYPE_GNU_RELRO => Ok(ProgramHeaderType::GnuRelro),
+            t @ PROGRAM_HEADER_TYPE_LOOS..=PROGRAM_HEADER_TYPE_HIOS => {
+                Ok(ProgramHeaderType::OsSpecific(t))
+            }
+            t @ PROGRAM_HEADER_TYPE_LOPROC..=PROGRAM_HEADER_TYPE_HIPROC => {
+                Ok(ProgramHeaderType::ProcessorSpecific(t))
+            }
+
+            _ => Err("invalid value for program header type"),
+        }
+    }
+
+    pub fn is_execute(&self) -> bool {
+        self.flags & PROGRAM_FLAG_EXECUTE == PROGRAM_FLAG_EXECUTE
+    }
+
+    pub fn is_write(&self) -> bool {
+        self.flags & PROGRAM_FLAG_WRITE == PROGRAM_FLAG_WRITE
+    }
+
+    pub fn is_read(&self) -> bool {
+        self.flags & PROGRAM_FLAG_READ == PROGRAM_FLAG_READ
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProgramHeaderType {
+    Null,
+    Load,
+    Dynamic,
+    Interp,
+    Note,
+    ShLib,
+    Phdr,
+    Tls,
+    GnuRelro,
+    OsSpecific(u32),
+    ProcessorSpecific(u32),
+}
+
+pub const PROGRAM_FLAG_EXECUTE: u32 = 0x1;
+pub const PROGRAM_FLAG_WRITE: u32 = 0x2;
+pub const PROGRAM_FLAG_READ: u32 = 0x4;
+
+pub const PROGRAM_HEADER_TYPE_LOOS: u32 = 0x60000000;
+pub const PROGRAM_HEADER_TYPE_HIOS: u32 = 0x6fffffff;
+pub const PROGRAM_HEADER_TYPE_LOPROC: u32 = 0x70000000;
+pub const PROGRAM_HEADER_TYPE_HIPROC: u32 = 0x7fffffff;
+pub const PROGRAM_HEADER_TYPE_GNU_RELRO: u32 = PROGRAM_HEADER_TYPE_LOOS + 0x474e552;
+
+
+
 unsafe impl pod::Pod for HeaderIdent {}
 unsafe impl pod::Pod for HeaderBody {}
 unsafe impl pod::Pod for SectionHeader {}
+unsafe impl pod::Pod for ProgramHeader {}
 unsafe impl pod::Pod for Rel {}
 unsafe impl pod::Pod for Rela {}
 unsafe impl pod::Pod for SymbolTableEntry {}
