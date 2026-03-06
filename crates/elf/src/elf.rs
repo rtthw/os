@@ -166,7 +166,7 @@ pub struct HeaderIdent {
 pub struct HeaderBody {
     pub type_: u16,
     pub machine: u16,
-    pub version: u32,
+    pub version: u8,
     pub entry_point: u64,
     pub ph_offset: u64,
     pub sh_offset: u64,
