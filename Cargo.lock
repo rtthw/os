@@ -514,9 +514,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "boot-info"
+version = "0.1.0"
+
+[[package]]
 name = "bootloader"
 version = "0.1.0"
 dependencies = [
+ "boot-info",
  "elf",
  "itertools",
  "lazy_static",
@@ -1833,6 +1838,7 @@ dependencies = [
 name = "kernel-next"
 version = "0.1.0"
 dependencies = [
+ "boot-info",
  "lazy_static",
  "linked_list_allocator",
  "log",

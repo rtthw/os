@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+boot-info = { path = "../crates/boot-info" }
 elf = { path = "../crates/elf" }
 itertools = { version = "0.14.0", default-features = false }
 lazy_static = { version = "1.5", features = ["spin_no_std"] }

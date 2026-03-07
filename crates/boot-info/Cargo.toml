@@ -1,0 +1,9 @@
+[package]
+name = "boot-info"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/boot_info.rs"
+
+[dependencies]

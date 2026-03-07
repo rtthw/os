@@ -5,6 +5,7 @@
 extern crate alloc;
 
 use {
+    boot_info::BootInfo,
     elf::{ElfFile, ProgramHeaderType},
     log::{info, warn},
     uefi::{
@@ -49,11 +50,6 @@ fn main() -> Status {
     jump_to_kernel(kernel_entry_point_addr, &boot_info);
 
     Status::SUCCESS
-}
-
-#[repr(C)]
-pub struct BootInfo {
-    pub rsdp_address: Option<u64>,
 }
 
 fn load_kernel() -> u64 {

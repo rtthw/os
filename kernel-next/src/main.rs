@@ -3,7 +3,7 @@
 
 mod serial;
 
-use {core::arch::asm, log::info};
+use {boot_info::BootInfo, core::arch::asm, log::info};
 
 
 
@@ -40,12 +40,6 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
 fn panic(info: &core::panic::PanicInfo) -> ! {
     log::error!("{info}");
     loop {}
-}
-
-#[derive(Debug)]
-#[repr(C)]
-pub struct BootInfo {
-    pub rsdp_address: Option<u64>,
 }
 
 
