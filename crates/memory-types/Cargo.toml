@@ -1,0 +1,9 @@
+[package]
+name = "memory-types"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/memory_types.rs"
+
+[dependencies]

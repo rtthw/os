@@ -9,6 +9,7 @@ elf = { path = "../crates/elf" }
 itertools = { version = "0.14.0", default-features = false }
 lazy_static = { version = "1.5", features = ["spin_no_std"] }
 log = "0.4"
+memory-types = { path = "../crates/memory-types" }
 spin = "0.10.0"
 uart_16550 = "0.4.0"
 uefi = { version = "0.36.1", default-features = false, features = ["alloc", "global_allocator", "panic_handler", "logger"] }

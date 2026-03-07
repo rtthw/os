@@ -8,9 +8,10 @@ use {
     boot_info::BootInfo,
     elf::{ElfFile, ProgramHeaderType},
     log::{info, warn},
+    memory_types::PAGE_SIZE,
     uefi::{
         CStr16, Status,
-        boot::{self, AllocateType, MemoryType, PAGE_SIZE},
+        boot::{self, AllocateType, MemoryType},
         cstr16, entry,
         proto::media::{file::*, fs::SimpleFileSystem},
         system,

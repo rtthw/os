@@ -3,7 +3,7 @@
 
 mod serial;
 
-use {boot_info::BootInfo, core::arch::asm, log::info};
+use {boot_info::BootInfo, core::arch::asm, log::info, memory_types::MEBIBYTE};
 
 
 
@@ -44,7 +44,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
 
 
-const KERNEL_STACK_SIZE: usize = 0x100000;
+const KERNEL_STACK_SIZE: usize = 1 * MEBIBYTE;
 static KERNEL_STACK: KernelStack = KernelStack::new();
 
 #[repr(align(16))]

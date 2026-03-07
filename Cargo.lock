@@ -526,6 +526,7 @@ dependencies = [
  "itertools",
  "lazy_static",
  "log",
+ "memory-types",
  "spin 0.10.0",
  "uart_16550",
  "uefi",
@@ -1842,6 +1843,7 @@ dependencies = [
  "lazy_static",
  "linked_list_allocator",
  "log",
+ "memory-types",
  "spin 0.10.0",
  "uart_16550",
  "uefi",
@@ -2015,6 +2017,10 @@ checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
  "autocfg",
 ]
+
+[[package]]
+name = "memory-types"
+version = "0.1.0"
 
 [[package]]
 name = "metal"
