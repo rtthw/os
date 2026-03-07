@@ -6,4 +6,4 @@ edition.workspace = true
 [dependencies]
 abi.workspace = true
 rustc-demangle = "0.1.27"
-spin = "0.10.0"
+spin-mutex = { path = "../spin-mutex" }

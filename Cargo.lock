@@ -527,7 +527,6 @@ dependencies = [
  "lazy_static",
  "log",
  "memory-types",
- "spin 0.10.0",
  "uart_16550",
  "uefi",
  "x86_64",
@@ -1844,7 +1843,7 @@ dependencies = [
  "linked_list_allocator",
  "log",
  "memory-types",
- "spin 0.10.0",
+ "spin-mutex",
  "uart_16550",
  "uefi",
  "x86_64",
@@ -1967,7 +1966,7 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "rustc-demangle",
- "spin 0.10.0",
+ "spin-mutex",
 ]
 
 [[package]]
@@ -3097,6 +3096,10 @@ checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
 dependencies = [
  "lock_api",
 ]
+
+[[package]]
+name = "spin-mutex"
+version = "0.1.0"
 
 [[package]]
 name = "spinning_top"

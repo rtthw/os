@@ -28,7 +28,7 @@ use {
         },
         mem::{MapFlags, MemoryMap},
     },
-    spin::Mutex,
+    spin_mutex::Mutex,
 };
 
 

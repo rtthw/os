@@ -1,4 +1,4 @@
-use {lazy_static::lazy_static, log::Level, spin::Mutex, uart_16550::SerialPort};
+use {lazy_static::lazy_static, log::Level, spin_mutex::Mutex, uart_16550::SerialPort};
 
 
 

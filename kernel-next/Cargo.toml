@@ -9,7 +9,7 @@ lazy_static = { version = "1.5", features = ["spin_no_std"] }
 linked_list_allocator = "0.9.0"
 log = "0.4"
 memory-types = { path = "../crates/memory-types" }
-spin = "0.10.0"
+spin-mutex = { path = "../crates/spin-mutex" }
 uart_16550 = "0.4.0"
 uefi = { version = "0.36.1", default-features = false }
 x86_64 = "0.15.4"

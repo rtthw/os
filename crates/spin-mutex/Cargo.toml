@@ -1,0 +1,9 @@
+[package]
+name = "spin-mutex"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/spin_mutex.rs"
+
+[dependencies]
