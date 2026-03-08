@@ -4,6 +4,8 @@
 #[macro_use]
 extern crate alloc;
 
+mod paging;
+
 use {
     boot_info::BootInfo,
     elf::{ElfFile, ProgramHeaderType},
