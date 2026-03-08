@@ -5,6 +5,7 @@
 extern crate alloc;
 
 mod paging;
+mod serial;
 
 use {
     boot_info::BootInfo,
@@ -26,7 +27,9 @@ const KERNEL_PATH: &CStr16 = cstr16!("kernel");
 
 #[entry]
 fn main() -> Status {
-    uefi::helpers::init().unwrap();
+    log::set_max_level(log::LevelFilter::Trace);
+    log::set_logger(&serial::SerialLogger).unwrap();
+
     info!("BOOT");
 
     let kernel_entry_point_addr = load_kernel();

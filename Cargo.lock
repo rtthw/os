@@ -527,6 +527,7 @@ dependencies = [
  "lazy_static",
  "log",
  "memory-types",
+ "spin-mutex",
  "uart_16550",
  "uefi",
  "x86_64",
