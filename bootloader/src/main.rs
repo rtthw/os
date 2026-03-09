@@ -32,8 +32,8 @@ fn main() -> Status {
 
     info!("BOOT");
 
-    let kernel_entry_point_addr = load_kernel();
-    info!("Kernel entry point @ {:#x}", kernel_entry_point_addr);
+    let (kernel_start, kernel_end, kernel_entry_point) = load_kernel();
+    info!("Kernel entry point @ {:#x}", kernel_entry_point);
 
     let rsdp_address = system::with_config_table(|e| {
         let acpi2_entry = e.iter().find(|e| e.guid == ConfigTableEntry::ACPI2_GUID);
@@ -51,6 +51,8 @@ fn main() -> Status {
     let boot_info = BootInfo {
         // memory_map,
         rsdp_address,
+        kernel_start,
+        kernel_end,
     };
 
     jump_to_kernel(kernel_entry_point_addr, &boot_info);
@@ -58,7 +60,11 @@ fn main() -> Status {
     Status::SUCCESS
 }
 
-fn load_kernel() -> u64 {
+fn load_kernel() -> (
+    /* start: */ usize,
+    /* end: */ usize,
+    /* entry_point: */ u64,
+) {
     let fs = boot::get_handle_for_protocol::<SimpleFileSystem>().unwrap();
     let mut root = boot::open_protocol_exclusive::<SimpleFileSystem>(fs)
         .unwrap()
@@ -132,7 +138,7 @@ fn load_kernel() -> u64 {
         start_addr, end_addr, file_size,
     );
 
-    elf.header.body.entry_point
+    (start_addr, end_addr, elf.header.body.entry_point)
 }
 
 fn jump_to_kernel(entry_point_addr: u64, boot_info: &BootInfo) {

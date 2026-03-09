@@ -11,4 +11,6 @@
 #[repr(C)]
 pub struct BootInfo {
     pub rsdp_address: Option<u64>,
+    pub kernel_start: usize,
+    pub kernel_end: usize,
 }
