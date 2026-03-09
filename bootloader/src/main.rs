@@ -146,3 +146,12 @@ fn jump_to_kernel(entry_point_addr: u64, boot_info: &BootInfo) {
         unsafe { core::mem::transmute(entry_point_addr) };
     entry_point(boot_info);
 }
+
+
+
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    log::error!("{info}");
+    loop {}
+}
