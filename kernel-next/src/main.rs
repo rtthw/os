@@ -30,7 +30,19 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     log::set_logger(&serial::SerialLogger).unwrap();
 
     info!("KERNEL");
-    info!("{boot_info:?}");
+
+    // Make sure `KERNEL_STACK` is actually the current stack.
+    {
+        let stack_addr = KERNEL_STACK.as_ptr().addr();
+        let stack_top_addr = stack_addr + KERNEL_STACK_SIZE;
+        let stack_object = boot_info.memory_map.len() + 43;
+        let stack_object_addr = ((&stack_object) as *const usize).addr();
+
+        assert!(
+            stack_object_addr >= stack_addr && stack_object_addr < stack_top_addr,
+            "kernel stack is malformed",
+        );
+    }
 
     unimplemented!();
 }
@@ -47,7 +59,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 const KERNEL_STACK_SIZE: usize = 1 * MEBIBYTE;
 static KERNEL_STACK: KernelStack = KernelStack::new();
 
-#[repr(align(16))]
+#[repr(align(16))] // System V ABI requires 16 byte stack alignment.
 struct KernelStack([u8; KERNEL_STACK_SIZE]);
 
 impl KernelStack {
