@@ -11,5 +11,4 @@ log = "0.4"
 memory-types = { path = "../crates/memory-types" }
 spin-mutex = { path = "../crates/spin-mutex" }
 uart_16550 = "0.4.0"
-uefi = { version = "0.36.1", default-features = false }
 x86_64 = "0.15.4"

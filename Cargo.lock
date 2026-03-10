@@ -1846,7 +1846,6 @@ dependencies = [
  "memory-types",
  "spin-mutex",
  "uart_16550",
- "uefi",
  "x86_64",
 ]
 
