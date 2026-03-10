@@ -4,7 +4,6 @@
 #[macro_use]
 extern crate alloc;
 
-mod paging;
 mod serial;
 
 use {
