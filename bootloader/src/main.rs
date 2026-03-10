@@ -7,7 +7,8 @@ extern crate alloc;
 mod serial;
 
 use {
-    boot_info::BootInfo,
+    alloc::vec::Vec,
+    boot_info::{BootInfo, MemoryRegion, MemoryRegionKind},
     elf::{ElfFile, ProgramHeaderType},
     log::{info, warn},
     memory_types::PAGE_SIZE,
@@ -15,6 +16,7 @@ use {
         CStr16, Status,
         boot::{self, AllocateType, MemoryType},
         cstr16, entry,
+        mem::memory_map::MemoryMap as _,
         proto::media::{file::*, fs::SimpleFileSystem},
         system,
         table::cfg::ConfigTableEntry,
@@ -46,12 +48,41 @@ fn main() -> Status {
 
     info!("Jumping to kernel...");
 
-    let _memory_map = unsafe { boot::exit_boot_services(Some(MemoryType::RUNTIME_SERVICES_DATA)) };
+    let mut memory_regions = Vec::with_capacity(
+        boot::memory_map(MemoryType::RUNTIME_SERVICES_DATA)
+            .unwrap()
+            .len()
+            + 8, // Make sure there is enough space for the descriptors.
+    );
+
+    // After this point, we cannot allocate any memory.
+    let memory_map = unsafe { boot::exit_boot_services(Some(MemoryType::RUNTIME_SERVICES_DATA)) };
+
+    assert!(
+        memory_regions.capacity() >= memory_map.len(),
+        "failed to allocate enough memory for the physical memory map",
+    );
+
+    for desc in memory_map.entries() {
+        memory_regions.push(MemoryRegion {
+            base: desc.phys_start as usize,
+            size: desc.page_count as usize * PAGE_SIZE,
+            kind: match desc.ty {
+                MemoryType::CONVENTIONAL
+                | MemoryType::LOADER_CODE
+                | MemoryType::LOADER_DATA
+                | MemoryType::BOOT_SERVICES_CODE
+                | MemoryType::BOOT_SERVICES_DATA => MemoryRegionKind::Free,
+                tag => MemoryRegionKind::Uefi(tag.0),
+            },
+        });
+    }
+
     let boot_info = BootInfo {
-        // memory_map,
         rsdp_address,
         kernel_start,
         kernel_end,
+        memory_map: memory_regions.leak().into(),
     };
 
     let entry_point: extern "sysv64" fn(*const BootInfo) =
