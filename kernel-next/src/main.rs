@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+mod memory;
 mod serial;
 
 use {boot_info::BootInfo, core::arch::asm, log::info, memory_types::MEBIBYTE};
@@ -43,6 +44,8 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
             "kernel stack is malformed",
         );
     }
+
+    memory::init(boot_info);
 
     unimplemented!();
 }
