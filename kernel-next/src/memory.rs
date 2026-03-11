@@ -21,8 +21,9 @@ pub fn init(boot_info: &BootInfo) {
         .expect("no suitable memory region available for heap");
 
     debug!(
-        "Initializing heap at {:#x} ({} pages, {:#x} bytes)...",
+        "Initializing heap at {:#x}..{:#x} ({} pages, {:#x} bytes)...",
         heap_region.base,
+        heap_region.base + heap_region.size,
         heap_region.size / PAGE_SIZE,
         heap_region.size,
     );
