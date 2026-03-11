@@ -4,6 +4,7 @@
 #[macro_use]
 extern crate alloc;
 
+mod acpi;
 mod memory;
 mod serial;
 
@@ -49,6 +50,7 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     }
 
     memory::init(boot_info);
+    acpi::init(boot_info);
 
     unimplemented!();
 }

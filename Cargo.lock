@@ -1839,6 +1839,7 @@ dependencies = [
 name = "kernel-next"
 version = "0.1.0"
 dependencies = [
+ "acpi",
  "boot-info",
  "lazy_static",
  "linked_list_allocator",

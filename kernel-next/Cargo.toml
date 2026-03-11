@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+acpi = "6.1.0"
 boot-info = { path = "../crates/boot-info" }
 lazy_static = { version = "1.5", features = ["spin_no_std"] }
 linked_list_allocator = "0.9.0"

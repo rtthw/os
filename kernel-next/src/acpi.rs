@@ -1,0 +1,179 @@
+//! # Advanced Configuration and Power Interface (ACPI)
+
+use {
+    acpi::{AcpiTables, platform::ProcessorState},
+    boot_info::BootInfo,
+    core::ptr::NonNull,
+    log::{debug, info, warn},
+};
+
+
+
+pub fn init(boot_info: &BootInfo) {
+    let Some(rsdp_addr) = boot_info.rsdp_address else {
+        warn!("No RSDP found, skipping ACPI initialization...");
+        return;
+    };
+
+    info!("Initializing ACPI...");
+
+    match unsafe { AcpiTables::from_rsdp(AcpiHandler, rsdp_addr as usize) } {
+        Ok(tables) => {
+            if let Ok(info) = acpi::platform::AcpiPlatform::new(tables, AcpiHandler) {
+                if let Some(info) = info.processor_info {
+                    log_processor_info(&info.boot_processor);
+                    assert!(info.boot_processor.state == ProcessorState::Running);
+                    for processor in info.application_processors.iter() {
+                        log_processor_info(processor);
+
+                        // None of the application processors should be running at this point.
+                        assert!(processor.state != ProcessorState::Running);
+                    }
+                }
+            }
+        }
+        Err(_) => {
+            warn!("Could not find ACPI tables for RDSP @ {rsdp_addr:#x}");
+        }
+    };
+}
+
+#[derive(Clone, Copy)]
+struct AcpiHandler;
+
+impl acpi::Handler for AcpiHandler {
+    unsafe fn map_physical_region<T>(
+        &self,
+        physical_address: usize,
+        size: usize,
+    ) -> acpi::PhysicalMapping<Self, T> {
+        let ptr = NonNull::new(physical_address as *mut T).unwrap();
+
+        acpi::PhysicalMapping {
+            physical_start: physical_address,
+            virtual_start: ptr,
+            region_length: size,
+            mapped_length: size,
+            handler: Self,
+        }
+    }
+
+    fn unmap_physical_region<T>(_region: &acpi::PhysicalMapping<Self, T>) {}
+
+    fn read_u8(&self, address: usize) -> u8 {
+        unsafe { *(address as *const _) }
+    }
+
+    fn read_u16(&self, address: usize) -> u16 {
+        unsafe { *(address as *const _) }
+    }
+
+    fn read_u32(&self, address: usize) -> u32 {
+        unsafe { *(address as *const _) }
+    }
+
+    fn read_u64(&self, address: usize) -> u64 {
+        unsafe { *(address as *const _) }
+    }
+
+    fn write_u8(&self, _address: usize, _value: u8) {
+        unimplemented!()
+    }
+
+    fn write_u16(&self, _address: usize, _value: u16) {
+        unimplemented!()
+    }
+
+    fn write_u32(&self, _address: usize, _value: u32) {
+        unimplemented!()
+    }
+
+    fn write_u64(&self, _address: usize, _value: u64) {
+        unimplemented!()
+    }
+
+    fn read_io_u8(&self, _port: u16) -> u8 {
+        unimplemented!()
+    }
+
+    fn read_io_u16(&self, _port: u16) -> u16 {
+        unimplemented!()
+    }
+
+    fn read_io_u32(&self, _port: u16) -> u32 {
+        unimplemented!()
+    }
+
+    fn write_io_u8(&self, _port: u16, _value: u8) {
+        unimplemented!()
+    }
+
+    fn write_io_u16(&self, _port: u16, _value: u16) {
+        unimplemented!()
+    }
+
+    fn write_io_u32(&self, _port: u16, _value: u32) {
+        unimplemented!()
+    }
+
+    fn read_pci_u8(&self, _address: acpi::PciAddress, _offset: u16) -> u8 {
+        unimplemented!()
+    }
+
+    fn read_pci_u16(&self, _address: acpi::PciAddress, _offset: u16) -> u16 {
+        unimplemented!()
+    }
+
+    fn read_pci_u32(&self, _address: acpi::PciAddress, _offset: u16) -> u32 {
+        unimplemented!()
+    }
+
+    fn write_pci_u8(&self, _address: acpi::PciAddress, _offset: u16, _value: u8) {
+        unimplemented!()
+    }
+
+    fn write_pci_u16(&self, _address: acpi::PciAddress, _offset: u16, _value: u16) {
+        unimplemented!()
+    }
+
+    fn write_pci_u32(&self, _address: acpi::PciAddress, _offset: u16, _value: u32) {
+        unimplemented!()
+    }
+
+    fn nanos_since_boot(&self) -> u64 {
+        unimplemented!()
+    }
+
+    fn stall(&self, _microseconds: u64) {
+        unimplemented!()
+    }
+
+    fn sleep(&self, _milliseconds: u64) {
+        unimplemented!()
+    }
+
+    fn create_mutex(&self) -> acpi::Handle {
+        unimplemented!()
+    }
+
+    fn acquire(&self, _mutex: acpi::Handle, _timeout: u16) -> Result<(), acpi::aml::AmlError> {
+        unimplemented!()
+    }
+
+    fn release(&self, _mutex: acpi::Handle) {
+        unimplemented!()
+    }
+}
+
+fn log_processor_info(processor: &acpi::platform::Processor) {
+    let kind = if processor.is_ap { "AP" } else { "BP" };
+    let state = match processor.state {
+        ProcessorState::Disabled => "disabled",
+        ProcessorState::WaitingForSipi => "waiting",
+        ProcessorState::Running => "running",
+    };
+    debug!(
+        "CPU {} ({}, {}) = APIC_{}",
+        processor.processor_uid, kind, state, processor.local_apic_id,
+    );
+}
