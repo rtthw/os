@@ -6,6 +6,7 @@ extern crate alloc;
 
 mod acpi;
 mod memory;
+mod rtc;
 mod serial;
 
 use {boot_info::BootInfo, core::arch::asm, log::info, memory_types::MEBIBYTE};
@@ -31,10 +32,12 @@ pub extern "sysv64" fn _start(boot_info: &BootInfo) -> ! {
 }
 
 pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
+    let startup_time = rtc::Time::now();
+
     log::set_max_level(log::LevelFilter::Trace);
     log::set_logger(&serial::SerialLogger).unwrap();
 
-    info!("KERNEL");
+    info!("KERNEL STARTUP @ {startup_time}");
 
     // Make sure `KERNEL_STACK` is actually the current stack.
     {
