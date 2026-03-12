@@ -1,10 +1,12 @@
 #![no_std]
 #![no_main]
+#![feature(abi_x86_interrupt)]
 
 #[macro_use]
 extern crate alloc;
 
 mod acpi;
+mod idt;
 mod memory;
 mod rtc;
 mod serial;
@@ -52,8 +54,11 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
         );
     }
 
+    idt::init();
     memory::init(boot_info);
     acpi::init(boot_info);
+
+    x86_64::instructions::interrupts::int3();
 
     unimplemented!();
 }
