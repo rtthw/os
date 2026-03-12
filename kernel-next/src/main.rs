@@ -6,6 +6,7 @@
 extern crate alloc;
 
 mod acpi;
+mod gdt;
 mod idt;
 mod memory;
 mod rtc;
@@ -54,6 +55,7 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
         );
     }
 
+    gdt::init();
     idt::init();
     memory::init(boot_info);
     acpi::init(boot_info);

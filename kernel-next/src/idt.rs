@@ -1,15 +1,24 @@
 //! # Interrupt Descriptor Table (IDT)
 
-use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
+use {
+    crate::gdt,
+    log::info,
+    x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame},
+};
 
 
 
 static mut IDT: InterruptDescriptorTable = InterruptDescriptorTable::new();
 
 pub fn init() {
+    info!("Initializing GDT...");
+
     #[allow(static_mut_refs)]
     unsafe {
-        IDT.double_fault.set_handler_fn(double_fault_handler);
+        IDT.double_fault
+            .set_handler_fn(double_fault_handler)
+            .set_stack_index(gdt::DOUBLE_FAULT_IST);
+
         IDT.load();
     }
 }
