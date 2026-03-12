@@ -5,6 +5,7 @@ use {
     log::info,
     x86_64::{
         registers::control::Cr2,
+        set_general_handler,
         structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
     },
 };
@@ -18,6 +19,8 @@ pub fn init() {
 
     #[allow(static_mut_refs)]
     unsafe {
+        set_general_handler!(&mut IDT, unhandled_interrupt);
+
         IDT.double_fault
             .set_handler_fn(double_fault_handler)
             .set_stack_index(gdt::DOUBLE_FAULT_IST);
@@ -30,6 +33,10 @@ pub fn init() {
 
         IDT.load();
     }
+}
+
+fn unhandled_interrupt(stack_frame: InterruptStackFrame, index: u8, error_code: Option<u64>) {
+    panic!("UNHANDLED INTERRUPT: {index} ({error_code:?}) : {stack_frame:#?}");
 }
 
 extern "x86-interrupt" fn double_fault_handler(
