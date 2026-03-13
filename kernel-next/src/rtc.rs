@@ -36,7 +36,7 @@ pub struct Time {
 impl fmt::Display for Time {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!(
-            "{:x}/{:x}/20{:02x} {:02}:{:02x}:{:02x}",
+            "{}/{}/20{} {:02}:{:02}:{:02}",
             self.month, self.day, self.year, self.hour, self.minute, self.second,
         ))
     }
@@ -74,8 +74,7 @@ impl Time {
         let mut year = read_cmos(YEAR_REGISTER);
 
         let format = read_cmos(STATUS_REGISTER_B);
-
-        if format & FORMAT_BINARY_FLAG > 0 {
+        if format & FORMAT_BINARY_FLAG != FORMAT_BINARY_FLAG {
             second = convert_bcd(second);
             minute = convert_bcd(minute);
             hour = convert_bcd(hour & 0x7F) | (hour & 0x80);
