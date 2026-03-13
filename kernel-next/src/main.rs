@@ -16,6 +16,13 @@ mod serial;
 use {boot_info::BootInfo, core::arch::asm, log::info, memory_types::MEBIBYTE};
 
 
+unsafe extern "C" {
+    static __text_start: u8;
+    static __text_end: u8;
+    static __rodata_start: u8;
+    static __rodata_end: u8;
+    static __kernel_end: u8;
+}
 
 /// The kernel's entry point.
 #[unsafe(no_mangle)]
@@ -41,7 +48,17 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     log::set_max_level(log::LevelFilter::Trace);
     log::set_logger(&serial::SerialLogger).unwrap();
 
-    info!("KERNEL STARTUP @ {startup_time}");
+    info!(
+        "KERNEL STARTUP @ {startup_time}\n\
+        \ttext: {:#x}..{:#x}\n\
+        \trodata: {:#x}..{:#x}\n\
+        \tend: {:#x}",
+        (&raw const __text_start) as usize,
+        (&raw const __text_end) as usize,
+        (&raw const __rodata_start) as usize,
+        (&raw const __rodata_end) as usize,
+        (&raw const __kernel_end) as usize,
+    );
 
     // Make sure `KERNEL_STACK` is actually the current stack.
     {
