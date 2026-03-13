@@ -1,9 +1,10 @@
 //! # Advanced Programmable Interrupt Controller (APIC)
 
 use {
+    crate::pit,
     acpi::platform::interrupt::Apic,
-    core::sync::atomic::{AtomicUsize, Ordering},
-    log::info,
+    core::sync::atomic::{AtomicU64, Ordering},
+    log::{debug, info},
     spin_mutex::Mutex,
     x2apic::lapic::{self, LocalApic},
     x86_64::structures::idt::InterruptStackFrame,
@@ -11,14 +12,15 @@ use {
 
 
 
+pub const TIMER_INTERVAL_MICROS: u16 = 10_000; // 10 milliseconds
+pub const TIMER_INTERVAL_MILLIS: u16 = TIMER_INTERVAL_MICROS / 1_000;
+
 pub const TIMER_INDEX: u8 = 32;
 pub const ERROR_INDEX: u8 = 32 + 19;
 pub const SPURIOUS_INDEX: u8 = 32 + 31;
 
-const TIMER_INTERVAL: u32 = 10_000_000;
-
 static mut LOCAL_APIC: Mutex<Option<LocalApic>> = Mutex::new(None);
-static TICKS: AtomicUsize = AtomicUsize::new(0);
+static TICKS: AtomicU64 = AtomicU64::new(0);
 
 
 pub fn init(info: Apic) {
@@ -31,18 +33,12 @@ pub fn init(info: Apic) {
                 .error_vector(ERROR_INDEX as usize)
                 .spurious_vector(SPURIOUS_INDEX as usize)
                 .timer_vector(TIMER_INDEX as usize)
-                .timer_divide(lapic::TimerDivide::Div16)
-                .timer_initial(TIMER_INTERVAL)
                 .set_xapic_base(info.local_apic_address)
                 .build()
                 .expect("failed to build lapic"),
         );
 
-        LOCAL_APIC
-            .lock()
-            .as_mut()
-            .expect("APIC initialized")
-            .enable();
+        enable(LOCAL_APIC.lock().as_mut().expect("LAPIC exists"));
     }
 }
 
@@ -61,4 +57,44 @@ fn end_of_interrupt() {
             .expect("APIC initialized")
             .end_of_interrupt()
     };
+}
+
+unsafe fn enable(apic: &mut LocalApic) {
+    unsafe {
+        let apic_period = calculate_timer_period(apic, TIMER_INTERVAL_MICROS);
+        debug!("APIC_{}, timer period: {}", apic.id(), apic_period);
+
+        apic.set_timer_initial(apic_period);
+        apic.set_timer_divide(lapic::TimerDivide::Div16);
+        apic.enable();
+    }
+}
+
+fn calculate_timer_period(apic: &mut LocalApic, microseconds: u16) -> u32 {
+    let initial_count = u32::MAX;
+    let final_count = unsafe {
+        apic.set_timer_initial(initial_count);
+        apic.set_timer_divide(lapic::TimerDivide::Div16);
+        apic.enable_timer();
+
+        pit::sleep(microseconds);
+
+        apic.disable_timer();
+
+        apic.timer_current()
+    };
+
+    initial_count - final_count
+}
+
+pub fn current_tick() -> u64 {
+    TICKS.load(Ordering::Relaxed)
+}
+
+pub fn sleep(milliseconds: u32) {
+    let ticks = milliseconds / TIMER_INTERVAL_MILLIS as u32;
+    let start_tick = current_tick();
+    while current_tick() - start_tick < ticks as u64 {
+        core::hint::spin_loop();
+    }
 }
