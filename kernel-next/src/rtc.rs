@@ -100,6 +100,40 @@ impl Time {
     }
 }
 
+pub fn minute_and_second() -> (u8, u8) {
+    loop {
+        // Wait for the current update to finish.
+        while read_cmos(STATUS_REGISTER_A) & UPDATE_IN_PROGRESS_FLAG > 0 {
+            core::hint::spin_loop();
+        }
+
+        let time_1 = unsafe { raw_minute_and_second() };
+
+        // If the clock is already updating the time again, retry.
+        if read_cmos(STATUS_REGISTER_A) & UPDATE_IN_PROGRESS_FLAG > 0 {
+            continue;
+        }
+
+        let time_2 = unsafe { raw_minute_and_second() };
+        if time_1 == time_2 {
+            return time_1;
+        }
+    }
+}
+
+pub unsafe fn raw_minute_and_second() -> (u8, u8) {
+    let mut second = read_cmos(SECOND_REGISTER);
+    let mut minute = read_cmos(MINUTE_REGISTER);
+
+    let format = read_cmos(STATUS_REGISTER_B);
+    if format & FORMAT_BINARY_FLAG != FORMAT_BINARY_FLAG {
+        second = convert_bcd(second);
+        minute = convert_bcd(minute);
+    }
+
+    (minute, second)
+}
+
 const fn convert_bcd(value: u8) -> u8 {
     (value & 0x0F) + ((value / 16) * 10)
 }

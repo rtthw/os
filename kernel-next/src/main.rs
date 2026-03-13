@@ -81,6 +81,8 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
 
     x86_64::instructions::interrupts::enable();
 
+    // apic::timer_accuracy_tests();
+
     info!("STARTUP SUCCESSFUL");
 
     loop {

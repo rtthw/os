@@ -1,10 +1,10 @@
 //! # Advanced Programmable Interrupt Controller (APIC)
 
 use {
-    crate::pit,
+    crate::{pit, rtc},
     acpi::platform::interrupt::Apic,
     core::sync::atomic::{AtomicU64, Ordering},
-    log::{debug, info},
+    log::{debug, info, warn},
     spin_mutex::Mutex,
     x2apic::lapic::{self, LocalApic},
     x86_64::structures::idt::InterruptStackFrame,
@@ -96,5 +96,36 @@ pub fn sleep(milliseconds: u32) {
     let start_tick = current_tick();
     while current_tick() - start_tick < ticks as u64 {
         core::hint::spin_loop();
+    }
+}
+
+#[allow(unused)]
+pub fn timer_accuracy_tests() {
+    info!("Testing timer accuracy...");
+
+    let start = rtc::Time::now();
+    let raw_start = unsafe { rtc::Time::now_unsynced() };
+    info!("START @ {start} ({raw_start})\n\tSleeping for 60 seconds...");
+    sleep(1_000 * 60);
+    let raw_end = unsafe { rtc::Time::now_unsynced() };
+    let end = rtc::Time::now();
+    info!("END @ {end} ({raw_end})");
+
+    for interval in 1..=10 {
+        let (start_minute, start_second) = unsafe { rtc::raw_minute_and_second() };
+        let start_time = start_second as u32 + (start_minute as u32 * 60);
+        sleep(interval * 1_000);
+        let (current_minute, current_second) = unsafe { rtc::raw_minute_and_second() };
+        let current_time = current_second as u32 + (current_minute as u32 * 60);
+        let time_taken = current_time - start_time;
+        if time_taken != interval {
+            if time_taken.saturating_sub(1) != interval {
+                warn!("Timer failed at {interval} second intervals");
+            } else {
+                info!("Timer slightly off at {interval} second intervals");
+            }
+        } else {
+            info!("Timer accurate at {interval} second intervals");
+        }
     }
 }
