@@ -1,6 +1,7 @@
 //! # Advanced Configuration and Power Interface (ACPI)
 
 use {
+    crate::apic,
     acpi::{AcpiTables, platform::ProcessorState},
     boot_info::BootInfo,
     core::ptr::NonNull,
@@ -19,16 +20,28 @@ pub fn init(boot_info: &BootInfo) {
 
     match unsafe { AcpiTables::from_rsdp(AcpiHandler, rsdp_addr as usize) } {
         Ok(tables) => {
-            if let Ok(info) = acpi::platform::AcpiPlatform::new(tables, AcpiHandler) {
-                if let Some(info) = info.processor_info {
-                    log_processor_info(&info.boot_processor);
-                    assert!(info.boot_processor.state == ProcessorState::Running);
-                    for processor in info.application_processors.iter() {
-                        log_processor_info(processor);
+            let Ok(platform_info) = acpi::platform::AcpiPlatform::new(tables, AcpiHandler) else {
+                panic!("No ACPI platform found");
+            };
 
-                        // None of the application processors should be running at this point.
-                        assert!(processor.state != ProcessorState::Running);
-                    }
+            if let Some(processor_info) = platform_info.processor_info {
+                log_processor_info(&processor_info.boot_processor);
+                assert!(processor_info.boot_processor.state == ProcessorState::Running);
+                for processor in processor_info.application_processors.iter() {
+                    log_processor_info(processor);
+
+                    // None of the application processors should be running at this point.
+                    assert!(processor.state != ProcessorState::Running);
+                }
+            }
+
+            // Initialize the interrupt controller.
+            match platform_info.interrupt_model {
+                acpi::platform::InterruptModel::Apic(apic_info) => {
+                    apic::init(apic_info);
+                }
+                _ => {
+                    panic!("legacy 8259 PIC not yet supported")
                 }
             }
         }

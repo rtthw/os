@@ -7,7 +7,7 @@ use {
     x86_64::{
         VirtAddr,
         instructions::tables::load_tss,
-        registers::segmentation::{CS, DS, Segment},
+        registers::segmentation::{CS, DS, SS, Segment},
         structures::{
             gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector},
             tss::TaskStateSegment,
@@ -26,6 +26,7 @@ const INTERRUPT_STACK_SIZE: usize = PAGE_SIZE * 8;
 pub const DOUBLE_FAULT_IST: u16 = 0;
 pub const PAGE_FAULT_IST: u16 = 1;
 pub const GENERAL_PROTECTION_FAULT_IST: u16 = 2;
+pub const LOCAL_APIC_TIMER_IST: u16 = 3;
 
 pub fn init() {
     info!("Initializing GDT...");
@@ -41,6 +42,10 @@ pub fn init() {
             VirtAddr::from_ptr(addr_of!(STACK)) + INTERRUPT_STACK_SIZE as u64
         };
         TSS.interrupt_stack_table[GENERAL_PROTECTION_FAULT_IST as usize] = {
+            static mut STACK: [u8; INTERRUPT_STACK_SIZE] = [0; INTERRUPT_STACK_SIZE];
+            VirtAddr::from_ptr(addr_of!(STACK)) + INTERRUPT_STACK_SIZE as u64
+        };
+        TSS.interrupt_stack_table[LOCAL_APIC_TIMER_IST as usize] = {
             static mut STACK: [u8; INTERRUPT_STACK_SIZE] = [0; INTERRUPT_STACK_SIZE];
             VirtAddr::from_ptr(addr_of!(STACK)) + INTERRUPT_STACK_SIZE as u64
         };
@@ -65,6 +70,11 @@ pub fn init() {
 
         CS::set_reg(SELECTORS.kernel_code);
         DS::set_reg(SELECTORS.kernel_data);
+
+        // Without this, you get a general protection fault during the end-of-interrupt
+        // signal of the local APIC timer.
+        SS::set_reg(SegmentSelector(0));
+
         load_tss(SELECTORS.kernel_tss);
     }
 }

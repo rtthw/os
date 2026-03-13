@@ -6,6 +6,7 @@
 extern crate alloc;
 
 mod acpi;
+mod apic;
 mod gdt;
 mod idt;
 mod memory;
@@ -60,9 +61,13 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     memory::init(boot_info);
     acpi::init(boot_info);
 
-    x86_64::instructions::interrupts::int3();
+    x86_64::instructions::interrupts::enable();
 
-    unimplemented!();
+    info!("STARTUP SUCCESSFUL");
+
+    loop {
+        x86_64::instructions::hlt();
+    }
 }
 
 #[cfg(not(test))]

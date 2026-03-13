@@ -1,7 +1,7 @@
 //! # Interrupt Descriptor Table (IDT)
 
 use {
-    crate::gdt,
+    crate::{apic, gdt},
     log::info,
     x86_64::{
         registers::control::Cr2,
@@ -30,6 +30,10 @@ pub fn init() {
         IDT.general_protection_fault
             .set_handler_fn(general_protection_fault_handler)
             .set_stack_index(gdt::GENERAL_PROTECTION_FAULT_IST);
+
+        IDT[apic::TIMER_INDEX]
+            .set_handler_fn(apic::timer_interrupt_handler)
+            .set_stack_index(gdt::LOCAL_APIC_TIMER_IST);
 
         IDT.load();
     }
