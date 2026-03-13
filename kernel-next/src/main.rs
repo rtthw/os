@@ -10,6 +10,7 @@ mod apic;
 mod gdt;
 mod idt;
 mod memory;
+mod pit;
 mod rtc;
 mod serial;
 
