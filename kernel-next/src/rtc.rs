@@ -1,6 +1,12 @@
 //! # Real Time Clock (RTC)
 
-use {core::fmt, x86_64::instructions::port::Port};
+use {
+    core::{
+        fmt,
+        ops::{Add, AddAssign},
+    },
+    x86_64::instructions::port::Port,
+};
 
 const CMOS_COMMAND_PORT: u16 = 0x70;
 const CMOS_DATA_PORT: u16 = 0x71;
@@ -43,6 +49,15 @@ impl fmt::Display for Time {
 }
 
 impl Time {
+    pub const ZERO: Self = Self {
+        year: 0,
+        month: 0,
+        day: 0,
+        hour: 0,
+        minute: 0,
+        second: 0,
+    };
+
     pub fn now() -> Self {
         loop {
             // Wait for the current update to finish.
@@ -97,6 +112,66 @@ impl Time {
             minute,
             second,
         }
+    }
+
+    pub const fn from_seconds(seconds: u64) -> Self {
+        if seconds >= 3600 * 24 {
+            todo!()
+        } else {
+            if seconds >= 3600 {
+                Self {
+                    second: (seconds % 60) as u8,
+                    minute: (seconds / 60) as u8,
+                    hour: (seconds / 3600) as u8,
+                    ..Self::ZERO
+                }
+            } else {
+                if seconds >= 60 {
+                    Self {
+                        second: (seconds % 60) as u8,
+                        minute: (seconds / 60) as u8,
+                        ..Self::ZERO
+                    }
+                } else {
+                    Self {
+                        second: seconds as u8,
+                        ..Self::ZERO
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Add for Time {
+    type Output = Self;
+
+    fn add(mut self, rhs: Self) -> Self {
+        let seconds = self.second + rhs.second;
+        if seconds >= 60 {
+            self.minute += 1;
+            self.second = seconds - 60;
+        } else {
+            self.second = seconds;
+        }
+        let minutes = self.minute + rhs.minute;
+        if minutes >= 60 {
+            self.hour += 1;
+            self.minute = minutes - 60;
+        } else {
+            self.minute = minutes;
+        }
+        let hours = self.hour + rhs.hour;
+        if hours >= 24 {
+            self.day += 1;
+            self.hour = hours - 24;
+        } else {
+            self.hour = hours;
+        }
+
+        // TODO: Days, months, years.
+
+        self
     }
 }
 

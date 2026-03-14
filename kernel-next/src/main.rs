@@ -115,8 +115,29 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
 
     info!("STARTUP SUCCESSFUL");
 
+    let clock_start_time = rtc::Time::now();
+    let timer_start_tick = apic::current_tick();
+    let mut current_time_add = rtc::Time::ZERO;
     loop {
         x86_64::instructions::hlt();
+        let ticks_per_second = 10;
+        let seconds_since_start = (apic::current_tick() - timer_start_tick) / ticks_per_second;
+        let time_since_start = rtc::Time::from_seconds(seconds_since_start);
+        if current_time_add != time_since_start {
+            current_time_add = time_since_start;
+            let current_time = clock_start_time + current_time_add;
+            for (col, ch) in format!("Current Time: {current_time}").char_indices() {
+                framebuffer.draw_ascii_char(
+                    ch,
+                    Color::rgb(0xaa, 0xaa, 0xad),
+                    Color::rgb(0x2B, 0x2B, 0x33),
+                    10,
+                    10,
+                    col,
+                    2,
+                );
+            }
+        }
     }
 }
 
