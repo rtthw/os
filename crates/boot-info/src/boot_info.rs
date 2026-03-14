@@ -16,6 +16,25 @@ pub struct BootInfo {
     pub kernel_start: usize,
     pub kernel_end: usize,
     pub memory_map: MemoryMap,
+    pub display_info: DisplayInfo,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub struct DisplayInfo {
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub format: PixelFormat,
+    pub framebuffer_addr: u64,
+    pub framebuffer_size: usize,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+pub enum PixelFormat {
+    Rgb = 0,
+    Bgr = 1,
 }
 
 #[derive(Debug)]

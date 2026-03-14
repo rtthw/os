@@ -8,7 +8,7 @@ mod serial;
 
 use {
     alloc::vec::Vec,
-    boot_info::{BootInfo, MemoryRegion, MemoryRegionKind},
+    boot_info::{BootInfo, DisplayInfo, MemoryRegion, MemoryRegionKind},
     elf::{ElfFile, ProgramHeaderType},
     log::{info, warn},
     memory_types::PAGE_SIZE,
@@ -17,7 +17,10 @@ use {
         boot::{self, AllocateType, MemoryType},
         cstr16, entry,
         mem::memory_map::MemoryMap as _,
-        proto::media::{file::*, fs::SimpleFileSystem},
+        proto::{
+            console::gop::GraphicsOutput,
+            media::{file::*, fs::SimpleFileSystem},
+        },
         system,
         table::cfg::ConfigTableEntry,
     },
@@ -35,6 +38,8 @@ fn main() -> Status {
 
     let (kernel_start, kernel_end, kernel_entry_point) = load_kernel();
     info!("Kernel entry point @ {:#x}", kernel_entry_point);
+
+    let display_info = get_display_info();
 
     let rsdp_address = system::with_config_table(|e| {
         let acpi2_entry = e.iter().find(|e| e.guid == ConfigTableEntry::ACPI2_GUID);
@@ -83,6 +88,7 @@ fn main() -> Status {
         kernel_start,
         kernel_end,
         memory_map: memory_regions.leak().into(),
+        display_info,
     };
 
     let entry_point: extern "sysv64" fn(*const BootInfo) =
@@ -175,6 +181,33 @@ fn load_kernel() -> (
     );
 
     (start_addr, end_addr, elf.header.body.entry_point)
+}
+
+fn get_display_info() -> DisplayInfo {
+    let handle = boot::get_handle_for_protocol::<GraphicsOutput>().unwrap();
+    let mut gop = boot::open_protocol_exclusive::<GraphicsOutput>(handle).unwrap();
+
+    // let mode = gop
+    //     .modes()
+    //     .max_by_key(|mode| mode.info().resolution())
+    //     .expect("no display mode available");
+    // gop.set_mode(&mode).unwrap();
+
+    let mode = gop.current_mode_info();
+    let (width, height) = mode.resolution();
+
+    DisplayInfo {
+        width: width as u32,
+        height: height as u32,
+        stride: mode.stride() as u32,
+        format: match mode.pixel_format() {
+            uefi::proto::console::gop::PixelFormat::Rgb => boot_info::PixelFormat::Rgb,
+            uefi::proto::console::gop::PixelFormat::Bgr => boot_info::PixelFormat::Bgr,
+            _ => panic!("unsupported pixel format"),
+        },
+        framebuffer_addr: gop.frame_buffer().as_mut_ptr() as u64,
+        framebuffer_size: gop.frame_buffer().size(),
+    }
 }
 
 
