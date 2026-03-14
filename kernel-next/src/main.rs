@@ -14,7 +14,13 @@ mod pit;
 mod rtc;
 mod serial;
 
-use {boot_info::BootInfo, core::arch::asm, log::info, memory_types::MEBIBYTE};
+use {
+    boot_info::BootInfo,
+    core::arch::asm,
+    framebuffer::{Color, Framebuffer},
+    log::info,
+    memory_types::MEBIBYTE,
+};
 
 
 unsafe extern "C" {
@@ -80,6 +86,10 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     acpi::init(boot_info);
 
     x86_64::instructions::interrupts::enable();
+
+    let mut framebuffer = Framebuffer::from_display_info(&boot_info.display_info);
+    framebuffer.clear_screen(Color::rgb(0x2B, 0x2B, 0x33));
+    framebuffer.fill_rect(1100, 700, 600, 10, Color::RED);
 
     // apic::timer_accuracy_tests();
 

@@ -1311,6 +1311,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "framebuffer"
+version = "0.1.0"
+dependencies = [
+ "boot-info",
+]
+
+[[package]]
 name = "funty"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1847,6 +1854,7 @@ version = "0.1.0"
 dependencies = [
  "acpi",
  "boot-info",
+ "framebuffer",
  "lazy_static",
  "linked_list_allocator",
  "log",

@@ -1,0 +1,10 @@
+[package]
+name = "framebuffer"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/framebuffer.rs"
+
+[dependencies]
+boot-info = { path = "../boot-info" }

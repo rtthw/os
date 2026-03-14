@@ -30,7 +30,7 @@ pub struct DisplayInfo {
     pub framebuffer_size: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(C)]
 pub enum PixelFormat {
     Rgb = 0,
