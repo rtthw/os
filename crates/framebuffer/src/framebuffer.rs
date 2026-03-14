@@ -2,7 +2,11 @@
 
 #![no_std]
 
+pub mod font;
+
 use boot_info::{DisplayInfo, PixelFormat};
+
+use crate::font::{CHAR_HEIGHT, CHAR_WIDTH};
 
 
 
@@ -28,11 +32,35 @@ impl Framebuffer {
         }
     }
 
+    pub fn contains(&self, x: i32, y: i32) -> bool {
+        x >= 0 && y >= 0 && x < self.width as i32 && y < self.height as i32
+    }
+
+    pub fn intersects(&self, x: i32, y: i32, w: usize, h: usize) -> bool {
+        x >= -(w as i32)
+            && y >= -(h as i32)
+            && x < self.width.saturating_sub(w) as i32
+            && y < self.height.saturating_sub(h) as i32
+    }
+
     pub fn clear_screen(&mut self, color: Color) {
         let color = color.to_u32(self.format);
 
         unsafe {
             core::slice::from_raw_parts_mut(self.ptr, self.width * self.height).fill(color);
+        }
+    }
+
+    pub fn draw_pixel(&mut self, x: i32, y: i32, color: Color) {
+        if !self.contains(x, y) {
+            return;
+        }
+
+        let color = color.to_u32(self.format);
+
+        unsafe {
+            let ptr = self.ptr.add(y as usize * self.width + x as usize);
+            ptr.write(color);
         }
     }
 
@@ -58,9 +86,63 @@ impl Framebuffer {
             }
         }
     }
+
+    pub fn draw_ascii_char(
+        &mut self,
+        ch: char,
+        fg_color: Color,
+        bg_color: Color,
+        x: i32,
+        y: i32,
+        col: usize,
+        row: usize,
+    ) {
+        let ch = if ch.is_ascii() { ch } else { '?' };
+
+        let start_x = x + (col * CHAR_WIDTH) as i32;
+        let start_y = y + (row * CHAR_HEIGHT) as i32;
+
+        if !self.intersects(start_x, start_y, CHAR_WIDTH, CHAR_HEIGHT) {
+            return;
+        }
+
+        let offset_x = if start_x < 0 { -start_x } else { 0 };
+        let offset_y = if start_y < 0 { -start_y } else { 0 };
+        let mut x_add = offset_x;
+        let mut y_add = offset_y;
+        loop {
+            let x = start_x + x_add;
+            let y = start_y + y_add;
+
+            if self.contains(x, y) {
+                let color = if x_add >= 1 {
+                    // Leave a 1 pixel gap between characters.
+                    let index = x_add - 1;
+                    let font_char = font::BASIC_FONT[ch as usize][y_add as usize];
+                    // The most significant bit determines whether the pixel's color belongs to the
+                    // foreground or background.
+                    if font_char & (0x80 >> index) != 0 {
+                        fg_color
+                    } else {
+                        bg_color
+                    }
+                } else {
+                    bg_color
+                };
+                self.draw_pixel(x, y, color);
+            }
+
+            x_add += 1;
+            if x_add == CHAR_WIDTH as i32 || start_x + x_add == self.width as i32 {
+                y_add += 1;
+                if y_add == CHAR_HEIGHT as i32 || start_y + y_add == self.height as i32 {
+                    return;
+                }
+                x_add = offset_x;
+            }
+        }
+    }
 }
-
-
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(C)]

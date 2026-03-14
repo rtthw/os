@@ -89,7 +89,27 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
 
     let mut framebuffer = Framebuffer::from_display_info(&boot_info.display_info);
     framebuffer.clear_screen(Color::rgb(0x2B, 0x2B, 0x33));
-    framebuffer.fill_rect(1100, 700, 600, 10, Color::RED);
+
+    for (col, ch) in "KERNEL v0.0.0".char_indices() {
+        framebuffer.draw_ascii_char(
+            ch,
+            Color::rgb(0xaa, 0xaa, 0xad),
+            Color::rgb(0x2B, 0x2B, 0x33),
+            10,
+            10,
+            col,
+            0,
+        );
+        framebuffer.draw_ascii_char(
+            '-',
+            Color::rgb(0xaa, 0xaa, 0xad),
+            Color::rgb(0x2B, 0x2B, 0x33),
+            10,
+            10,
+            col,
+            1,
+        );
+    }
 
     // apic::timer_accuracy_tests();
 
