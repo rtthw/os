@@ -120,7 +120,7 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     let mut current_time_add = rtc::Time::ZERO;
     loop {
         x86_64::instructions::hlt();
-        let ticks_per_second = 10;
+        let ticks_per_second = 100;
         let seconds_since_start = (apic::current_tick() - timer_start_tick) / ticks_per_second;
         let time_since_start = rtc::Time::from_seconds(seconds_since_start);
         if current_time_add != time_since_start {
