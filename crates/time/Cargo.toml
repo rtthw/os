@@ -1,0 +1,9 @@
+[package]
+name = "time"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/time.rs"
+
+[dependencies]

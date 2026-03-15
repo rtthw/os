@@ -86,6 +86,19 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     memory::init(boot_info);
     acpi::init(boot_info);
 
+    unsafe {
+        time::set_monotonic_clock::<hpet::HpetClock>();
+    }
+
+    assert!(time::monotonic_clock_ready());
+
+    let time_1 = time::now();
+    let time_2 = time::now();
+    info!(
+        "Time between `Instant::now` calls: {:?}",
+        time_2.duration_since(time_1),
+    );
+
     x86_64::instructions::interrupts::enable();
 
     let mut framebuffer = Framebuffer::from_display_info(&boot_info.display_info);

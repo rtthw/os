@@ -58,22 +58,36 @@ pub fn init(hpet: &HpetTable) {
     }
 }
 
-#[inline]
+pub struct HpetClock;
+
+impl time::ClockMonotonic for HpetClock {
+    #[inline(always)]
+    fn now() -> u64 {
+        unsafe { read_main_counter() }
+    }
+
+    #[inline(always)]
+    fn period() -> u64 {
+        unsafe { read_period() }
+    }
+}
+
+#[inline(always)]
 pub unsafe fn read_main_counter() -> u64 {
     unsafe { read_reg(MAIN_COUNTER_OFFSET) }
 }
 
-#[inline]
+#[inline(always)]
 pub unsafe fn read_period() -> u64 {
     unsafe { read_reg(GENERAL_CAPABILITIES_OFFSET) >> 32 }
 }
 
-#[inline]
+#[inline(always)]
 unsafe fn read_reg(offset: u64) -> u64 {
     unsafe { read_volatile((HPET_ADDR + offset) as *const u64) }
 }
 
-#[inline]
+#[inline(always)]
 unsafe fn write_reg(offset: u64, value: u64) {
     unsafe {
         write_volatile((HPET_ADDR + offset) as *mut u64, value);

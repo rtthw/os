@@ -1860,6 +1860,7 @@ dependencies = [
  "log",
  "memory-types",
  "spin-mutex",
+ "time",
  "uart_16550",
  "x2apic",
  "x86_64",
@@ -3265,6 +3266,10 @@ dependencies = [
  "weezl",
  "zune-jpeg",
 ]
+
+[[package]]
+name = "time"
+version = "0.1.0"
 
 [[package]]
 name = "tiny-skia"
