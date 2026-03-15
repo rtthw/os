@@ -1,8 +1,8 @@
 //! # Advanced Configuration and Power Interface (ACPI)
 
 use {
-    crate::apic,
-    acpi::{AcpiTables, platform::ProcessorState},
+    crate::{apic, hpet},
+    acpi::{AcpiTables, platform::ProcessorState, sdt::hpet::HpetTable},
     boot_info::BootInfo,
     core::ptr::NonNull,
     log::{debug, info, warn},
@@ -20,6 +20,12 @@ pub fn init(boot_info: &BootInfo) {
 
     match unsafe { AcpiTables::from_rsdp(AcpiHandler, rsdp_addr as usize) } {
         Ok(tables) => {
+            if let Some(hpet) = tables.find_table::<HpetTable>() {
+                hpet::init(hpet.get().get_ref());
+            } else {
+                warn!("No HPET found");
+            }
+
             let Ok(platform_info) = acpi::platform::AcpiPlatform::new(tables, AcpiHandler) else {
                 panic!("No ACPI platform found");
             };

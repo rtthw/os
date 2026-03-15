@@ -8,6 +8,7 @@ extern crate alloc;
 mod acpi;
 mod apic;
 mod gdt;
+mod hpet;
 mod idt;
 mod memory;
 mod pit;
