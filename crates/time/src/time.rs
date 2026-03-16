@@ -78,6 +78,7 @@ pub fn now() -> Instant {
     Instant::now()
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct Instant {
     value: u64,
