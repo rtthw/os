@@ -63,23 +63,13 @@ pub struct HpetClock;
 impl time::ClockMonotonic for HpetClock {
     #[inline(always)]
     fn now() -> u64 {
-        unsafe { read_main_counter() }
+        unsafe { read_reg(MAIN_COUNTER_OFFSET) }
     }
 
     #[inline(always)]
     fn period() -> u64 {
-        unsafe { read_period() }
+        unsafe { read_reg(GENERAL_CAPABILITIES_OFFSET) >> 32 }
     }
-}
-
-#[inline(always)]
-pub unsafe fn read_main_counter() -> u64 {
-    unsafe { read_reg(MAIN_COUNTER_OFFSET) }
-}
-
-#[inline(always)]
-pub unsafe fn read_period() -> u64 {
-    unsafe { read_reg(GENERAL_CAPABILITIES_OFFSET) >> 32 }
 }
 
 #[inline(always)]
