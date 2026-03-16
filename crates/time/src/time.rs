@@ -6,8 +6,41 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 pub use core::time::*;
 
+
+/// The amount of milliseconds in a second.
+pub const MILLIS_PER_SECOND: u64 = 1_000;
+
+/// The amount of microseconds in a second.
+pub const MICROS_PER_SECOND: u64 = 1_000_000;
+/// The amount of microseconds in a millisecond.
+pub const MICROS_PER_MILLI: u64 = 1_000;
+
+/// The amount of nanoseconds in a microsecond.
+pub const NANOS_PER_SECOND: u64 = 1_000_000_000;
+/// The amount of nanoseconds in a millisecond.
+pub const NANOS_PER_MILLI: u64 = 1_000_000;
+/// The amount of nanoseconds in a microsecond.
+pub const NANOS_PER_MICRO: u64 = 1_000;
+
+/// The amount of picoseconds in a second.
+pub const PICOS_PER_SECOND: u64 = 1_000_000_000_000;
+/// The amount of picoseconds in a millisecond.
+pub const PICOS_PER_MILLI: u64 = 1_000_000_000;
+/// The amount of picoseconds in a microsecond.
+pub const PICOS_PER_MICRO: u64 = 1_000_000;
+/// The amount of picoseconds in a microsecond.
+pub const PICOS_PER_NANO: u64 = 1_000;
+
+/// The amount of femtoseconds in a second.
+pub const FEMTOS_PER_SECOND: u64 = 1_000_000_000_000_000;
+/// The amount of femtoseconds in a millisecond.
+pub const FEMTOS_PER_MILLI: u64 = 1_000_000_000_000;
+/// The amount of femtoseconds in a microsecond.
+pub const FEMTOS_PER_MICRO: u64 = 1_000_000_000;
 /// The amount of femtoseconds in a nanosecond.
-pub const FEMTOS_PER_NANO: u128 = 1_000_000;
+pub const FEMTOS_PER_NANO: u64 = 1_000_000;
+/// The amount of femtoseconds in a picosecond.
+pub const FEMTOS_PER_PICO: u64 = 1_000;
 
 static MONOTONIC_CLOCK_SET: AtomicBool = AtomicBool::new(false);
 
@@ -82,6 +115,8 @@ impl Instant {
         };
         let femtos = instant.value as u128 * unsafe { MONOTONIC_PERIOD as u128 };
 
-        Some(Duration::from_nanos((femtos / FEMTOS_PER_NANO) as u64))
+        Some(Duration::from_nanos(
+            (femtos / FEMTOS_PER_NANO as u128) as u64,
+        ))
     }
 }
