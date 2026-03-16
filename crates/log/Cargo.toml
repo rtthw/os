@@ -1,0 +1,9 @@
+[package]
+name = "log"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/log.rs"
+
+[dependencies]
