@@ -1860,7 +1860,6 @@ dependencies = [
  "memory-types",
  "spin-mutex",
  "time",
- "uart_16550",
  "x2apic",
  "x86_64",
 ]
