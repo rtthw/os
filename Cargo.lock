@@ -1857,7 +1857,7 @@ dependencies = [
  "framebuffer",
  "lazy_static",
  "linked_list_allocator",
- "log 0.4.29",
+ "log 0.1.0",
  "memory-types",
  "spin-mutex",
  "time",

@@ -9,7 +9,7 @@ boot-info = { path = "../crates/boot-info" }
 framebuffer = { path = "../crates/framebuffer" }
 lazy_static = { version = "1.5", features = ["spin_no_std"] }
 linked_list_allocator = "0.9.0"
-log = "0.4"
+log = { path = "../crates/log" }
 memory-types = { path = "../crates/memory-types" }
 spin-mutex = { path = "../crates/spin-mutex" }
 time = { path = "../crates/time" }

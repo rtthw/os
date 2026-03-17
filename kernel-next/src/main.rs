@@ -53,7 +53,6 @@ pub extern "sysv64" fn _start(boot_info: &BootInfo) -> ! {
 pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     let startup_time = rtc::Time::now();
 
-    log::set_max_level(log::LevelFilter::Trace);
     log::set_logger(&serial::SerialLogger).unwrap();
 
     info!(

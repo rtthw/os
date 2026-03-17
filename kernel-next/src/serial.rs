@@ -1,4 +1,4 @@
-use {lazy_static::lazy_static, log::Level, spin_mutex::Mutex, uart_16550::SerialPort};
+use {lazy_static::lazy_static, log::LogLevel, spin_mutex::Mutex, uart_16550::SerialPort};
 
 
 
@@ -56,42 +56,34 @@ const ANSI_SGR_FG_BLUE: u8 = 34;
 pub struct SerialLogger;
 
 impl log::Log for SerialLogger {
-    fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
-        true
-    }
-
-    fn log(&self, record: &log::Record<'_>) {
-        if !self.enabled(record.metadata()) {
-            return;
-        }
-
-        let level_color_code = match record.level() {
-            Level::Error => ANSI_SGR_FG_RED,
-            Level::Warn => ANSI_SGR_FG_YELLOW,
-            Level::Info => ANSI_SGR_FG_GREEN,
-            Level::Debug => ANSI_SGR_FG_BLUE,
-            Level::Trace => ANSI_SGR_DIM,
+    fn log(
+        &self,
+        level: LogLevel,
+        target: &str,
+        _module_path: &'static str,
+        _location: &'static core::panic::Location,
+        args: core::fmt::Arguments,
+    ) {
+        let level_color_code = match level {
+            LogLevel::Error => ANSI_SGR_FG_RED,
+            LogLevel::Warn => ANSI_SGR_FG_YELLOW,
+            LogLevel::Info => ANSI_SGR_FG_GREEN,
+            LogLevel::Debug => ANSI_SGR_FG_BLUE,
+            LogLevel::Trace => ANSI_SGR_DIM,
         };
-        let target = if !record.target().is_empty() {
-            record.target()
-        } else {
-            record.module_path().unwrap_or_default()
-        };
-        let use_bold = record.level() == Level::Error;
+        let use_bold = level == LogLevel::Error;
 
         serial_println!(
             "\x1b[{}m{:<6}\x1b[0m\x1b[2m[{}]\x1b[0m \x1b[{}m{}\x1b[0m",
             level_color_code,
-            record.level().as_str(),
+            level.as_str(),
             target,
             if use_bold {
                 ANSI_SGR_BOLD
             } else {
                 ANSI_SGR_RESET
             },
-            record.args(),
+            args,
         );
     }
-
-    fn flush(&self) {}
 }
