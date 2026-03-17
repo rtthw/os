@@ -1855,7 +1855,6 @@ dependencies = [
  "acpi",
  "boot-info",
  "framebuffer",
- "lazy_static",
  "linked_list_allocator",
  "log 0.1.0",
  "memory-types",

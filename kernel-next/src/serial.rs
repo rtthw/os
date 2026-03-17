@@ -1,13 +1,13 @@
-use {lazy_static::lazy_static, log::LogLevel, spin_mutex::Mutex, uart_16550::SerialPort};
+//! # Serial Port
+
+use {log::LogLevel, spin_mutex::Mutex, uart_16550::SerialPort};
 
 
+pub static SERIAL1: Mutex<SerialPort> = Mutex::new(unsafe { SerialPort::new(0x3F8) });
 
-lazy_static! {
-    pub static ref SERIAL1: Mutex<SerialPort> = {
-        let mut port = unsafe { SerialPort::new(0x3F8) };
-        port.init();
-        Mutex::new(port)
-    };
+pub fn init() {
+    SERIAL1.lock().init();
+    log::set_logger(&SerialLogger).unwrap();
 }
 
 #[doc(hidden)]
