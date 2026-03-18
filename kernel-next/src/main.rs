@@ -14,6 +14,7 @@ mod memory;
 mod pit;
 mod rtc;
 mod serial;
+mod tsc;
 
 use {
     boot_info::BootInfo,
@@ -84,9 +85,11 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     idt::init();
     memory::init(boot_info);
     acpi::init(boot_info);
+    tsc::init();
 
     unsafe {
-        time::set_monotonic_clock::<hpet::HpetClock>();
+        time::set_monotonic_clock::<tsc::TscClock>();
+        // time::set_monotonic_clock::<hpet::HpetClock>();
     }
 
     assert!(time::monotonic_clock_ready());
