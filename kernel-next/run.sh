@@ -23,6 +23,7 @@ cd ../kernel-next
     cp ../target/x86_64-unknown-uefi/release/bootloader.efi esp/efi/boot/bootx64.efi
 
 qemu-system-x86_64 \
+    -accel kvm \
     -m 256M \
     -smp 4 \
     -rtc base=utc \
