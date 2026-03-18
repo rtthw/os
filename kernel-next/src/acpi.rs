@@ -6,6 +6,8 @@ use {
     boot_info::BootInfo,
     core::ptr::NonNull,
     log::{debug, info, warn},
+    time::MICROS_PER_SECOND,
+    x86_64::instructions::port::Port,
 };
 
 
@@ -20,6 +22,24 @@ pub fn init(boot_info: &BootInfo) {
 
     match unsafe { AcpiTables::from_rsdp(AcpiHandler, rsdp_addr as usize) } {
         Ok(tables) => {
+            if let Some(fadt) = tables.find_table::<acpi::sdt::fadt::Fadt>() {
+                if let Ok(Some(pm_timer_block)) = fadt.pm_timer_block() {
+                    info!(
+                        "ACPI PM timer @ {:#x} ({:?})",
+                        pm_timer_block.address, pm_timer_block.address_space,
+                    );
+                    match pm_timer_block.address_space {
+                        acpi::address::AddressSpace::SystemIo => unsafe {
+                            PM_TIMER_PORT = Some(pm_timer_block.address as u16);
+                        },
+                        _ => unimplemented!(),
+                    }
+                } else {
+                    info!("No ACPI PM timer available");
+                }
+            } else {
+                panic!("No FADT found");
+            }
             if let Some(hpet) = tables.find_table::<HpetTable>() {
                 hpet::init(hpet.get().get_ref());
             } else {
@@ -55,6 +75,24 @@ pub fn init(boot_info: &BootInfo) {
             warn!("Could not find ACPI tables for RDSP @ {rsdp_addr:#x}");
         }
     };
+}
+
+const PM_TIMER_FREQ: u32 = 3579545;
+static mut PM_TIMER_PORT: Option<u16> = None;
+
+pub fn pm_timer_sleep(microseconds: u32) -> Result<(), &'static str> {
+    unsafe {
+        let Some(port) = PM_TIMER_PORT else {
+            return Err("ACPI PM timer unavailable");
+        };
+        let mut port = Port::<u32>::new(port);
+        let start = port.read();
+        let end = start + ((PM_TIMER_FREQ * microseconds) / MICROS_PER_SECOND as u32);
+
+        while port.read() < end {}
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy)]

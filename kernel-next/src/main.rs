@@ -19,7 +19,7 @@ use {
     boot_info::BootInfo,
     core::arch::asm,
     framebuffer::{Color, Framebuffer},
-    log::info,
+    log::{debug, info},
     memory_types::MEBIBYTE,
 };
 
@@ -92,11 +92,17 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     assert!(time::monotonic_clock_ready());
 
     let time_1 = time::now();
-    let time_2 = time::now();
-    info!(
-        "Time between `Instant::now` calls: {:?}",
-        time_2.duration_since(time_1),
-    );
+    let dur = time::now().duration_since(time_1);
+    debug!("Time between `Instant::now` calls: {dur:?}",);
+    let pm_start = time::now();
+    if let Ok(()) = acpi::pm_timer_sleep(1_000) {
+        let dur = time::now().duration_since(pm_start);
+        debug!("`acpi::pm_timer_sleep(1ms)`\t: {dur:?}");
+    }
+    let pit_start = time::now();
+    pit::sleep(1_000);
+    let dur = time::now().duration_since(pit_start);
+    debug!("`pit::sleep(1ms)`\t\t: {dur:?}");
 
     x86_64::instructions::interrupts::enable();
 
