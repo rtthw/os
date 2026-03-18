@@ -26,12 +26,6 @@ static TICKS: AtomicU64 = AtomicU64::new(0);
 pub fn init(info: Apic) {
     info!("Initializing APIC...");
 
-    // FIXME: I get a GP fault on the first `set_timer_initial` call. Not sure why.
-    if true {
-        warn!("TODO: Fix APIC GP fault!");
-        return;
-    }
-
     #[allow(static_mut_refs)]
     unsafe {
         *LOCAL_APIC.lock() = Some(
@@ -67,12 +61,13 @@ fn end_of_interrupt() {
 
 unsafe fn enable(apic: &mut LocalApic) {
     info!("Enabling APIC...");
-    unsafe {
-        let apic_period = calculate_timer_period(apic, TIMER_INTERVAL_MICROS);
-        debug!("APIC_{}, timer period: {}", apic.id(), apic_period);
 
-        apic.set_timer_initial(apic_period);
-        apic.set_timer_divide(lapic::TimerDivide::Div16);
+    // FIXME: I get a GP fault on the first `set_timer_initial` call. Not sure why.
+    unsafe {
+        // let apic_period = calculate_timer_period(apic, TIMER_INTERVAL_MICROS);
+        // debug!("APIC_{}, timer period: {}", apic.id(), apic_period);
+        // apic.set_timer_initial(apic_period);
+        // apic.set_timer_divide(lapic::TimerDivide::Div16);
         apic.enable();
     }
 }

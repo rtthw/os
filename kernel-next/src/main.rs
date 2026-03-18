@@ -140,25 +140,31 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     info!("STARTUP SUCCESSFUL");
 
     let clock_start_time = rtc::Time::now();
-    let timer_start_tick = apic::current_tick();
+    let clock_start_instant = time::Instant::now();
     let mut current_time_add = rtc::Time::ZERO;
     loop {
         x86_64::instructions::hlt();
-        let ticks_per_second = 100;
-        let seconds_since_start = (apic::current_tick() - timer_start_tick) / ticks_per_second;
-        let time_since_start = rtc::Time::from_seconds(seconds_since_start);
+        let dur = clock_start_instant.elapsed();
+        let time_since_start = rtc::Time::from_seconds(dur.as_secs());
         if current_time_add != time_since_start {
             current_time_add = time_since_start;
             let current_time = clock_start_time + current_time_add;
-            for (col, ch) in format!("Current Time: {current_time}").char_indices() {
+            let time_string = format!("{current_time}");
+
+            let col_count = boot_info.display_info.width as usize / framebuffer::font::CHAR_WIDTH;
+            let row_count = boot_info.display_info.height as usize / framebuffer::font::CHAR_HEIGHT;
+            let start_col = col_count - 20; // MM/DD/YYYY HH:MM:SS <- 19 chars
+            let row = row_count.saturating_sub(2);
+
+            for (col, ch) in time_string.char_indices() {
                 framebuffer.draw_ascii_char(
                     ch,
                     Color::rgb(0xaa, 0xaa, 0xad),
                     Color::rgb(0x2B, 0x2B, 0x33),
                     10,
                     10,
-                    col,
-                    2,
+                    start_col + col,
+                    row,
                 );
             }
         }

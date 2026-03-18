@@ -1,10 +1,7 @@
 //! # Real Time Clock (RTC)
 
 use {
-    core::{
-        fmt,
-        ops::{Add, AddAssign},
-    },
+    core::{fmt, ops::Add},
     x86_64::instructions::port::Port,
 };
 
@@ -175,27 +172,6 @@ impl Add for Time {
     }
 }
 
-pub fn minute_and_second() -> (u8, u8) {
-    loop {
-        // Wait for the current update to finish.
-        while read_cmos(STATUS_REGISTER_A) & UPDATE_IN_PROGRESS_FLAG > 0 {
-            core::hint::spin_loop();
-        }
-
-        let time_1 = unsafe { raw_minute_and_second() };
-
-        // If the clock is already updating the time again, retry.
-        if read_cmos(STATUS_REGISTER_A) & UPDATE_IN_PROGRESS_FLAG > 0 {
-            continue;
-        }
-
-        let time_2 = unsafe { raw_minute_and_second() };
-        if time_1 == time_2 {
-            return time_1;
-        }
-    }
-}
-
 pub unsafe fn raw_minute_and_second() -> (u8, u8) {
     let mut second = read_cmos(SECOND_REGISTER);
     let mut minute = read_cmos(MINUTE_REGISTER);
@@ -220,9 +196,9 @@ fn read_cmos(register: u8) -> u8 {
     }
 }
 
-fn write_cmos(register: u8, value: u8) {
-    unsafe {
-        Port::new(CMOS_COMMAND_PORT).write(CMOS_DISABLE_NMI | register);
-        Port::new(CMOS_DATA_PORT).write(value)
-    }
-}
+// fn write_cmos(register: u8, value: u8) {
+//     unsafe {
+//         Port::new(CMOS_COMMAND_PORT).write(CMOS_DISABLE_NMI | register);
+//         Port::new(CMOS_DATA_PORT).write(value)
+//     }
+// }
