@@ -2,7 +2,10 @@
 
 #![no_std]
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    ops::Sub,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 pub use core::time::*;
 
@@ -78,6 +81,7 @@ pub fn now() -> Instant {
     Instant::now()
 }
 
+/// A moment in time.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct Instant {
@@ -106,18 +110,44 @@ impl Instant {
         }
     }
 
+    /// Create a new instant from a raw clock value.
+    #[inline]
+    pub fn from_raw(value: u64) -> Self {
+        Self { value }
+    }
+
+    /// Get the amount of time that has elapsed since this instant.
+    ///
+    /// This function is shorthand for `Instant::now().duration_since(*self)`.
+    #[inline]
+    pub fn elapsed(&self) -> Duration {
+        Instant::now() - *self
+    }
+
+    /// Get the amount of time that has elapsed since an earlier instant.
+    ///
+    /// Returns [`Duration::ZERO`] if `earlier` is later than `self`.
+    #[inline]
     pub fn duration_since(&self, earlier: Self) -> Duration {
         self.checked_duration_since(earlier).unwrap_or_default()
     }
 
+    /// Get the amount of time that has elapsed since an earlier instant.
+    ///
+    /// Returns [`None`] if `earlier` is later than `self`.
     pub fn checked_duration_since(&self, earlier: Self) -> Option<Duration> {
-        let instant = Instant {
-            value: self.value.checked_sub(earlier.value)?,
-        };
-        let femtos = instant.value as u128 * unsafe { MONOTONIC_PERIOD as u128 };
+        let delta = self.value.checked_sub(earlier.value)? as u128;
+        let femtos = delta * unsafe { MONOTONIC_PERIOD as u128 };
 
-        Some(Duration::from_nanos(
-            (femtos / FEMTOS_PER_NANO as u128) as u64,
-        ))
+        Some(Duration::from_nanos_u128(femtos / FEMTOS_PER_NANO as u128))
+    }
+}
+
+impl Sub<Instant> for Instant {
+    type Output = Duration;
+
+    #[inline]
+    fn sub(self, other: Instant) -> Duration {
+        self.duration_since(other)
     }
 }

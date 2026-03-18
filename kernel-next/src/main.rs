@@ -94,17 +94,19 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
 
     assert!(time::monotonic_clock_ready());
 
-    let time_1 = time::now();
-    let dur = time::now().duration_since(time_1);
-    debug!("Time between `Instant::now` calls: {dur:?}",);
+    debug!(
+        "Time between consecutive `Instant::now` calls: {:?}",
+        time::now().elapsed(),
+    );
+
     let pm_start = time::now();
     if let Ok(()) = acpi::pm_timer_sleep(1_000) {
-        let dur = time::now().duration_since(pm_start);
+        let dur = pm_start.elapsed();
         debug!("`acpi::pm_timer_sleep(1ms)`\t: {dur:?}");
     }
     let pit_start = time::now();
     pit::sleep(1_000);
-    let dur = time::now().duration_since(pit_start);
+    let dur = pit_start.elapsed();
     debug!("`pit::sleep(1ms)`\t\t: {dur:?}");
 
     x86_64::instructions::interrupts::enable();
