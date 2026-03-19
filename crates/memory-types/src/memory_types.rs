@@ -5,8 +5,9 @@
 #![no_std]
 
 mod physical_memory;
+mod virtual_memory;
 
-pub use physical_memory::*;
+pub use {physical_memory::*, virtual_memory::*};
 
 
 /// A "kibibyte", or 1,024 bytes.
