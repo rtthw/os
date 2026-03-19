@@ -4,6 +4,10 @@
 
 #![no_std]
 
+mod physical_memory;
+
+pub use physical_memory::*;
+
 
 /// A "kibibyte", or 1,024 bytes.
 pub const KIBIBYTE: usize = 1024;
@@ -31,3 +35,15 @@ pub const PETABYTE: usize = 1000 * 1000 * 1000 * 1000 * 1000;
 pub const PAGE_SIZE: usize = 4 * KIBIBYTE;
 /// 8 bytes.
 pub const POINTER_SIZE: usize = size_of::<usize>();
+
+
+
+#[inline]
+pub const fn align_down(addr: usize, align: usize) -> usize {
+    addr & !(align - 1)
+}
+
+#[inline]
+pub const fn align_up(addr: usize, align: usize) -> usize {
+    (addr + align - 1) & !(align - 1)
+}
