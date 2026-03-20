@@ -7,6 +7,7 @@ extern crate alloc;
 
 mod acpi;
 mod apic;
+mod executor;
 mod gdt;
 mod hpet;
 mod idt;
@@ -109,8 +110,6 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     let dur = pit_start.elapsed();
     debug!("`pit::sleep(1ms)`\t\t: {dur:?}");
 
-    x86_64::instructions::interrupts::enable();
-
     let mut framebuffer = Framebuffer::from_display_info(&boot_info.display_info);
     framebuffer.clear_screen(Color::rgb(0x2B, 0x2B, 0x33));
 
@@ -139,11 +138,28 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
 
     info!("STARTUP SUCCESSFUL");
 
+    let mut executor = executor::Executor::new();
+
+    let display_width = boot_info.display_info.width as usize;
+    let display_height = boot_info.display_info.height as usize;
+    executor.spawn(async move {
+        render_clock(framebuffer, display_width, display_height).await;
+    });
+
+    x86_64::instructions::interrupts::enable();
+
+    loop {
+        x86_64::instructions::hlt();
+        executor.tick();
+    }
+}
+
+async fn render_clock(mut framebuffer: Framebuffer, display_width: usize, display_height: usize) {
     let clock_start_time = rtc::Time::now();
     let clock_start_instant = time::Instant::now();
     let mut current_time_add = rtc::Time::ZERO;
+
     loop {
-        x86_64::instructions::hlt();
         let dur = clock_start_instant.elapsed();
         let time_since_start = rtc::Time::from_seconds(dur.as_secs());
         if current_time_add != time_since_start {
@@ -151,8 +167,8 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
             let current_time = clock_start_time + current_time_add;
             let time_string = format!("{current_time}");
 
-            let col_count = boot_info.display_info.width as usize / framebuffer::font::CHAR_WIDTH;
-            let row_count = boot_info.display_info.height as usize / framebuffer::font::CHAR_HEIGHT;
+            let col_count = display_width / framebuffer::font::CHAR_WIDTH;
+            let row_count = display_height / framebuffer::font::CHAR_HEIGHT;
             let start_col = col_count - 20; // MM/DD/YYYY HH:MM:SS <- 19 chars
             let row = row_count.saturating_sub(2);
 

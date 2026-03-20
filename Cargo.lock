@@ -1854,6 +1854,7 @@ version = "0.1.0"
 dependencies = [
  "acpi",
  "boot-info",
+ "crossbeam-queue",
  "framebuffer",
  "linked_list_allocator",
  "log 0.1.0",
