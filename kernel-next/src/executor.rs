@@ -55,18 +55,18 @@ impl Executor {
 
     pub fn tick(&mut self) {
         let current_time_value = time::now().into_raw();
-        while current_time_value > NEXT_RESUME_TIME.load(Ordering::SeqCst) {
+        while current_time_value > NEXT_RESUME_TIME.load(Ordering::Relaxed) {
             let mut sleeping_tasks = SLEEPING_TASKS.lock();
-            if let Some(SleepingTask { waker, resume_time }) = sleeping_tasks.pop() {
-                log::trace!("Waking @ {resume_time:?}...");
+            if let Some(SleepingTask { waker, .. }) = sleeping_tasks.pop() {
+                // log::trace!("Waking @ {resume_time:?}...");
                 waker.wake();
 
                 match sleeping_tasks.peek() {
                     Some(SleepingTask { resume_time, .. }) => {
-                        NEXT_RESUME_TIME.store(resume_time.into_raw(), Ordering::SeqCst);
+                        NEXT_RESUME_TIME.store(resume_time.into_raw(), Ordering::Relaxed);
                     }
                     None => {
-                        NEXT_RESUME_TIME.store(u64::MAX, Ordering::SeqCst);
+                        NEXT_RESUME_TIME.store(u64::MAX, Ordering::Relaxed);
                     }
                 }
             }
