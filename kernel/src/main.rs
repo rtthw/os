@@ -212,7 +212,7 @@ fn main() -> Status {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(target_os = "uefi")]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     log::error!("{}", info);

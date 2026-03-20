@@ -184,7 +184,7 @@ async fn render_clock(mut framebuffer: Framebuffer, display_width: usize, displa
     }
 }
 
-#[cfg(not(test))]
+#[cfg(target_os = "none")]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     log::error!("{info}");
