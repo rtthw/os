@@ -3,7 +3,7 @@
 #![no_std]
 
 use core::{
-    ops::Sub,
+    ops::{Add, Sub},
     sync::atomic::{AtomicBool, Ordering},
 };
 
@@ -89,6 +89,8 @@ pub struct Instant {
 }
 
 impl Instant {
+    pub const MAX: Self = Self::from_raw(u64::MAX);
+
     /// Get the current monotonic clock value.
     ///
     /// ## Examples
@@ -112,8 +114,14 @@ impl Instant {
 
     /// Create a new instant from a raw clock value.
     #[inline]
-    pub fn from_raw(value: u64) -> Self {
+    pub const fn from_raw(value: u64) -> Self {
         Self { value }
+    }
+
+    /// Get the raw clock value that represents this instant.
+    #[inline]
+    pub const fn into_raw(self) -> u64 {
+        self.value
     }
 
     /// Get the amount of time that has elapsed since this instant.
@@ -141,6 +149,17 @@ impl Instant {
 
         Some(Duration::from_nanos_u128(femtos / FEMTOS_PER_NANO as u128))
     }
+
+    pub fn add_duration(&self, duration: Duration) -> Self {
+        self.checked_add_duration(duration).unwrap_or(Self::MAX)
+    }
+
+    pub fn checked_add_duration(&self, duration: Duration) -> Option<Self> {
+        let femtos = duration.as_nanos() * FEMTOS_PER_NANO as u128;
+        let delta = femtos / unsafe { MONOTONIC_PERIOD as u128 };
+
+        Some(Self::from_raw(self.value.checked_add(delta as u64)?))
+    }
 }
 
 impl Sub<Instant> for Instant {
@@ -149,5 +168,14 @@ impl Sub<Instant> for Instant {
     #[inline]
     fn sub(self, other: Instant) -> Duration {
         self.duration_since(other)
+    }
+}
+
+impl Add<Duration> for Instant {
+    type Output = Instant;
+
+    #[inline]
+    fn add(self, duration: Duration) -> Instant {
+        self.add_duration(duration)
     }
 }

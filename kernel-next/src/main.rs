@@ -19,7 +19,7 @@ mod tsc;
 
 use {
     boot_info::BootInfo,
-    core::arch::asm,
+    core::{arch::asm, time::Duration},
     framebuffer::{Color, Framebuffer},
     log::{debug, info},
     memory_types::MEBIBYTE,
@@ -157,33 +157,30 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
 async fn render_clock(mut framebuffer: Framebuffer, display_width: usize, display_height: usize) {
     let clock_start_time = rtc::Time::now();
     let clock_start_instant = time::Instant::now();
-    let mut current_time_add = rtc::Time::ZERO;
 
     loop {
         let dur = clock_start_instant.elapsed();
-        let time_since_start = rtc::Time::from_seconds(dur.as_secs());
-        if current_time_add != time_since_start {
-            current_time_add = time_since_start;
-            let current_time = clock_start_time + current_time_add;
-            let time_string = format!("{current_time}");
+        let current_time = clock_start_time + rtc::Time::from_seconds(dur.as_secs());
+        let time_string = format!("{current_time}");
 
-            let col_count = display_width / framebuffer::font::CHAR_WIDTH;
-            let row_count = display_height / framebuffer::font::CHAR_HEIGHT;
-            let start_col = col_count - 20; // MM/DD/YYYY HH:MM:SS <- 19 chars
-            let row = row_count.saturating_sub(2);
+        let col_count = display_width / framebuffer::font::CHAR_WIDTH;
+        let row_count = display_height / framebuffer::font::CHAR_HEIGHT;
+        let start_col = col_count - 20; // MM/DD/YYYY HH:MM:SS <- 19 chars
+        let row = row_count.saturating_sub(2);
 
-            for (col, ch) in time_string.char_indices() {
-                framebuffer.draw_ascii_char(
-                    ch,
-                    Color::rgb(0xaa, 0xaa, 0xad),
-                    Color::rgb(0x2B, 0x2B, 0x33),
-                    10,
-                    10,
-                    start_col + col,
-                    row,
-                );
-            }
+        for (col, ch) in time_string.char_indices() {
+            framebuffer.draw_ascii_char(
+                ch,
+                Color::rgb(0xaa, 0xaa, 0xad),
+                Color::rgb(0x2B, 0x2B, 0x33),
+                10,
+                10,
+                start_col + col,
+                row,
+            );
         }
+
+        executor::sleep(Duration::from_secs(1)).await;
     }
 }
 
