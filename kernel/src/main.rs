@@ -22,7 +22,7 @@ use {
     boot_info::BootInfo,
     core::{arch::asm, time::Duration},
     framebuffer::{Color, Framebuffer},
-    log::{debug, info},
+    log::{debug, info, warn},
     memory_types::MEBIBYTE,
 };
 
@@ -89,17 +89,8 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     acpi::init(boot_info);
     tsc::init();
 
-    unsafe {
-        time::set_monotonic_clock::<tsc::TscClock>();
-        // time::set_monotonic_clock::<hpet::HpetClock>();
-    }
-
+    init_monotonic_clock();
     assert!(time::monotonic_clock_ready());
-
-    debug!(
-        "Time between consecutive `Instant::now` calls: {:?}",
-        time::now().elapsed(),
-    );
 
     let pm_start = time::now();
     if let Ok(()) = acpi::pm_timer_sleep(1_000) {
@@ -211,5 +202,46 @@ impl KernelStack {
 
     const fn as_ptr(&self) -> *const u8 {
         self.0.as_ptr()
+    }
+}
+
+
+
+fn init_monotonic_clock() {
+    const MAX_USABLE_MONOCLOCK_INTERVAL: Duration = Duration::from_micros(1);
+
+    unsafe {
+        time::set_monotonic_clock::<tsc::TscClock>();
+    }
+
+    let tsc_interval = time::now().elapsed();
+    if tsc_interval <= MAX_USABLE_MONOCLOCK_INTERVAL {
+        info!("Using TSC as monotonic clock, interval is {tsc_interval:?}");
+        return;
+    } else {
+        warn!("TSC is too slow for accurate time measurements: {tsc_interval:?}");
+    }
+
+    if hpet::available() {
+        unsafe {
+            time::set_monotonic_clock::<hpet::HpetClock>();
+        }
+        let hpet_interval = time::now().elapsed();
+        if hpet_interval <= MAX_USABLE_MONOCLOCK_INTERVAL {
+            info!("Using HPET as monotonic clock, interval is {hpet_interval:?}");
+            return;
+        }
+
+        warn!(
+            "No adequate monotonic clock available, using fastest one...\n\
+            \tTSC: {tsc_interval:?}\n\
+            \tHPET: {hpet_interval:?}"
+        );
+
+        if hpet_interval >= tsc_interval {
+            unsafe {
+                time::set_monotonic_clock::<tsc::TscClock>();
+            }
+        }
     }
 }

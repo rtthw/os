@@ -57,6 +57,10 @@ pub fn init(hpet: &HpetTable) {
     }
 }
 
+pub fn available() -> bool {
+    unsafe { HPET_ADDR != 0 }
+}
+
 pub struct HpetClock;
 
 impl time::ClockMonotonic for HpetClock {
