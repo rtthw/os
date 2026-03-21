@@ -1,7 +1,5 @@
 /build
 /kernel/esp
 /kernel/firmware/uefi
-/kernel-next/esp
-/kernel-next/firmware/uefi
 /linux/build
 /target

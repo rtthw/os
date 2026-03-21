@@ -1,40 +1,98 @@
 //! # Advanced Configuration and Power Interface (ACPI)
 
 use {
-    crate::get_memory_mapper,
-    acpi::AcpiTables,
+    crate::{apic, hpet},
+    acpi::{AcpiTables, platform::ProcessorState, sdt::hpet::HpetTable},
+    boot_info::BootInfo,
     core::ptr::NonNull,
-    log::{info, warn},
-    x86_64::PhysAddr,
+    log::{debug, info, warn},
+    time::MICROS_PER_SECOND,
+    x86_64::instructions::port::Port,
 };
 
 
 
-static mut PM1A_CNT_BLK: u32 = 0;
+pub fn init(boot_info: &BootInfo) {
+    let Some(rsdp_addr) = boot_info.rsdp_address else {
+        warn!("No RSDP found, skipping ACPI initialization...");
+        return;
+    };
 
-pub fn setup(rsdp_address: usize) {
-    match unsafe { AcpiTables::from_rsdp(AcpiHandler, rsdp_address) } {
+    info!("Initializing ACPI...");
+
+    match unsafe { AcpiTables::from_rsdp(AcpiHandler, rsdp_addr as usize) } {
         Ok(tables) => {
             if let Some(fadt) = tables.find_table::<acpi::sdt::fadt::Fadt>() {
-                if let Ok(block) = fadt.pm1a_control_block() {
-                    unsafe {
-                        PM1A_CNT_BLK = block.address as u32;
+                if let Ok(Some(pm_timer_block)) = fadt.pm_timer_block() {
+                    info!(
+                        "ACPI PM timer @ {:#x} ({:?})",
+                        pm_timer_block.address, pm_timer_block.address_space,
+                    );
+                    match pm_timer_block.address_space {
+                        acpi::address::AddressSpace::SystemIo => unsafe {
+                            PM_TIMER_PORT = Some(pm_timer_block.address as u16);
+                        },
+                        _ => unimplemented!(),
                     }
+                } else {
+                    info!("No ACPI PM timer available");
+                }
+            } else {
+                panic!("No FADT found");
+            }
+            if let Some(hpet) = tables.find_table::<HpetTable>() {
+                hpet::init(hpet.get().get_ref());
+            } else {
+                warn!("No HPET found");
+            }
+
+            let Ok(platform_info) = acpi::platform::AcpiPlatform::new(tables, AcpiHandler) else {
+                panic!("No ACPI platform found");
+            };
+
+            if let Some(processor_info) = platform_info.processor_info {
+                log_processor_info(&processor_info.boot_processor);
+                assert!(processor_info.boot_processor.state == ProcessorState::Running);
+                for processor in processor_info.application_processors.iter() {
+                    log_processor_info(processor);
+
+                    // None of the application processors should be running at this point.
+                    assert!(processor.state != ProcessorState::Running);
                 }
             }
-            if let Ok(info) = acpi::platform::AcpiPlatform::new(tables, AcpiHandler) {
-                if let Some(info) = info.processor_info {
-                    log_processor_info(&info.boot_processor);
-                    for processor in info.application_processors.iter() {
-                        log_processor_info(processor);
-                    }
+
+            // Initialize the interrupt controller.
+            match platform_info.interrupt_model {
+                acpi::platform::InterruptModel::Apic(apic_info) => {
+                    apic::init(apic_info);
+                }
+                _ => {
+                    panic!("legacy 8259 PIC not yet supported")
                 }
             }
         }
         Err(_) => {
-            warn!("Could not find ACPI tables for RDSP @ {rsdp_address:#x}");
+            warn!("Could not find ACPI tables for RDSP @ {rsdp_addr:#x}");
         }
     };
+}
+
+const PM_TIMER_FREQ: u32 = 3579545;
+static mut PM_TIMER_PORT: Option<u16> = None;
+
+pub fn pm_timer_sleep(microseconds: u32) -> Result<(), &'static str> {
+    unsafe {
+        let Some(port) = PM_TIMER_PORT else {
+            return Err("ACPI PM timer unavailable");
+        };
+        let mut port = Port::<u32>::new(port);
+        let start = port.read();
+        let end = start + ((PM_TIMER_FREQ * microseconds) / MICROS_PER_SECOND as u32);
+
+        while port.read() < end {}
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -46,10 +104,7 @@ impl acpi::Handler for AcpiHandler {
         physical_address: usize,
         size: usize,
     ) -> acpi::PhysicalMapping<Self, T> {
-        let mapper = get_memory_mapper();
-        let phys_addr = PhysAddr::new(physical_address as u64);
-        let virt_addr = mapper.physical_to_virtual(phys_addr);
-        let ptr = NonNull::new(virt_addr.as_mut_ptr()).unwrap();
+        let ptr = NonNull::new(physical_address as *mut T).unwrap();
 
         acpi::PhysicalMapping {
             physical_start: physical_address,
@@ -63,19 +118,19 @@ impl acpi::Handler for AcpiHandler {
     fn unmap_physical_region<T>(_region: &acpi::PhysicalMapping<Self, T>) {}
 
     fn read_u8(&self, address: usize) -> u8 {
-        read_addr::<u8>(address)
+        unsafe { *(address as *const _) }
     }
 
     fn read_u16(&self, address: usize) -> u16 {
-        read_addr::<u16>(address)
+        unsafe { *(address as *const _) }
     }
 
     fn read_u32(&self, address: usize) -> u32 {
-        read_addr::<u32>(address)
+        unsafe { *(address as *const _) }
     }
 
     fn read_u64(&self, address: usize) -> u64 {
-        read_addr::<u64>(address)
+        unsafe { *(address as *const _) }
     }
 
     fn write_u8(&self, _address: usize, _value: u8) {
@@ -167,17 +222,15 @@ impl acpi::Handler for AcpiHandler {
     }
 }
 
-fn read_addr<T: Copy>(addr: usize) -> T {
-    let virtual_address = get_memory_mapper().physical_to_virtual(PhysAddr::new(addr as u64));
-    unsafe { *virtual_address.as_ptr::<T>() }
-}
-
 fn log_processor_info(processor: &acpi::platform::Processor) {
     let kind = if processor.is_ap { "AP" } else { "BP" };
     let state = match processor.state {
-        acpi::platform::ProcessorState::Disabled => "disabled",
-        acpi::platform::ProcessorState::Running => "running",
-        acpi::platform::ProcessorState::WaitingForSipi => "waiting",
+        ProcessorState::Disabled => "disabled",
+        ProcessorState::WaitingForSipi => "waiting",
+        ProcessorState::Running => "running",
     };
-    info!("CPU #{} = {}, {}", processor.processor_uid, kind, state);
+    debug!(
+        "CPU {} ({}, {}) = APIC_{}",
+        processor.processor_uid, kind, state, processor.local_apic_id,
+    );
 }

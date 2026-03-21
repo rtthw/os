@@ -2,6 +2,12 @@
 
 # FIXME: This only works on Linux-based systems.
 
+set -e # Exit on error.
+
+SOURCE_DIR=$(pwd)
+
+mkdir -p esp/efi/boot
+
 set -e
 
 # Ensure OVMF (Open Virtual Machine Firmware) is available, and in the correct location.
@@ -18,12 +24,25 @@ if [[ ! -e "firmware/uefi/OVMF_VARS.fd" ]]; then
     cp /usr/share/OVMF/OVMF_VARS.fd firmware/uefi/OVMF_VARS.fd
 fi
 
-cargo build --release --target x86_64-unknown-uefi
-mkdir -p esp/efi/boot
-cp ../target/x86_64-unknown-uefi/release/kernel.efi esp/efi/boot/bootx64.efi
+cd ../bootloader
+    cargo build --release
+cd ../kernel
+    # cargo build --release
+    cargo rustc \
+		--release \
+		--manifest-path "$SOURCE_DIR/Cargo.toml" \
+		--target "$SOURCE_DIR/x86_64-kernel.json" \
+		-Z build-std=core,alloc -Zbuild-std-features=compiler-builtins-mem \
+		-- \
+		-C link-arg=-T -Clink-arg="$SOURCE_DIR/kernel_x86_64.ld" \
+		-C link-arg=-z -Clink-arg=max-page-size=0x1000 \
+		--emit link="$SOURCE_DIR/esp/kernel"
+
+    cp ../target/x86_64-unknown-uefi/release/bootloader.efi esp/efi/boot/bootx64.efi
 
 qemu-system-x86_64 \
-    -m 1G \
+    -accel kvm \
+    -m 256M \
     -smp 4 \
     -rtc base=utc \
     -display gtk,show-tabs=on \

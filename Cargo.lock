@@ -1836,23 +1836,6 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
  "acpi",
- "crossbeam-queue",
- "lazy_static",
- "linked_list_allocator",
- "log 0.4.29",
- "pci",
- "spin 0.10.0",
- "tinyvec",
- "uart_16550",
- "uefi",
- "x86_64",
-]
-
-[[package]]
-name = "kernel-next"
-version = "0.1.0"
-dependencies = [
- "acpi",
  "boot-info",
  "crossbeam-queue",
  "framebuffer",
@@ -1888,7 +1871,7 @@ version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 dependencies = [
- "spin 0.9.8",
+ "spin",
 ]
 
 [[package]]
@@ -3109,15 +3092,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
 
 [[package]]
-name = "spin"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
-dependencies = [
- "lock_api",
-]
-
-[[package]]
 name = "spin-mutex"
 version = "0.1.0"
 
@@ -3308,12 +3282,6 @@ dependencies = [
  "displaydoc",
  "zerovec",
 ]
-
-[[package]]
-name = "tinyvec"
-version = "1.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa5fdc3bce6191a1dbc8c02d5c8bffcf557bafa17c124c5264a458f1b0613fa"
 
 [[package]]
 name = "toml_datetime"
