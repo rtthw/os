@@ -17,7 +17,6 @@ static mut IDT: InterruptDescriptorTable = InterruptDescriptorTable::new();
 pub fn init() {
     info!("Initializing IDT...");
 
-    #[allow(static_mut_refs)]
     unsafe {
         set_general_handler!(&mut IDT, unhandled_interrupt);
 

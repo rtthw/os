@@ -28,7 +28,6 @@ pub fn init(boot_info: &BootInfo) {
         heap_region.size,
     );
 
-    #[allow(static_mut_refs)]
     unsafe {
         ALLOCATOR.lock().init(heap_region.base, heap_region.size);
     }

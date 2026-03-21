@@ -31,7 +31,6 @@ pub const LOCAL_APIC_TIMER_IST: u16 = 3;
 pub fn init() {
     info!("Initializing GDT...");
 
-    #[allow(static_mut_refs)]
     unsafe {
         TSS.interrupt_stack_table[DOUBLE_FAULT_IST as usize] = {
             static mut STACK: [u8; INTERRUPT_STACK_SIZE] = [0; INTERRUPT_STACK_SIZE];

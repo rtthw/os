@@ -26,7 +26,6 @@ static TICKS: AtomicU64 = AtomicU64::new(0);
 pub fn init(info: Apic) {
     info!("Initializing APIC...");
 
-    #[allow(static_mut_refs)]
     unsafe {
         *LOCAL_APIC.lock() = Some(
             lapic::LocalApicBuilder::new()

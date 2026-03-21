@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
+#![allow(static_mut_refs)]
 
 #[macro_use]
 extern crate alloc;

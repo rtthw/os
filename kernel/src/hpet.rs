@@ -19,7 +19,6 @@ const CONFIG_ENABLE_BIT: u64 = 0b_0001;
 static mut HPET_ADDR: u64 = 0;
 
 pub fn init(hpet: &HpetTable) {
-    #[allow(static_mut_refs)]
     unsafe {
         HPET_ADDR = hpet.base_address.address;
 
