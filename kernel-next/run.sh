@@ -1,10 +1,28 @@
 #!/bin/bash
 
-set -ex
+# FIXME: This only works on Linux-based systems.
+
+set -e # Exit on error.
 
 SOURCE_DIR=$(pwd)
 
 mkdir -p esp/efi/boot
+
+set -e
+
+# Ensure OVMF (Open Virtual Machine Firmware) is available, and in the correct location.
+#
+# If you get an error here, make sure you have the OVMF package installed (something along the
+# lines of `sudo apt install ovmf`, depends on your distribution).
+mkdir -p firmware/uefi
+if [[ ! -e "firmware/uefi/OVMF_CODE.fd" ]]; then
+    echo "File 'firmware/uefi/OVMF_CODE.fd' does not exist, copying from system..."
+    cp /usr/share/OVMF/OVMF_CODE.fd firmware/uefi/OVMF_CODE.fd
+fi
+if [[ ! -e "firmware/uefi/OVMF_VARS.fd" ]]; then
+    echo "File 'firmware/uefi/OVMF_VARS.fd' does not exist, copying from system..."
+    cp /usr/share/OVMF/OVMF_VARS.fd firmware/uefi/OVMF_VARS.fd
+fi
 
 cd ../bootloader
     cargo build --release
