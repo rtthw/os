@@ -9,3 +9,4 @@ Modules that manage specific devices.
 ✔️ Full, ▢ Partial, ❌ None
 
 - ▢ [PCI (Peripheral Component Interconnect)](./pci)
+- ▢ [VirtIO 1.3 (Virtual Input/Output Devices)](./virtio)

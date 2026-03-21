@@ -1,0 +1,10 @@
+[package]
+name = "virtio"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/virtio.rs"
+
+[dependencies]
+pci = { path = "../pci" }
