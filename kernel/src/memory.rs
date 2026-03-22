@@ -12,7 +12,7 @@ use {
         registers::control::{Cr0, Cr0Flags},
         structures::paging::{
             FrameAllocator as _, Mapper as _, OffsetPageTable, Page, PageTableFlags, PhysFrame,
-            Size4KiB, Translate,
+            Size4KiB, Translate as _,
         },
     },
 };

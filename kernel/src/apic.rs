@@ -4,7 +4,7 @@ use {
     crate::{pit, rtc},
     acpi::platform::interrupt::Apic,
     core::sync::atomic::{AtomicU64, Ordering},
-    log::{debug, info, warn},
+    log::{info, warn},
     spin_mutex::Mutex,
     x2apic::lapic::{self, LocalApic},
     x86_64::structures::idt::InterruptStackFrame,
@@ -24,7 +24,7 @@ static TICKS: AtomicU64 = AtomicU64::new(0);
 
 
 pub fn init(info: Apic) {
-    info!("Initializing APIC...");
+    info!("Initializing APIC @ {:#x}...", info.local_apic_address);
 
     unsafe {
         *LOCAL_APIC.lock() = Some(
@@ -71,6 +71,7 @@ unsafe fn enable(apic: &mut LocalApic) {
     }
 }
 
+#[allow(unused)]
 fn calculate_timer_period(apic: &mut LocalApic, microseconds: u16) -> u32 {
     let initial_count = u32::MAX;
     let final_count = unsafe {

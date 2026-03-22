@@ -18,7 +18,7 @@ pub fn init(boot_info: &BootInfo) {
         return;
     };
 
-    info!("Initializing ACPI...");
+    info!("Initializing ACPI @ {rsdp_addr:#x}...");
 
     match unsafe { AcpiTables::from_rsdp(AcpiHandler, rsdp_addr as usize) } {
         Ok(tables) => {
