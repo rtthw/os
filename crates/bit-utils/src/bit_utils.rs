@@ -5,6 +5,76 @@
 
 
 #[macro_export]
+macro_rules! bit_flags {
+    (
+        $(#[$meta:meta])*
+        $vis:vis struct $ident:ident: $ty:ty {
+            $(
+                $(#[$flag_meta:meta])*
+                $flag_ident:ident @ $flag_bit:expr
+            ),*
+            $(,)?
+        }
+    ) => {
+        #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        #[allow(non_camel_case_types)]
+        #[repr(transparent)]
+        $(#[$meta])*
+        $vis struct $ident($ty);
+
+        #[allow(unused)]
+        impl $ident {
+            $(
+                $(#[$flag_meta])*
+                pub const $flag_ident: Self = Self(1 << $flag_bit);
+            )*
+
+            pub const NONE: Self = Self(0);
+            pub const ALL: Self = Self(0 $(| 1 << $flag_bit)*);
+
+            #[inline]
+            pub const fn bits(&self) -> $ty {
+                self.0
+            }
+        }
+
+        impl ::core::fmt::Debug for $ident {
+            fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                if self == &Self::NONE {
+                    return write!(f, concat!(stringify!($ident), "NONE"));
+                }
+
+                $(
+                    if *self & Self::$flag_ident != Self::NONE {
+                        write!(f, concat!(stringify!($flag_ident), "| "))?;
+                    }
+                )*
+
+                Ok(())
+            }
+        }
+
+        impl ::core::ops::BitOr for $ident {
+            type Output = Self;
+
+            fn bitor(self, rhs: Self) -> Self::Output {
+                Self(self.0 | rhs.0)
+            }
+        }
+
+        impl ::core::ops::BitAnd for $ident {
+            type Output = Self;
+
+            fn bitand(self, rhs: Self) -> Self::Output {
+                Self(self.0 & rhs.0)
+            }
+        }
+    };
+}
+
+
+
+#[macro_export]
 macro_rules! bit_range {
     ($num:ident[$($start:ident)?..$($end:expr)?] $(as $ty:ty)?) => {{
         let width = $num.count_ones() + $num.count_zeros();
@@ -102,5 +172,26 @@ mod tests {
         assert_eq!(bit_range!(RANGED_NUM[3]), true);
         assert_eq!(bit_range!(RANGED_NUM[4]), true);
         assert_eq!(bit_range!(RANGED_NUM[5]), false);
+    }
+
+    #[test]
+    fn flags_smoke() {
+        bit_flags! {
+            /// Flag docs.
+            struct Flags: u8 {
+                /// Docs for A.
+                A @ 0,
+                /// Docs for B.
+                B @ 2,
+                /// Docs for C.
+                C @ 7,
+            }
+        }
+
+        assert_eq!(Flags::ALL, Flags::A | Flags::B | Flags::C);
+
+        assert_eq!((Flags::A | Flags::B).bits(), 0b0000_0101);
+        assert_eq!((Flags::B | Flags::C).bits(), 0b1000_0100);
+        assert_eq!((Flags::A | Flags::C).bits(), 0b1000_0001);
     }
 }
