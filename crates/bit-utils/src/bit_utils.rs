@@ -77,27 +77,55 @@ macro_rules! bit_field {
     (
         $(#[$meta:meta])*
         $vis:vis struct $ident:ident: $ty:ty {
-            $(
-                $(#[$field_meta:meta])*
-                $field_vis:vis $field_ident:ident: $field_ty:ty
-                    = $field_range_start:literal..$field_range_end:literal
-            ),*
-            $(,)?
+            $($fields:tt)*
         }
     ) => {
         #[derive(Clone, Copy, Eq, PartialEq)]
         $vis struct $ident($ty);
 
         impl $ident {
-            $(
-                $(#[$field_meta])*
-                $field_vis const fn $field_ident(&self) -> $field_ty {
-                    let num = self.0;
-                    $crate::bit_range!(num[$field_range_start..$field_range_end]) as $field_ty
-                }
-            )*
+            $crate::bit_field!(@_field $($fields)*);
         }
     };
+
+    // Ranged field.
+    (@_field
+        $(#[$field_meta:meta])*
+        $field_vis:vis $field_ident:ident: $field_ty:ty
+            = $field_range_start:literal..$field_range_end:literal
+
+        $(, $($rest:tt)*)?
+    ) => {
+        $(#[$field_meta])*
+        $field_vis const fn $field_ident(&self) -> $field_ty {
+            let num = self.0;
+            $crate::bit_range!(num[$field_range_start..$field_range_end]) as $field_ty
+        }
+
+        $(
+            $crate::bit_field!(@_field $($rest)*);
+        )?
+    };
+
+    // Single-bit field.
+    (@_field
+        $(#[$field_meta:meta])*
+        $field_vis:vis $field_ident:ident: $field_ty:ty = $field_bit:literal
+
+        $(, $($rest:tt)*)?
+    ) => {
+        $(#[$field_meta])*
+        $field_vis const fn $field_ident(&self) -> $field_ty {
+            let num = self.0;
+            $crate::bit_range!(num[$field_bit])
+        }
+
+        $(
+            $crate::bit_field!(@_field $($rest)*);
+        )?
+    };
+
+    (@_field) => {};
 }
 
 #[macro_export]
@@ -222,6 +250,7 @@ mod tests {
     }
 
     #[test]
+    #[rustfmt::skip]
     fn field_smoke() {
         bit_field! {
             /// See: https://wiki.osdev.org/HPET#General_Capabilities_and_ID_Register
@@ -230,10 +259,10 @@ mod tests {
                 revision: u8        = 0..8,
                 /// The amount of timers - 1.
                 timer_count: u8     = 8..13,
-                // /// If this bit is 1, HPET main counter is capable of operating in 64 bit mode.
-                // count_size: bool    = 13..13,
-                // /// If this bit is 1, HPET is capable of using "legacy replacement" mapping.
-                // legacy_rep: bool    = 15..15,
+                /// If this bit is 1, HPET main counter is capable of operating in 64 bit mode.
+                count_size: bool    = 13,
+                /// If this bit is 1, HPET is capable of using "legacy replacement" mapping.
+                legacy_rep: bool    = 15,
                 /// This field should be interpreted similarly to PCI's vendor ID.
                 vendor_id: u16      = 16..32,
                 /// Main counter tick period in femtoseconds (10^-15 seconds). Must not be zero,
@@ -242,10 +271,19 @@ mod tests {
             }
         }
 
-        let test_caps = HpetCaps((43 << 32) + (29 << 16) + (7 << 8) + 2);
+        let test_caps = HpetCaps(
+            (43 << 32)      // period
+            + (29 << 16)    // vendor_id
+            + (1 << 13)     // count_size
+            + (0 << 15)     // legacy_rep
+            + (7 << 8)      // timer_count
+            + (2 << 0),     // revision
+        );
 
         assert_eq!(test_caps.period(), 43);
         assert_eq!(test_caps.vendor_id(), 29);
+        assert_eq!(test_caps.legacy_rep(), false);
+        assert_eq!(test_caps.count_size(), true);
         assert_eq!(test_caps.timer_count(), 7);
         assert_eq!(test_caps.revision(), 2);
     }
