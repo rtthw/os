@@ -1840,6 +1840,7 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
  "acpi",
+ "bit-utils",
  "boot-info",
  "crossbeam-queue",
  "framebuffer",

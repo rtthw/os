@@ -81,6 +81,8 @@ macro_rules! bit_field {
         }
     ) => {
         #[derive(Clone, Copy, Eq, PartialEq)]
+        #[repr(transparent)]
+        $(#[$meta])*
         $vis struct $ident($ty);
 
         impl $ident {
