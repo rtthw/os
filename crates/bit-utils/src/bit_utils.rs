@@ -72,7 +72,33 @@ macro_rules! bit_flags {
     };
 }
 
+#[macro_export]
+macro_rules! bit_field {
+    (
+        $(#[$meta:meta])*
+        $vis:vis struct $ident:ident: $ty:ty {
+            $(
+                $(#[$field_meta:meta])*
+                $field_vis:vis $field_ident:ident: $field_ty:ty
+                    = $field_range_start:literal..$field_range_end:literal
+            ),*
+            $(,)?
+        }
+    ) => {
+        #[derive(Clone, Copy, Eq, PartialEq)]
+        $vis struct $ident($ty);
 
+        impl $ident {
+            $(
+                $(#[$field_meta])*
+                $field_vis const fn $field_ident(&self) -> $field_ty {
+                    let num = self.0;
+                    $crate::bit_range!(num[$field_range_start..$field_range_end]) as $field_ty
+                }
+            )*
+        }
+    };
+}
 
 #[macro_export]
 macro_rules! bit_range {
@@ -83,8 +109,8 @@ macro_rules! bit_range {
         $crate::bit_range!(
             @_done $num ; width ;
             start ;
-            __expand_if_empty!($($end)? ; {
-                start + __expand_if_empty!($(<$ty>::BITS)? ; width)
+            $crate::__expand_if_empty!($($end)? ; {
+                start + $crate::__expand_if_empty!($(<$ty>::BITS)? ; width)
             })
         )
     }};
@@ -92,7 +118,7 @@ macro_rules! bit_range {
         let width = $num.count_ones() + $num.count_zeros();
         let start = $crate::__expand_if_empty!($($start)? ; 0);
         let end = $crate::__expand_if_empty!($($end)? ; {
-            start + __expand_if_empty!($(<$ty>::BITS)? ; width)
+            start + $crate::__expand_if_empty!($(<$ty>::BITS)? ; width)
         });
 
         $crate::bit_range!(@_done $num ; width ; start ; end )
@@ -139,7 +165,7 @@ macro_rules! __expand_if_empty {
 mod tests {
     #[test]
     #[rustfmt::skip]
-    fn smoke() {
+    fn range_smoke() {
         let num: u64 = 43;
         assert_eq!(bit_range!(num[5..31] as u16), 1);
 
@@ -193,5 +219,34 @@ mod tests {
         assert_eq!((Flags::A | Flags::B).bits(), 0b0000_0101);
         assert_eq!((Flags::B | Flags::C).bits(), 0b1000_0100);
         assert_eq!((Flags::A | Flags::C).bits(), 0b1000_0001);
+    }
+
+    #[test]
+    fn field_smoke() {
+        bit_field! {
+            /// See: https://wiki.osdev.org/HPET#General_Capabilities_and_ID_Register
+            struct HpetCaps: u64 {
+                /// Indicates which revision of the function is implemented; must not be 0.
+                revision: u8        = 0..8,
+                /// The amount of timers - 1.
+                timer_count: u8     = 8..13,
+                // /// If this bit is 1, HPET main counter is capable of operating in 64 bit mode.
+                // count_size: bool    = 13..13,
+                // /// If this bit is 1, HPET is capable of using "legacy replacement" mapping.
+                // legacy_rep: bool    = 15..15,
+                /// This field should be interpreted similarly to PCI's vendor ID.
+                vendor_id: u16      = 16..32,
+                /// Main counter tick period in femtoseconds (10^-15 seconds). Must not be zero,
+                /// must be less or equal to 0x05F5E100, or 100 nanoseconds.
+                period: u32         = 32..64,
+            }
+        }
+
+        let test_caps = HpetCaps((43 << 32) + (29 << 16) + (7 << 8) + 2);
+
+        assert_eq!(test_caps.period(), 43);
+        assert_eq!(test_caps.vendor_id(), 29);
+        assert_eq!(test_caps.timer_count(), 7);
+        assert_eq!(test_caps.revision(), 2);
     }
 }
