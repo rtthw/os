@@ -8,6 +8,7 @@ extern crate alloc;
 
 mod acpi;
 mod apic;
+mod ata;
 mod executor;
 mod gdt;
 mod hpet;
@@ -116,6 +117,8 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     pit::sleep(1_000);
     let dur = pit_start.elapsed();
     debug!("`pit::sleep(1ms)`\t\t: {dur:?}");
+
+    ata::init();
 
     let mut framebuffer = Framebuffer::from_display_info(&boot_info.display_info);
     framebuffer.clear_screen(Color::rgb(0x2B, 0x2B, 0x33));
