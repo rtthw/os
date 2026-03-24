@@ -6,6 +6,7 @@ set -e # Exit on error.
 
 SOURCE_DIR=$(pwd)
 
+# Create the EFI System Partition (ESP) directory.
 mkdir -p esp/efi/boot
 
 set -e
@@ -24,10 +25,12 @@ if [[ ! -e "firmware/uefi/OVMF_VARS.fd" ]]; then
     cp /usr/share/OVMF/OVMF_VARS.fd firmware/uefi/OVMF_VARS.fd
 fi
 
+# Build the bootloader.
 cd ../bootloader
     cargo build --release
+
+# Build the kernel.
 cd ../kernel
-    # cargo build --release
     cargo rustc \
 		--release \
 		--manifest-path "$SOURCE_DIR/Cargo.toml" \
@@ -38,8 +41,10 @@ cd ../kernel
 		-C link-arg=-z -Clink-arg=max-page-size=0x1000 \
 		--emit link="$SOURCE_DIR/esp/kernel"
 
+    # Place the built bootloader into the ESP directory, where the firmware can find it.
     cp ../target/x86_64-unknown-uefi/release/bootloader.efi esp/efi/boot/bootx64.efi
 
+# Run the virtual machine (QEMU).
 qemu-system-x86_64 \
     -accel kvm \
     -m 256M \
