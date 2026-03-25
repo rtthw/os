@@ -51,6 +51,15 @@ pub fn init() {
             } = partition;
 
             assert_eq!(fs_type, FSTYPE_VFAT, "TODO: Support other filesystem types");
+
+            let mut buf = [0; SECTOR_SIZE];
+            drive
+                .read(lba_start, &mut buf)
+                .map_err(|_| "failed to read VFAT boot sector")
+                .unwrap();
+
+            let boot_sector: Fat16BootSector = unsafe { core::mem::transmute(buf) };
+            debug!("{boot_sector:#?}");
         }
     }
 }
@@ -435,3 +444,154 @@ struct PartitionTableEntry {
     lba_start_addr: [u8; 4],
     lba_sector_count: [u8; 4],
 }
+
+#[repr(C)]
+struct Fat16BootSector {
+    jmp_boot: [u8; 3],
+    oem_name: [u8; 8],
+
+    bytes_per_sector: [u8; 2],
+    sectors_per_cluster: u8,
+    reserved_sector_count: [u8; 2],
+    fat_count: u8,
+    root_entry_count: [u8; 2],
+    sector_count_16: [u8; 2],
+    media: u8,
+    sectors_per_fat_16: [u8; 2],
+    sectors_per_track: [u8; 2],
+    head_count: [u8; 2],
+    hidden_sector_count: [u8; 4],
+    sector_count_32: [u8; 4],
+
+    drive_number: u8,
+    _reserved: u8,
+    sig: u8,
+    volume_serial_number: [u8; 4],
+    volume_label: [u8; 11],
+    fs_type_label: [u8; 8],
+
+    boot_code: [u8; 448],
+    signature: [u8; 2],
+}
+
+impl fmt::Debug for Fat16BootSector {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Fat16BootSector")
+            .field("oem_name", &self.oem_name())
+            .field("volume_label", &self.volume_label())
+            .field("fs_type_label", &self.fs_type_label())
+            // Ratios.
+            .field("bytes_per_sector", &self.bytes_per_sector())
+            .field("sectors_per_cluster", &self.sectors_per_cluster())
+            .field("sectors_per_track", &self.sectors_per_track())
+            .field("sectors_per_fat", &self.sectors_per_fat())
+            .field("entries_per_cluster", &self.entries_per_cluster())
+            // Counts and offsets.
+            .field("sector_count", &self.sector_count())
+            .field("cluster_count", &self.cluster_count())
+            .field("hidden_sector_count", &self.hidden_sector_count())
+            .field("reserved_sector_count", &self.reserved_sector_count())
+            .field("data_sector_count", &self.data_sector_count())
+            .field("data_sector_offset", &self.data_sector_offset())
+            .field("root_sector_offset", &self.root_sector_offset())
+            .field("root_sector_count", &self.root_sector_count())
+            .finish()
+    }
+}
+
+impl Fat16BootSector {
+    pub fn oem_name(&self) -> &str {
+        core::str::from_utf8(&self.oem_name).unwrap()
+    }
+
+    pub fn volume_label(&self) -> &str {
+        core::str::from_utf8(&self.volume_label).unwrap()
+    }
+
+    pub fn fs_type_label(&self) -> &str {
+        core::str::from_utf8(&self.fs_type_label).unwrap()
+    }
+
+    pub const fn is_fat32(&self) -> bool {
+        self.sectors_per_fat_16() == 0
+    }
+
+    pub const fn bytes_per_sector(&self) -> usize {
+        u16::from_le_bytes(self.bytes_per_sector) as usize
+    }
+
+    pub const fn sectors_per_cluster(&self) -> usize {
+        self.sectors_per_cluster as usize
+    }
+
+    pub const fn entries_per_cluster(&self) -> usize {
+        (self.bytes_per_sector() * self.sectors_per_cluster()) / size_of::<DirectoryEntry>()
+    }
+
+    pub const fn sectors_per_track(&self) -> usize {
+        u16::from_le_bytes(self.sectors_per_track) as usize
+    }
+
+    pub const fn sectors_per_fat(&self) -> usize {
+        self.sectors_per_fat_16()
+    }
+
+    pub const fn sector_count(&self) -> usize {
+        if self.is_fat32() {
+            self.sector_count_32()
+        } else {
+            self.sector_count_16()
+        }
+    }
+
+    const fn sector_count_16(&self) -> usize {
+        u16::from_le_bytes(self.sector_count_16) as usize
+    }
+
+    const fn sector_count_32(&self) -> usize {
+        u32::from_le_bytes(self.sector_count_32) as usize
+    }
+
+    pub const fn data_sector_offset(&self) -> usize {
+        self.root_sector_offset() + self.root_sector_count()
+    }
+
+    pub const fn data_sector_count(&self) -> usize {
+        self.sector_count() - self.data_sector_offset()
+    }
+
+    pub const fn hidden_sector_count(&self) -> usize {
+        u32::from_le_bytes(self.hidden_sector_count) as usize
+    }
+
+    pub const fn reserved_sector_count(&self) -> usize {
+        u16::from_le_bytes(self.reserved_sector_count) as usize
+    }
+
+    pub const fn root_entry_count(&self) -> usize {
+        u16::from_le_bytes(self.root_entry_count) as usize
+    }
+
+    pub const fn root_sector_offset(&self) -> usize {
+        self.reserved_sector_count() + (self.sectors_per_fat_16() * self.fat_count_16())
+    }
+
+    pub const fn root_sector_count(&self) -> usize {
+        (self.root_entry_count() * 32 + self.bytes_per_sector() - 1) / self.bytes_per_sector()
+    }
+
+    pub const fn cluster_count(&self) -> usize {
+        self.data_sector_count() / self.sectors_per_cluster()
+    }
+
+    const fn fat_count_16(&self) -> usize {
+        self.fat_count as usize
+    }
+
+    const fn sectors_per_fat_16(&self) -> usize {
+        u16::from_le_bytes(self.sector_count_16) as usize
+    }
+}
+
+#[repr(C)]
+pub struct DirectoryEntry([u8; 32]);
