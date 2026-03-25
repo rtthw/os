@@ -60,6 +60,50 @@ pub fn init() {
 
             let boot_sector: Fat16BootSector = unsafe { core::mem::transmute(buf) };
             debug!("{boot_sector:#?}");
+
+            let mut data_buf = [0; SECTOR_SIZE];
+            drive
+                .read(
+                    lba_start + boot_sector.root_sector_offset() as u32,
+                    &mut data_buf,
+                )
+                .map_err(|_| "failed to read VFAT data sector")
+                .unwrap();
+
+            debug!("Listing root directory entries...");
+
+            let entries: [DirectoryEntry; 16] = unsafe { core::mem::transmute(data_buf) };
+            let mut current_lfn_buf = VecDeque::new();
+            for entry in entries {
+                if entry.kind() == EntryKind::Null && entry.attr().is_none() {
+                    continue;
+                }
+
+                if entry.lfn_index().is_some_and(|i| i >= 1) {
+                    if let Some(name) = entry.long_file_name() {
+                        current_lfn_buf.push_front(name);
+                    }
+                    continue;
+                }
+
+                if entry
+                    .attr()
+                    .is_some_and(|attr| matches!(attr, Attribute::Archive | Attribute::Directory))
+                {
+                    let file_name = if current_lfn_buf.len() > 0 {
+                        current_lfn_buf.iter().fold(String::new(), |acc, s| acc + s)
+                    } else {
+                        entry.short_file_name().unwrap()
+                    };
+                    current_lfn_buf.clear();
+
+                    debug!(
+                        "\t/{file_name} ({} bytes) @ {}",
+                        entry.size(),
+                        entry.cluster_index(),
+                    );
+                }
+            }
         }
     }
 }
@@ -596,3 +640,143 @@ impl Fat16BootSector {
 
 #[repr(C)]
 pub struct DirectoryEntry([u8; 32]);
+
+impl fmt::Debug for DirectoryEntry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DirectoryEntry")
+            .field("kind", &self.kind())
+            .field("size", &self.size())
+            .field("attr", &self.attr())
+            .field("cluster_index", &self.cluster_index())
+            .finish()
+    }
+}
+
+impl DirectoryEntry {
+    pub const fn raw(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    pub const fn attr(&self) -> Option<Attribute> {
+        match self.raw()[11] {
+            0x01 => Some(Attribute::ReadOnly),
+            0x02 => Some(Attribute::Hidden),
+            0x04 => Some(Attribute::System),
+            0x08 => Some(Attribute::VolumeLabel),
+            0x0F => Some(Attribute::LongFileName),
+            0x10 => Some(Attribute::Directory),
+            0x20 => Some(Attribute::Archive),
+            0x40 => Some(Attribute::Device),
+
+            _ => None,
+        }
+    }
+
+    pub const fn kind(&self) -> EntryKind {
+        let bytes = self.raw();
+        match (bytes[0], bytes[10]) {
+            (0x00, _) => EntryKind::Null,
+            (0xE5, _) => EntryKind::Unused,
+            (_, 0x0F) => EntryKind::LongFileName,
+
+            _ => EntryKind::Data,
+        }
+    }
+
+    pub const fn cluster_index(&self) -> usize {
+        let bytes = self.raw();
+        // let hi = u16::from_le_bytes([bytes[20], bytes[21]]);
+        let lo = u16::from_le_bytes([bytes[26], bytes[27]]);
+
+        // (((hi as u32) << 16) | (lo as u32)) as usize
+        lo as usize
+    }
+
+    pub const fn size(&self) -> usize {
+        let bytes = self.raw();
+        u32::from_le_bytes([bytes[28], bytes[29], bytes[30], bytes[31]]) as usize
+    }
+
+    // https://wiki.osdev.org/FAT#Long_File_Names
+    // https://en.wikipedia.org/wiki/Design_of_the_FAT_file_system#VFAT_long_file_names
+    pub fn long_file_name(&self) -> Option<String> {
+        if self.attr() != Some(Attribute::LongFileName) {
+            return None;
+        }
+
+        let bytes = self.raw();
+        let mut utf16_buf = Vec::new();
+
+        // The first 5 characters.
+        for i in (1..11).step_by(2) {
+            if utf16_buf.iter().any(|ch| *ch == 0) {
+                break;
+            }
+
+            utf16_buf.push(bytes[i] as u16 | bytes[i + 1] as u16);
+        }
+
+        // The next 6 characters.
+        for i in (14..26).step_by(2) {
+            if utf16_buf.iter().any(|ch| *ch == 0) {
+                break;
+            }
+
+            utf16_buf.push(bytes[i] as u16 | bytes[i + 1] as u16);
+        }
+
+        // The final 2 characters.
+        for i in (28..32).step_by(2) {
+            if utf16_buf.iter().any(|ch| *ch == 0) {
+                break;
+            }
+
+            utf16_buf.push(bytes[i] as u16 | bytes[i + 1] as u16);
+        }
+
+        Some(String::from_utf16_lossy(&utf16_buf).replace("\0", ""))
+    }
+
+    pub fn short_file_name(&self) -> Option<String> {
+        match self.attr() {
+            Some(attr) => match attr {
+                Attribute::Archive | Attribute::Directory | Attribute::VolumeLabel => {}
+
+                _ => return None,
+            },
+            None => return None,
+        }
+
+        Some(String::from_utf8_lossy(&self.raw()[0..11]).into_owned())
+    }
+
+    fn lfn_index(&self) -> Option<usize> {
+        if self.attr() != Some(Attribute::LongFileName) {
+            return None;
+        }
+
+        Some(self.raw()[0] as usize)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(u8)]
+pub enum Attribute {
+    ReadOnly = 0x01,
+    Hidden = 0x02,
+    System = 0x04,
+    VolumeLabel = 0x08,
+    LongFileName = 0x0F,
+    Directory = 0x10,
+    Archive = 0x20,
+    Device = 0x40,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub enum EntryKind {
+    #[default]
+    Null,
+    Unused,
+    LongFileName,
+    Data,
+}
