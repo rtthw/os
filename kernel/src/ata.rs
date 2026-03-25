@@ -1,7 +1,7 @@
 //! # Advanced Technology Attachment (ATA)
 
 use {
-    alloc::{string::String, vec::Vec},
+    alloc::{collections::vec_deque::VecDeque, string::String, vec::Vec},
     bit_utils::bit_field,
     core::{fmt, time::Duration},
     log::{debug, info, trace, warn},
@@ -495,6 +495,7 @@ impl fmt::Debug for Fat16BootSector {
             .field("data_sector_offset", &self.data_sector_offset())
             .field("root_sector_offset", &self.root_sector_offset())
             .field("root_sector_count", &self.root_sector_count())
+            .field("root_entry_count", &self.root_entry_count())
             .finish()
     }
 }
@@ -513,7 +514,7 @@ impl Fat16BootSector {
     }
 
     pub const fn is_fat32(&self) -> bool {
-        self.sectors_per_fat_16() == 0
+        self.sector_count_16() == 0
     }
 
     pub const fn bytes_per_sector(&self) -> usize {
@@ -589,7 +590,7 @@ impl Fat16BootSector {
     }
 
     const fn sectors_per_fat_16(&self) -> usize {
-        u16::from_le_bytes(self.sector_count_16) as usize
+        u16::from_le_bytes(self.sectors_per_fat_16) as usize
     }
 }
 
