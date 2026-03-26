@@ -1847,6 +1847,7 @@ dependencies = [
  "linked_list_allocator",
  "log 0.1.0",
  "memory-types",
+ "pci",
  "spin-mutex",
  "time",
  "x2apic",
@@ -2532,6 +2533,9 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 [[package]]
 name = "pci"
 version = "0.1.0"
+dependencies = [
+ "bit-utils",
+]
 
 [[package]]
 name = "pci_types"

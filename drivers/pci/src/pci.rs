@@ -7,12 +7,20 @@ extern crate alloc;
 
 use {
     alloc::vec::Vec,
+    bit_utils::bit_field,
     core::{arch::asm, fmt::Debug},
 };
 
 
 pub const CONFIG_ADDRESS: u16 = 0xCF8;
 pub const CONFIG_DATA: u16 = 0xCFC;
+
+const CONFIG_SPAGE_REG_0_OFFSET: u8 = 0x0;
+const CONFIG_SPAGE_REG_1_OFFSET: u8 = 0x4;
+const CONFIG_SPAGE_REG_2_OFFSET: u8 = 0x8;
+const CONFIG_SPAGE_REG_3_OFFSET: u8 = 0xC;
+
+const NONEXISTENT_VENDOR_ID: u16 = 0xFFFF;
 
 
 pub fn enumerate_devices() -> Vec<Device> {
@@ -67,7 +75,8 @@ pub struct Device {
     pub function: u8,
     pub device_id: u16,
     pub vendor_id: u16,
-    pub class: u16,
+    pub class: u8,
+    pub subclass: u8,
     pub header_type: HeaderType,
     pub interrupt_line: u8,
     pub interrupt_pin: u8,
@@ -77,17 +86,19 @@ impl Device {
     pub fn open(bus: u8, device: u8) -> Option<Self> {
         let function = 0;
 
-        let (device_id, vendor_id) = get_ids(bus, device, function);
-        if vendor_id == 0xFFFF {
+        let reg_0 =
+            ConfigSpaceRegister0(unsafe { read(bus, device, function, CONFIG_SPAGE_REG_0_OFFSET) });
+
+        if reg_0.vendor_id() == NONEXISTENT_VENDOR_ID {
             return None;
         }
 
-        let class = unsafe { read(bus, device, function, 0x8) };
-        let class = (class >> 16) & 0x0000FFFF;
-        let class = class as u16;
-
-        let header_type = unsafe { read(bus, device, function, 0x0C) };
-        let header_type = HeaderType(((header_type >> 16) & 0xFF) as u8);
+        let reg_1 =
+            ConfigSpaceRegister1(unsafe { read(bus, device, function, CONFIG_SPAGE_REG_1_OFFSET) });
+        let reg_2 =
+            ConfigSpaceRegister2(unsafe { read(bus, device, function, CONFIG_SPAGE_REG_2_OFFSET) });
+        let reg_3 =
+            ConfigSpaceRegister3(unsafe { read(bus, device, function, CONFIG_SPAGE_REG_3_OFFSET) });
 
         let last_row = unsafe { read(bus, device, 0, 0x3C) };
         let interrupt_line = (last_row & 0xFF) as u8;
@@ -97,10 +108,11 @@ impl Device {
             bus,
             device,
             function,
-            device_id,
-            vendor_id,
-            class,
-            header_type,
+            device_id: reg_0.device_id(),
+            vendor_id: reg_0.vendor_id(),
+            class: reg_2.class(),
+            subclass: reg_2.subclass(),
+            header_type: HeaderType(reg_3.header_type()),
             interrupt_line,
             interrupt_pin,
         })
@@ -271,15 +283,50 @@ impl Debug for Device {
             .field("bus", &self.bus)
             .field("function", &self.function)
             .field("class", &self.class)
+            .field("subclass", &self.subclass)
             .field("header_type", &self.header_type)
             .field(
                 "bars",
-                &(0..6).map(|slot| self.bar(slot)).collect::<Vec<_>>(),
+                &(0..6).filter_map(|slot| self.bar(slot)).collect::<Vec<_>>(),
             )
             .field("interrupt_line", &self.interrupt_line)
             .field("interrupt_pin", &self.interrupt_pin)
             .field("capabilities", &self.capabilities())
             .finish()
+    }
+}
+
+
+
+bit_field! {
+    struct ConfigSpaceRegister0: u32 {
+        vendor_id: u16 = 0..16,
+        device_id: u16 = 16..32,
+    }
+}
+
+bit_field! {
+    struct ConfigSpaceRegister1: u32 {
+        command: u16 = 0..16,
+        status: u16 = 16..32,
+    }
+}
+
+bit_field! {
+    struct ConfigSpaceRegister2: u32 {
+        revision_id: u8 = 0..8,
+        prog_if: u8 = 8..16,
+        subclass: u8 = 16..24,
+        class: u8 = 24..32,
+    }
+}
+
+bit_field! {
+    struct ConfigSpaceRegister3: u32 {
+        cache_line_size: u8 = 0..8,
+        latency_timer: u8 = 8..16,
+        header_type: u8 = 16..24,
+        bist: u8 = 24..32,
     }
 }
 
@@ -405,14 +452,6 @@ unsafe fn write_to_port(port: u16, value: u32) {
             options(nomem, nostack, preserves_flags),
         );
     }
-}
-
-fn get_ids(bus: u8, device: u8, function: u8) -> (u16, u16) {
-    let value = unsafe { read(bus, device, function, 0) };
-    let device_id = ((value >> 16) & 0xFFFF) as u16;
-    let vendor_id = (value & 0xFFFF) as u16;
-
-    (device_id, vendor_id)
 }
 
 fn get_capabilities(bus: u8, device: u8, function: u8) -> Vec<Capability> {

@@ -120,6 +120,11 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
 
     ata::init();
 
+    info!("PCI Devices:");
+    for pci_device in pci::enumerate_devices() {
+        debug!("{pci_device:#?}");
+    }
+
     let mut framebuffer = Framebuffer::from_display_info(&boot_info.display_info);
     framebuffer.clear_screen(Color::rgb(0x2B, 0x2B, 0x33));
 
