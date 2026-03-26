@@ -11,9 +11,54 @@ use {
 };
 
 
+pub const CONFIG_ADDRESS: u16 = 0xCF8;
+pub const CONFIG_DATA: u16 = 0xCFC;
 
-const VENDOR_RED_HAT: u16 = 0x1AF4;
-const VENDOR_INTEL: u16 = 0x8086;
+
+pub fn enumerate_devices() -> Vec<Device> {
+    let mut devices = vec![];
+    for bus in 0..=255 {
+        for id in 0..32 {
+            if let Some(device) = Device::open(bus, id) {
+                devices.push(device);
+            }
+        }
+    }
+
+    devices
+}
+
+pub unsafe fn read(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
+    let bus = bus as u32;
+    let device = device as u32;
+    let function = function as u32;
+    let offset = offset as u32;
+
+    let address =
+        ((bus << 16) | (device << 11) | (function << 8) | (offset & 0xFC) | 0x80000000) as u32;
+
+    unsafe {
+        write_to_port(CONFIG_ADDRESS, address);
+        read_from_port()
+    }
+}
+
+pub unsafe fn write(bus: u8, device: u8, function: u8, offset: u8, value: u32) {
+    let bus = bus as u32;
+    let device = device as u32;
+    let function = function as u32;
+    let offset = offset as u32;
+
+    let address =
+        ((bus << 16) | (device << 11) | (function << 8) | (offset & 0xfc) | 0x80000000) as u32;
+
+    unsafe {
+        write_to_port(CONFIG_ADDRESS, address);
+        write_to_port(CONFIG_DATA, value);
+    }
+}
+
+
 
 #[derive(Clone)]
 pub struct Device {
@@ -29,6 +74,38 @@ pub struct Device {
 }
 
 impl Device {
+    pub fn open(bus: u8, device: u8) -> Option<Self> {
+        let function = 0;
+
+        let (device_id, vendor_id) = get_ids(bus, device, function);
+        if vendor_id == 0xFFFF {
+            return None;
+        }
+
+        let class = unsafe { read(bus, device, function, 0x8) };
+        let class = (class >> 16) & 0x0000FFFF;
+        let class = class as u16;
+
+        let header_type = unsafe { read(bus, device, function, 0x0C) };
+        let header_type = ((header_type >> 16) & 0xFF) as u8;
+
+        let last_row = unsafe { read(bus, device, 0, 0x3C) };
+        let interrupt_line = (last_row & 0xFF) as u8;
+        let interrupt_pin = ((last_row >> 8) & 0xFF) as u8;
+
+        Some(Self {
+            bus,
+            device,
+            function,
+            device_id,
+            vendor_id,
+            class,
+            header_type,
+            interrupt_line,
+            interrupt_pin,
+        })
+    }
+
     pub fn name(&self) -> &'static str {
         match (self.vendor_id, self.device_id) {
             (VENDOR_RED_HAT, red_hat_device) => match red_hat_device {
@@ -206,6 +283,8 @@ impl Debug for Device {
     }
 }
 
+
+
 #[derive(Clone)]
 pub struct Capability {
     pub id: u8,
@@ -217,6 +296,8 @@ impl Debug for Capability {
         f.write_fmt(format_args!("{} @ {:#x}", self.id, self.offset))
     }
 }
+
+
 
 #[derive(Clone, Debug)]
 pub enum Bar {
@@ -235,48 +316,7 @@ pub enum Bar {
     },
 }
 
-pub fn enumerate_devices() -> Vec<Device> {
-    let mut devices = vec![];
-    for bus in 0..=255 {
-        for id in 0..32 {
-            if let Some(device) = get_device(bus, id) {
-                devices.push(device);
-            }
-        }
-    }
 
-    devices
-}
-
-fn get_device(bus: u8, device: u8) -> Option<Device> {
-    let function = 0;
-
-    let (device_id, vendor_id) = get_ids(bus, device, function);
-    if vendor_id == 0xFFFF {
-        return None;
-    }
-
-    let class = unsafe { read(bus, device, function, 0x8) };
-    let class = (class >> 16) & 0x0000FFFF;
-    let class = class as u16;
-
-    let header_type = unsafe { read(bus, device, function, 0x0C) };
-    let header_type = ((header_type >> 16) & 0xFF) as u8;
-
-    let last_row = unsafe { read(bus, device, 0, 0x3C) };
-
-    Some(Device {
-        bus,
-        device,
-        function,
-        device_id,
-        vendor_id,
-        class,
-        header_type,
-        interrupt_line: (last_row & 0xFF) as u8,
-        interrupt_pin: ((last_row >> 8) & 0xFF) as u8,
-    })
-}
 
 unsafe fn read_from_port() -> u32 {
     let value: u32;
@@ -300,36 +340,6 @@ unsafe fn write_to_port(port: u16, value: u32) {
             in("eax") value,
             options(nomem, nostack, preserves_flags),
         );
-    }
-}
-
-unsafe fn read(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
-    let bus = bus as u32;
-    let device = device as u32;
-    let function = function as u32;
-    let offset = offset as u32;
-
-    let address =
-        ((bus << 16) | (device << 11) | (function << 8) | (offset & 0xFC) | 0x80000000) as u32;
-
-    unsafe {
-        write_to_port(0xCF8, address);
-        read_from_port()
-    }
-}
-
-unsafe fn write(bus: u8, device: u8, function: u8, offset: u8, value: u32) {
-    let bus = bus as u32;
-    let device = device as u32;
-    let function = function as u32;
-    let offset = offset as u32;
-
-    let address =
-        ((bus << 16) | (device << 11) | (function << 8) | (offset & 0xfc) | 0x80000000) as u32;
-
-    unsafe {
-        write_to_port(0xCF8, address);
-        write_to_port(0xCFC, value);
     }
 }
 
@@ -399,3 +409,6 @@ const fn u64_set_range(num: u64, start: usize, end: usize, value: u64) -> u64 {
         num
     }
 }
+
+const VENDOR_RED_HAT: u16 = 0x1AF4;
+const VENDOR_INTEL: u16 = 0x8086;
