@@ -68,7 +68,7 @@ pub struct Device {
     pub device_id: u16,
     pub vendor_id: u16,
     pub class: u16,
-    pub header_type: u8,
+    pub header_type: HeaderType,
     pub interrupt_line: u8,
     pub interrupt_pin: u8,
 }
@@ -87,7 +87,7 @@ impl Device {
         let class = class as u16;
 
         let header_type = unsafe { read(bus, device, function, 0x0C) };
-        let header_type = ((header_type >> 16) & 0xFF) as u8;
+        let header_type = HeaderType(((header_type >> 16) & 0xFF) as u8);
 
         let last_row = unsafe { read(bus, device, 0, 0x3C) };
         let interrupt_line = (last_row & 0xFF) as u8;
@@ -285,6 +285,70 @@ impl Debug for Device {
 
 
 
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub struct HeaderType(u8);
+
+const HEADER_TYPE_MULTIPLE_FUNCTIONS_BIT: u8 = 1 << 7;
+
+const HEADER_TYPE_STANDARD: u8 = 0;
+const HEADER_TYPE_PCI_BRIDGE: u8 = 1;
+const HEADER_TYPE_CARBUS_BRIDGE: u8 = 2;
+
+impl Debug for HeaderType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_fmt(format_args!(
+            "{}{}",
+            if self.multiple_functions() {
+                "Multiple-Function "
+            } else {
+                ""
+            },
+            match self.get() {
+                HEADER_TYPE_STANDARD => "Standard",
+                HEADER_TYPE_PCI_BRIDGE => "PCI Bridge",
+                HEADER_TYPE_CARBUS_BRIDGE => "CardBus Bridge",
+
+                _ => "INVALID",
+            },
+        ))
+    }
+}
+
+impl HeaderType {
+    /// Get this device's actual header type by masking away the multiple
+    /// functions bit.
+    pub const fn get(&self) -> u8 {
+        self.0 & !HEADER_TYPE_MULTIPLE_FUNCTIONS_BIT
+    }
+
+    /// Whether this device has multiple functions.
+    ///
+    /// See [https://wiki.osdev.org/PCI#Multi-function_Devices] for more information.
+    pub const fn multiple_functions(&self) -> bool {
+        self.0 & HEADER_TYPE_MULTIPLE_FUNCTIONS_BIT == HEADER_TYPE_MULTIPLE_FUNCTIONS_BIT
+    }
+
+    /// Whether this is a standard PCI device.
+    // https://wiki.osdev.org/PCI#Header_Type_0x0
+    pub const fn is_standard(&self) -> bool {
+        self.get() == HEADER_TYPE_STANDARD
+    }
+
+    /// Whether this is a PCI-to-PCI bridge device.
+    // https://wiki.osdev.org/PCI#Header_Type_0x1_(PCI-to-PCI_bridge)
+    pub const fn is_pci_bridge(&self) -> bool {
+        self.get() == HEADER_TYPE_PCI_BRIDGE
+    }
+
+    /// Whether this is a PCI-to-CardBus bridge device.
+    // https://wiki.osdev.org/PCI#Header_Type_0x2_(PCI-to-CardBus_bridge)
+    pub const fn is_cardbus_bridge(&self) -> bool {
+        self.get() == HEADER_TYPE_CARBUS_BRIDGE
+    }
+}
+
+
+
 #[derive(Clone)]
 pub struct Capability {
     pub id: u8,
@@ -412,3 +476,21 @@ const fn u64_set_range(num: u64, start: usize, end: usize, value: u64) -> u64 {
 
 const VENDOR_RED_HAT: u16 = 0x1AF4;
 const VENDOR_INTEL: u16 = 0x8086;
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn header_type_works() {
+        let a = HeaderType(0b1000_0001);
+        assert!(a.multiple_functions());
+        assert_eq!(a.get(), 1);
+
+        let b = HeaderType(0b0000_0010);
+        assert!(!b.multiple_functions());
+        assert_eq!(b.get(), 2);
+    }
+}
