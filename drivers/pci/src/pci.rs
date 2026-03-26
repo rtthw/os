@@ -27,7 +27,14 @@ pub fn enumerate_devices() -> Vec<Device> {
     let mut devices = vec![];
     for bus in 0..=255 {
         for id in 0..32 {
-            if let Some(device) = Device::open(bus, id) {
+            if let Some(device) = Device::open(bus, id, 0) {
+                if device.header_type.multiple_functions() {
+                    for function in 1..8 {
+                        if let Some(device) = Device::open(bus, id, function) {
+                            devices.push(device);
+                        }
+                    }
+                }
                 devices.push(device);
             }
         }
@@ -83,9 +90,7 @@ pub struct Device {
 }
 
 impl Device {
-    pub fn open(bus: u8, device: u8) -> Option<Self> {
-        let function = 0;
-
+    pub fn open(bus: u8, device: u8, function: u8) -> Option<Self> {
         let reg_0 =
             ConfigSpaceRegister0(unsafe { read(bus, device, function, CONFIG_SPAGE_REG_0_OFFSET) });
 
