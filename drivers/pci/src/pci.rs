@@ -5,12 +5,15 @@
 #[macro_use]
 extern crate alloc;
 
+mod pci_class;
+
 use {
     alloc::vec::Vec,
     bit_utils::bit_field,
     core::{arch::asm, fmt::Debug},
 };
 
+pub use pci_class::*;
 
 pub const CONFIG_ADDRESS: u16 = 0xCF8;
 pub const CONFIG_DATA: u16 = 0xCFC;
@@ -82,7 +85,7 @@ pub struct Device {
     pub function: u8,
     pub device_id: u16,
     pub vendor_id: u16,
-    pub class: u8,
+    pub class: Class,
     pub subclass: u8,
     pub header_type: HeaderType,
     pub interrupt_line: u8,
@@ -105,6 +108,8 @@ impl Device {
         let reg_3 =
             ConfigSpaceRegister3(unsafe { read(bus, device, function, CONFIG_SPAGE_REG_3_OFFSET) });
 
+        let class = Class::from_raw(reg_2.class())?;
+
         let last_row = unsafe { read(bus, device, 0, 0x3C) };
         let interrupt_line = (last_row & 0xFF) as u8;
         let interrupt_pin = ((last_row >> 8) & 0xFF) as u8;
@@ -115,7 +120,7 @@ impl Device {
             function,
             device_id: reg_0.device_id(),
             vendor_id: reg_0.vendor_id(),
-            class: reg_2.class(),
+            class,
             subclass: reg_2.subclass(),
             header_type: HeaderType(reg_3.header_type()),
             interrupt_line,
