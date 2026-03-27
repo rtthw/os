@@ -5,6 +5,7 @@
 #[macro_use]
 extern crate alloc;
 
+mod pci_capability;
 mod pci_class;
 
 use {
@@ -13,7 +14,7 @@ use {
     core::{arch::asm, fmt::Debug},
 };
 
-pub use pci_class::*;
+pub use {pci_capability::*, pci_class::*};
 
 pub const CONFIG_ADDRESS: u16 = 0xCF8;
 pub const CONFIG_DATA: u16 = 0xCFC;
@@ -155,7 +156,7 @@ impl Device {
         }
     }
 
-    pub fn capabilities(&self) -> Vec<Capability> {
+    pub fn capabilities(&self) -> Vec<DeviceCapability> {
         get_capabilities(self.bus, self.device, 0)
     }
 
@@ -260,7 +261,11 @@ impl Device {
     }
 
     pub fn set_msix(&self, enabled: bool) {
-        let Some(cap) = self.capabilities().into_iter().find(|cap| cap.id == 0x11) else {
+        let Some(cap) = self
+            .capabilities()
+            .into_iter()
+            .find(|cap| cap.id == Capability::MsiX)
+        else {
             return;
         };
 
@@ -400,14 +405,14 @@ impl HeaderType {
 
 
 #[derive(Clone)]
-pub struct Capability {
-    pub id: u8,
+pub struct DeviceCapability {
+    pub id: Capability,
     pub offset: u8,
 }
 
-impl Debug for Capability {
+impl Debug for DeviceCapability {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_fmt(format_args!("{} @ {:#x}", self.id, self.offset))
+        f.write_fmt(format_args!("{:?} @ {:#x}", self.id, self.offset))
     }
 }
 
@@ -467,7 +472,7 @@ unsafe fn write_to_port(port: u16, value: u32) {
     }
 }
 
-fn get_capabilities(bus: u8, device: u8, function: u8) -> Vec<Capability> {
+fn get_capabilities(bus: u8, device: u8, function: u8) -> Vec<DeviceCapability> {
     let mut offset = {
         let mut word = unsafe { read(bus, device, function, 0x34) };
         word = *u32_set_bit(u32_set_bit(&mut word, 0, false), 1, false);
@@ -477,8 +482,10 @@ fn get_capabilities(bus: u8, device: u8, function: u8) -> Vec<Capability> {
     let mut capabilities = Vec::new();
     while offset != 0 {
         let word = unsafe { read(bus, device, function, offset) };
-        let id = bit_range!(word[0..8]) as u8;
-        capabilities.push(Capability { id, offset });
+        // FIXME: This should let the user know when it finds an invalid capability.
+        if let Some(id) = Capability::from_raw(bit_range!(word[0..8]) as u8) {
+            capabilities.push(DeviceCapability { id, offset });
+        }
         offset = bit_range!(word[8..16]) as u8;
     }
 

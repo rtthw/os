@@ -43,7 +43,7 @@ impl Device {
             pci_device
                 .capabilities()
                 .into_iter()
-                .filter(|pci_cap| pci_cap.id == 0x09)
+                .filter(|pci_cap| pci_cap.id == pci::Capability::VendorSpecific)
                 .filter_map(|pci_cap| {
                     let virtio_cap =
                         unsafe { pci_device.read_struct::<VirtioPciCap>(pci_cap.offset) };
