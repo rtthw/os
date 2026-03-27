@@ -9,7 +9,7 @@ mod pci_class;
 
 use {
     alloc::vec::Vec,
-    bit_utils::bit_field,
+    bit_utils::{bit_field, bit_range},
     core::{arch::asm, fmt::Debug},
 };
 
@@ -165,18 +165,18 @@ impl Device {
         }
 
         let offset = 16 + slot * 4;
-        let bar = unsafe { read(self.bus, self.device, self.function, offset) };
+        let bar = RawBaseAddressRegister(unsafe { self.read(offset) });
 
-        if !u32_get_bit(bar, 0) {
-            let prefetchable = u32_get_bit(bar, 3);
-            let address = u32_bit_range(bar, 4, 32) << 4;
+        if !bar.io() {
+            let prefetchable = bar.mem_prefetchable();
+            let address = bar.mem_address() << 4;
 
-            match u32_bit_range(bar, 1, 3) {
-                0b00 => {
+            match bar.mem_type() {
+                0 => {
                     let size = unsafe {
-                        write(self.bus, self.device, self.function, offset, 0xffffffff);
-                        let readback = read(self.bus, self.device, self.function, offset);
-                        write(self.bus, self.device, self.function, offset, address);
+                        self.write(offset, 0xFFFFFFFF);
+                        let readback = self.read(offset);
+                        self.write(offset, address);
 
                         // BAR is unimplemented.
                         if readback == 0 {
@@ -192,28 +192,21 @@ impl Device {
                         prefetchable,
                     })
                 }
-                0b10 => {
+                2 => {
                     // If we are looking at the last slot, then we can't read a 64-bit value.
                     if slot >= 5 {
                         return None;
                     }
 
-                    let address_upper =
-                        unsafe { read(self.bus, self.device, self.function, offset + 4) };
+                    let address_upper = unsafe { self.read(offset + 4) };
 
                     let size = unsafe {
-                        write(self.bus, self.device, self.function, offset, 0xFFFFFFFF);
-                        write(self.bus, self.device, self.function, offset + 4, 0xFFFFFFFF);
-                        let mut readback_low = read(self.bus, self.device, self.function, offset);
-                        let readback_high = read(self.bus, self.device, self.function, offset + 4);
-                        write(self.bus, self.device, self.function, offset, address);
-                        write(
-                            self.bus,
-                            self.device,
-                            self.function,
-                            offset + 4,
-                            address_upper,
-                        );
+                        self.write(offset, 0xFFFFFFFF);
+                        self.write(offset + 4, 0xFFFFFFFF);
+                        let mut readback_low = self.read(offset);
+                        let readback_high = self.read(offset + 4);
+                        self.write(offset, address);
+                        self.write(offset + 4, address_upper);
 
                         readback_low = u32_set_range(readback_low, 0, 4, 0);
                         if readback_low != 0 {
@@ -236,7 +229,7 @@ impl Device {
             }
         } else {
             Some(Bar::Io {
-                port: u32_bit_range(bar, 2, 32) << 2,
+                address: bar.io_address(),
             })
         }
     }
@@ -271,10 +264,10 @@ impl Device {
             return;
         };
 
-        let mut word = unsafe { read(self.bus, self.device, self.function, cap.offset) };
+        let mut word = unsafe { self.read(cap.offset) };
         word = *u32_set_bit(&mut word, 31, enabled);
 
-        unsafe { write(self.bus, self.device, self.function, cap.offset, word) };
+        unsafe { self.write(cap.offset, word) };
     }
 }
 
@@ -433,8 +426,18 @@ pub enum Bar {
         prefetchable: bool,
     },
     Io {
-        port: u32,
+        address: u32,
     },
+}
+
+bit_field! {
+    struct RawBaseAddressRegister: u32 {
+        io: bool = 0,
+        io_address: u32 = 2..32,
+        mem_type: u8 = 1..3,
+        mem_prefetchable: bool = 3,
+        mem_address: u32 = 4..32,
+    }
 }
 
 
@@ -468,29 +471,18 @@ fn get_capabilities(bus: u8, device: u8, function: u8) -> Vec<Capability> {
     let mut offset = {
         let mut word = unsafe { read(bus, device, function, 0x34) };
         word = *u32_set_bit(u32_set_bit(&mut word, 0, false), 1, false);
-        u32_bit_range(word, 0, 8) as u8
+        bit_range!(word[0..8]) as u8
     };
 
     let mut capabilities = Vec::new();
     while offset != 0 {
         let word = unsafe { read(bus, device, function, offset) };
-        let id = u32_bit_range(word, 0, 8) as u8;
+        let id = bit_range!(word[0..8]) as u8;
         capabilities.push(Capability { id, offset });
-        offset = u32_bit_range(word, 8, 16) as u8;
+        offset = bit_range!(word[8..16]) as u8;
     }
 
     capabilities
-}
-
-const fn u32_bit_range(word: u32, start: usize, end: usize) -> u32 {
-    assert!(start != end);
-    let bits = word << (32 - end) >> (32 - end);
-    bits >> start
-}
-
-const fn u32_get_bit(word: u32, bit: usize) -> bool {
-    assert!(bit < 32);
-    (word & (1 << bit)) != 0
 }
 
 const fn u32_set_bit(word: &mut u32, bit: usize, value: bool) -> &mut u32 {
