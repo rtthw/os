@@ -1,13 +1,12 @@
 //! # Advanced Programmable Interrupt Controller (APIC)
 
 use {
-    crate::{pit, rtc},
+    crate::{define_interrupt_handler_with_preemption, pit, rtc},
     acpi::platform::interrupt::Apic,
     core::sync::atomic::{AtomicU64, Ordering},
     log::{info, warn},
     spin_mutex::Mutex,
     x2apic::lapic::{self, LocalApic},
-    x86_64::structures::idt::InterruptStackFrame,
 };
 
 
@@ -41,11 +40,10 @@ pub fn init(info: Apic) {
     }
 }
 
-pub extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    // log::debug!("APIC_TICK");
+define_interrupt_handler_with_preemption!(timer_interrupt_handler {
     TICKS.fetch_add(1, Ordering::Acquire);
     end_of_interrupt();
-}
+});
 
 fn end_of_interrupt() {
     unsafe {

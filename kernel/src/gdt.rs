@@ -27,6 +27,7 @@ pub const DOUBLE_FAULT_IST: u16 = 0;
 pub const PAGE_FAULT_IST: u16 = 1;
 pub const GENERAL_PROTECTION_FAULT_IST: u16 = 2;
 pub const LOCAL_APIC_TIMER_IST: u16 = 3;
+pub const DEFER_IST: u16 = 4;
 
 pub fn init() {
     info!("Initializing GDT...");
@@ -47,6 +48,13 @@ pub fn init() {
         TSS.interrupt_stack_table[LOCAL_APIC_TIMER_IST as usize] = {
             static mut STACK: [u8; INTERRUPT_STACK_SIZE] = [0; INTERRUPT_STACK_SIZE];
             VirtAddr::from_ptr(addr_of!(STACK)) + INTERRUPT_STACK_SIZE as u64
+        };
+
+        // Defer is a no-op, stack only needs to be large enough to hold execution
+        // context.
+        TSS.interrupt_stack_table[DEFER_IST as usize] = {
+            static mut STACK: [u8; PAGE_SIZE] = [0; PAGE_SIZE];
+            VirtAddr::from_ptr(addr_of!(STACK)) + PAGE_SIZE as u64
         };
 
         let kernel_tss = GDT.append(Descriptor::tss_segment(&TSS));
@@ -79,6 +87,10 @@ pub fn init() {
 
         load_tss(SELECTORS.kernel_tss);
     }
+}
+
+pub fn selectors() -> &'static Selectors {
+    unsafe { &SELECTORS }
 }
 
 #[derive(Debug)]

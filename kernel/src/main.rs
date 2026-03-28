@@ -16,6 +16,7 @@ mod idt;
 mod memory;
 mod pit;
 mod rtc;
+mod scheduler;
 mod serial;
 mod tsc;
 
@@ -163,11 +164,31 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
         render_clock(framebuffer, display_width, display_height).await;
     });
 
-    x86_64::instructions::interrupts::enable();
+    scheduler::with_scheduler(|scheduler| {
+        scheduler.run_world("kernel_tick_1", ticking_world as *const fn() -> !, None)
+    });
+    scheduler::with_scheduler(|scheduler| {
+        scheduler.run_world("kernel_tick_2", ticking_world as *const fn() -> !, None)
+    });
 
+    scheduler::run()
+}
+
+fn ticking_world() -> ! {
+    let mut tick_count = 1;
+    let mut last_tick_time = time::now();
     loop {
-        x86_64::instructions::hlt();
-        executor.tick();
+        let start = time::now();
+        info!(
+            "TICK {tick_count} @ {}\t: {:?}",
+            apic::current_tick(),
+            start.duration_since(last_tick_time),
+        );
+        while time::now().duration_since(start) < Duration::from_secs(1) {
+            scheduler::defer();
+        }
+        tick_count += 1;
+        last_tick_time = start;
     }
 }
 

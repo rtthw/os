@@ -1,7 +1,7 @@
 //! # Interrupt Descriptor Table (IDT)
 
 use {
-    crate::{apic, gdt},
+    crate::{apic, gdt, scheduler},
     log::info,
     x86_64::{
         registers::control::Cr2,
@@ -33,6 +33,10 @@ pub fn init() {
         IDT[apic::TIMER_INDEX]
             .set_handler_fn(apic::timer_interrupt_handler)
             .set_stack_index(gdt::LOCAL_APIC_TIMER_IST);
+
+        IDT[scheduler::DEFER_INTERRUPT_NUMBER]
+            .set_handler_fn(scheduler::defer_interrupt_handler)
+            .set_stack_index(gdt::DEFER_IST);
 
         IDT.load();
     }
