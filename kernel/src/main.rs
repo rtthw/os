@@ -78,6 +78,8 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
         let stack_object = boot_info.memory_map.len() + 43;
         let stack_object_addr = ((&stack_object) as *const usize).addr();
 
+        // info!("STACK @ {stack_addr:#x}, OBJ @ {stack_object_addr:#x}");
+
         assert!(
             stack_object_addr >= stack_addr && stack_object_addr < stack_top_addr,
             "kernel stack is malformed",
@@ -120,10 +122,10 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
 
     ata::init();
 
-    info!("PCI Devices:");
-    for pci_device in pci::enumerate_devices() {
-        debug!("{pci_device:#?}");
-    }
+    // info!("PCI Devices:");
+    // for pci_device in pci::enumerate_devices() {
+    //     debug!("{pci_device:#?}");
+    // }
 
     let mut framebuffer = Framebuffer::from_display_info(&boot_info.display_info);
     framebuffer.clear_screen(Color::rgb(0x2B, 0x2B, 0x33));

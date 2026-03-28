@@ -43,12 +43,11 @@ pub fn init(info: Apic) {
 
 pub extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
     // log::debug!("APIC_TICK");
-    TICKS.fetch_add(1, Ordering::Relaxed);
+    TICKS.fetch_add(1, Ordering::Acquire);
     end_of_interrupt();
 }
 
 fn end_of_interrupt() {
-    #[allow(static_mut_refs)]
     unsafe {
         LOCAL_APIC
             .lock()

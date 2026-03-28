@@ -7,7 +7,7 @@ use {
     x86_64::{
         VirtAddr,
         instructions::tables::load_tss,
-        registers::segmentation::{CS, DS, SS, Segment},
+        registers::segmentation::{CS, DS, ES, FS, GS, SS, Segment},
         structures::{
             gdt::{Descriptor, GlobalDescriptorTable, SegmentSelector},
             tss::TaskStateSegment,
@@ -52,27 +52,30 @@ pub fn init() {
         let kernel_tss = GDT.append(Descriptor::tss_segment(&TSS));
         let kernel_code = GDT.append(Descriptor::kernel_code_segment());
         let kernel_data = GDT.append(Descriptor::kernel_data_segment());
-        let user_code = GDT.append(Descriptor::user_code_segment());
-        let user_data = GDT.append(Descriptor::user_data_segment());
+        // let user_code = GDT.append(Descriptor::user_code_segment());
+        // let user_data = GDT.append(Descriptor::user_data_segment());
 
         SELECTORS = Selectors {
             kernel_tss,
             kernel_code,
             kernel_data,
-            user_code,
-            user_data,
+            // user_code,
+            // user_data,
         };
 
         // debug!("SELECTORS:\n{:#?}", SELECTORS);
 
         GDT.load();
 
-        CS::set_reg(SELECTORS.kernel_code);
-        DS::set_reg(SELECTORS.kernel_data);
-
         // Without this, you get a general protection fault during the end-of-interrupt
         // signal of the local APIC timer.
-        SS::set_reg(SegmentSelector(0));
+        SS::set_reg(SELECTORS.kernel_data);
+
+        CS::set_reg(SELECTORS.kernel_code);
+        DS::set_reg(SELECTORS.kernel_data);
+        ES::set_reg(SELECTORS.kernel_data);
+        FS::set_reg(SELECTORS.kernel_data);
+        GS::set_reg(SELECTORS.kernel_data);
 
         load_tss(SELECTORS.kernel_tss);
     }
@@ -83,8 +86,8 @@ pub struct Selectors {
     kernel_tss: SegmentSelector,
     pub kernel_code: SegmentSelector,
     pub kernel_data: SegmentSelector,
-    pub user_code: SegmentSelector,
-    pub user_data: SegmentSelector,
+    // pub user_code: SegmentSelector,
+    // pub user_data: SegmentSelector,
 }
 
 impl Selectors {
@@ -92,7 +95,7 @@ impl Selectors {
         kernel_tss: SegmentSelector::NULL,
         kernel_code: SegmentSelector::NULL,
         kernel_data: SegmentSelector::NULL,
-        user_code: SegmentSelector::NULL,
-        user_data: SegmentSelector::NULL,
+        // user_code: SegmentSelector::NULL,
+        // user_data: SegmentSelector::NULL,
     };
 }

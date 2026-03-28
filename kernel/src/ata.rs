@@ -4,7 +4,7 @@ use {
     alloc::{collections::vec_deque::VecDeque, string::String, vec::Vec},
     bit_utils::bit_field,
     core::{fmt, time::Duration},
-    log::{debug, info, trace, warn},
+    log::{debug, error, info, trace, warn},
     spin_mutex::Mutex,
     x86_64::instructions::port::Port,
 };
@@ -59,7 +59,12 @@ pub fn init() {
                 .unwrap();
 
             let boot_sector: Fat16BootSector = unsafe { core::mem::transmute(buf) };
-            debug!("{boot_sector:#?}");
+            // debug!("{boot_sector:#?}");
+
+            if boot_sector.sector_count() != lba_sector_count as usize {
+                error!("Boot sector does not have the same number of sectors as its partition");
+                return;
+            }
 
             let mut data_buf = [0; SECTOR_SIZE];
             drive
