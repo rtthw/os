@@ -24,7 +24,7 @@ use {
     core::{arch::asm, time::Duration},
     framebuffer::{Color, Framebuffer},
     log::{debug, info, warn},
-    memory_types::MEBIBYTE,
+    memory_types::PAGE_SIZE,
 };
 
 
@@ -210,7 +210,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
 
 
-const KERNEL_STACK_SIZE: usize = 1 * MEBIBYTE;
+const KERNEL_STACK_SIZE: usize = 16 * PAGE_SIZE;
 static KERNEL_STACK: KernelStack = KernelStack::new();
 
 #[repr(align(16))] // System V ABI requires 16 byte stack alignment.
