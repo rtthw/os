@@ -152,8 +152,6 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
         );
     }
 
-    // apic::timer_accuracy_tests();
-
     info!("STARTUP SUCCESSFUL");
 
     let mut executor = executor::Executor::new();
