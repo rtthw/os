@@ -3,7 +3,6 @@
 use {
     crate::{KERNEL_STACK, KERNEL_STACK_SIZE, gdt},
     alloc::{
-        boxed::Box,
         collections::{btree_map::BTreeMap, vec_deque::VecDeque},
         string::String,
         vec::Vec,
@@ -11,7 +10,6 @@ use {
     core::{
         arch::asm,
         fmt,
-        pin::Pin,
         sync::atomic::{AtomicU64, Ordering},
     },
     log::{info, warn},
@@ -107,7 +105,7 @@ impl Scheduler {
         self.add_to_queue(World {
             id: IDLE_WORLD_ID,
             name: "idle".into(),
-            stack: Box::pin(Vec::with_capacity(PAGE_SIZE)),
+            stack: Vec::with_capacity(PAGE_SIZE),
             priority: Priority::Idle,
             context: Some(ExecutionContext {
                 registers: CpuRegisters::EMPTY,
@@ -188,7 +186,7 @@ impl Scheduler {
         let name = name.into();
 
         let stack_size = stack_size.unwrap_or(DEFAULT_STACK_SIZE);
-        let stack = Box::pin(Vec::<u8>::with_capacity(stack_size));
+        let stack = Vec::<u8>::with_capacity(stack_size);
 
         let context = ExecutionContext {
             registers: CpuRegisters::EMPTY,
@@ -273,7 +271,7 @@ struct World {
     id: u64,
     name: String,
     priority: Priority,
-    stack: Pin<Box<Vec<u8>>>, // TODO: Does this need to be pinned?
+    stack: Vec<u8>,
     context: Option<ExecutionContext>,
 }
 
