@@ -55,7 +55,7 @@ pub extern "sysv64" fn _start(boot_info: &BootInfo) -> ! {
     unreachable!();
 }
 
-pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
+pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
     let startup_time = rtc::Time::now();
 
     serial::init();
@@ -128,6 +128,35 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
     //     debug!("{pci_device:#?}");
     // }
 
+    unsafe {
+        BOOT_INFO = Some(boot_info);
+    }
+
+    info!("STARTUP SUCCESSFUL");
+
+    scheduler::with_scheduler(|scheduler| {
+        scheduler.run_world(
+            "init",
+            initial_world as *const fn() -> !,
+            Some(PAGE_SIZE * 32),
+        )
+    });
+    scheduler::with_scheduler(|scheduler| {
+        scheduler.run_world("kernel_tick_1", ticking_world as *const fn() -> !, None)
+    });
+    scheduler::with_scheduler(|scheduler| {
+        scheduler.run_world("kernel_tick_2", ticking_world as *const fn() -> !, None)
+    });
+
+    scheduler::run()
+}
+
+static mut BOOT_INFO: Option<&'static BootInfo> = None;
+
+fn initial_world() -> ! {
+    let boot_info =
+        unsafe { BOOT_INFO.expect("initial world should have access to the boot information") };
+
     let mut framebuffer = Framebuffer::from_display_info(&boot_info.display_info);
     framebuffer.clear_screen(Color::rgb(0x2B, 0x2B, 0x33));
 
@@ -152,8 +181,6 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
         );
     }
 
-    info!("STARTUP SUCCESSFUL");
-
     let mut executor = executor::Executor::new();
 
     let display_width = boot_info.display_info.width as usize;
@@ -162,14 +189,10 @@ pub extern "sysv64" fn main(boot_info: &BootInfo) -> ! {
         render_clock(framebuffer, display_width, display_height).await;
     });
 
-    scheduler::with_scheduler(|scheduler| {
-        scheduler.run_world("kernel_tick_1", ticking_world as *const fn() -> !, None)
-    });
-    scheduler::with_scheduler(|scheduler| {
-        scheduler.run_world("kernel_tick_2", ticking_world as *const fn() -> !, None)
-    });
-
-    scheduler::run()
+    loop {
+        executor.tick();
+        scheduler::defer();
+    }
 }
 
 fn ticking_world() -> ! {
