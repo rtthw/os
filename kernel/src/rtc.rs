@@ -172,19 +172,6 @@ impl Add for Time {
     }
 }
 
-pub unsafe fn raw_minute_and_second() -> (u8, u8) {
-    let mut second = read_cmos(SECOND_REGISTER);
-    let mut minute = read_cmos(MINUTE_REGISTER);
-
-    let format = read_cmos(STATUS_REGISTER_B);
-    if format & FORMAT_BINARY_FLAG != FORMAT_BINARY_FLAG {
-        second = convert_bcd(second);
-        minute = convert_bcd(minute);
-    }
-
-    (minute, second)
-}
-
 const fn convert_bcd(value: u8) -> u8 {
     (value & 0x0F) + ((value / 16) * 10)
 }
