@@ -36,7 +36,7 @@ pub fn send_event(event: Event) {
 
 #[derive(Debug)]
 pub enum Event {
-    ClockTick,
+    ClockUpdate,
 }
 
 fn window_manager() -> ! {
@@ -102,7 +102,7 @@ impl WindowManager {
 
     fn handle_event(&mut self, event: Event) {
         match event {
-            Event::ClockTick => {
+            Event::ClockUpdate => {
                 let dur = self.clock_start_instant.elapsed();
                 let current_time = self.clock_start_time + rtc::Time::from_seconds(dur.as_secs());
                 let time_string = format!("{current_time}");

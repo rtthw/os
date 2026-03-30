@@ -143,7 +143,11 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
         )
     });
     scheduler::with_scheduler(|scheduler| {
-        scheduler.run_world("clock_tick", ticking_world as *const fn() -> !, None)
+        scheduler.run_world(
+            "clock_update_dispatcher",
+            dispatch_clock_updates as *const fn() -> !,
+            None,
+        )
     });
 
     window_manager::init();
@@ -161,22 +165,13 @@ fn initial_world() -> ! {
     }
 }
 
-fn ticking_world() -> ! {
-    // let mut tick_count = 1;
-    // let mut last_tick_time = time::now();
+fn dispatch_clock_updates() -> ! {
     loop {
         let start = time::now();
-        // info!(
-        //     "TICK {tick_count} @ {}\t: {:?}",
-        //     apic::current_tick(),
-        //     start.duration_since(last_tick_time),
-        // );
+        window_manager::send_event(window_manager::Event::ClockUpdate);
         while time::now().duration_since(start) < Duration::from_secs(1) {
             scheduler::defer();
         }
-        window_manager::send_event(window_manager::Event::ClockTick);
-        // tick_count += 1;
-        // last_tick_time = start;
     }
 }
 
