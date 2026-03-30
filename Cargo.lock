@@ -1850,6 +1850,7 @@ dependencies = [
  "pci",
  "spin-mutex",
  "time",
+ "virtio",
  "x2apic",
  "x86_64",
 ]

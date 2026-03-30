@@ -14,6 +14,7 @@ mod executor;
 mod gdt;
 mod hpet;
 mod idt;
+mod input;
 mod memory;
 mod pit;
 mod rtc;
@@ -27,6 +28,7 @@ use {
     core::{arch::asm, time::Duration},
     log::{debug, info, warn},
     memory_types::PAGE_SIZE,
+    x86_64::structures::paging::OffsetPageTable,
 };
 
 
@@ -131,6 +133,7 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
 
     unsafe {
         BOOT_INFO = Some(boot_info);
+        PAGE_TABLE = Some(page_table);
     }
 
     info!("STARTUP SUCCESSFUL");
@@ -149,6 +152,13 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
             None,
         )
     });
+    scheduler::with_scheduler(|scheduler| {
+        scheduler.run_world(
+            "input_event_dispatcher",
+            input::dispatch_input_events as *const fn() -> !,
+            Some(PAGE_SIZE * 32),
+        )
+    });
 
     window_manager::init();
 
@@ -156,6 +166,7 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
 }
 
 static mut BOOT_INFO: Option<&'static BootInfo> = None;
+static mut PAGE_TABLE: Option<OffsetPageTable<'static>> = None;
 
 fn initial_world() -> ! {
     let mut executor = executor::Executor::new();

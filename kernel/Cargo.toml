@@ -15,5 +15,6 @@ memory-types = { path = "../crates/memory-types" }
 pci = { path = "../drivers/pci" }
 spin-mutex = { path = "../crates/spin-mutex" }
 time = { path = "../crates/time" }
+virtio = { path = "../drivers/virtio" }
 x2apic = "0.5.0"
 x86_64 = "0.15.4"

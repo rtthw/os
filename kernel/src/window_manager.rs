@@ -1,10 +1,11 @@
 //! # Window Manager
 
 use {
-    crate::{BOOT_INFO, rtc, scheduler::with_scheduler},
+    crate::{BOOT_INFO, input, rtc, scheduler::with_scheduler},
+    boot_info::BootInfo,
     crossbeam_queue::ArrayQueue,
     framebuffer::{Color, Framebuffer},
-    log::warn,
+    log::{trace, warn},
     memory_types::PAGE_SIZE,
 };
 
@@ -37,6 +38,7 @@ pub fn send_event(event: Event) {
 #[derive(Debug)]
 pub enum Event {
     ClockUpdate,
+    UserInput(input::InputEvent),
 }
 
 fn window_manager() -> ! {
@@ -55,6 +57,7 @@ fn window_manager() -> ! {
 }
 
 struct WindowManager {
+    input_state: InputState,
     framebuffer: Framebuffer,
     display_width: usize,
     display_height: usize,
@@ -92,6 +95,7 @@ impl WindowManager {
         }
 
         Self {
+            input_state: InputState::new(boot_info),
             framebuffer,
             display_width: boot_info.display_info.width as usize,
             display_height: boot_info.display_info.height as usize,
@@ -124,6 +128,53 @@ impl WindowManager {
                     );
                 }
             }
+            Event::UserInput(input_event) => match input_event {
+                input::InputEvent::MouseMove { delta_x, delta_y } => {
+                    self.framebuffer.fill_rect(
+                        self.input_state.mouse_x as i32,
+                        self.input_state.mouse_y as i32,
+                        framebuffer::font::CHAR_WIDTH as i32,
+                        framebuffer::font::CHAR_HEIGHT as i32,
+                        Color::rgb(0x2B, 0x2B, 0x33),
+                    );
+
+                    self.input_state.mouse_x = 0.max(
+                        (self.display_width as i32 - 1)
+                            .min(self.input_state.mouse_x as i32 + delta_x),
+                    ) as u32;
+                    self.input_state.mouse_y = 0.max(
+                        (self.display_height as i32 - 1)
+                            .min(self.input_state.mouse_y as i32 + delta_y),
+                    ) as u32;
+
+                    self.framebuffer.draw_ascii_char(
+                        '^',
+                        Color::rgb(0xaa, 0xaa, 0xad),
+                        Color::rgb(0x2B, 0x2B, 0x33),
+                        self.input_state.mouse_x as i32,
+                        self.input_state.mouse_y as i32,
+                        0,
+                        0,
+                    );
+                }
+                other => {
+                    trace!("UNHANDLED USER INPUT: {other:?}");
+                }
+            },
+        }
+    }
+}
+
+struct InputState {
+    mouse_x: u32,
+    mouse_y: u32,
+}
+
+impl InputState {
+    fn new(boot_info: &BootInfo) -> Self {
+        Self {
+            mouse_x: boot_info.display_info.width / 2,
+            mouse_y: boot_info.display_info.height / 2,
         }
     }
 }
