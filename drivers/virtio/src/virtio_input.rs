@@ -1,10 +1,10 @@
 //! # Virtual I/O Input Device
 
-use core::ops::{Deref, DerefMut};
-
-use alloc::vec::Vec;
-
-use crate::{Virtqueue, VirtqueueMessage};
+use {
+    crate::{Virtqueue, VirtqueueMessage},
+    alloc::vec::Vec,
+    core::ops::{Deref, DerefMut},
+};
 
 
 const INPUT_EVENT_SIZE: usize = size_of::<InputEvent>();
@@ -15,17 +15,23 @@ pub struct Device {
 }
 
 impl Device {
-    pub fn new(pci_device: pci::Device) -> Self {
-        let mut virtio_device = crate::Device::new(pci_device);
+    /// Create a new VirtIO input device from the given [PCI
+    /// device](pci::Device).
+    ///
+    /// Returns `Err` if the given PCI device is not a VirtIO input device (i.e.
+    /// it doesn't have the correct configuration, or isn't an input
+    /// device).
+    pub fn new(pci_device: pci::Device) -> Result<Self, &'static str> {
+        let mut virtio_device = crate::Device::new(pci_device)?;
         let mut event_queue = virtio_device.initialize(0, |dev| dev.initialize_queue(0));
 
         let msg = [VirtqueueMessage::<InputEvent>::DeviceWrite];
         unsafe { while event_queue.push(&msg).is_ok() {} };
 
-        Self {
+        Ok(Self {
             virtio_device,
             event_queue,
-        }
+        })
     }
 
     pub fn poll(&mut self) -> Vec<InputEvent> {

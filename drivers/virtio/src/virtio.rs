@@ -38,7 +38,11 @@ pub struct Device {
 }
 
 impl Device {
-    pub fn new(pci_device: pci::Device) -> Self {
+    /// Create a new VirtIO device from the given [PCI device](pci::Device).
+    ///
+    /// Returns `Err` if the given PCI device is not a VirtIO device (i.e. it
+    /// doesn't have the correct configuration).
+    pub fn new(pci_device: pci::Device) -> Result<Self, &'static str> {
         let find_capability = |cfg_type: u8| -> Option<VirtioCapability> {
             pci_device
                 .capabilities()
@@ -61,24 +65,24 @@ impl Device {
         };
 
         let common_config_cap = find_capability(VIRTIO_PCI_CAP_COMMON_CFG)
-            .expect("failed to find common config capability");
+            .ok_or("failed to find common config capability")?;
         let notification_cap = find_capability(VIRTIO_PCI_CAP_NOTIFY_CFG)
-            .expect("failed to find notification capability");
+            .ok_or("failed to find notification capability")?;
         let device_specific_config_cap = find_capability(VIRTIO_PCI_CAP_DEVICE_CFG);
 
         let common_config = {
             let addr = addr_in_bar(&pci_device, &common_config_cap.virtio_cap);
             let ptr = addr as *mut VirtioPciCommonCfg;
-            unsafe { ptr.as_mut().unwrap() }
+            unsafe { ptr.as_mut().ok_or("capability address in BAR was null")? }
         };
 
-        Self {
+        Ok(Self {
             pci_device,
             common_config_cap,
             notification_cap,
             device_specific_config_cap,
             common_config,
-        }
+        })
     }
 
     pub fn initialize<R>(&mut self, feature_bits: u32, setup_fn: impl FnOnce(&mut Self) -> R) -> R {
