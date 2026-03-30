@@ -20,11 +20,11 @@ mod rtc;
 mod scheduler;
 mod serial;
 mod tsc;
+mod window_manager;
 
 use {
     boot_info::BootInfo,
     core::{arch::asm, time::Duration},
-    framebuffer::{Color, Framebuffer},
     log::{debug, info, warn},
     memory_types::PAGE_SIZE,
 };
@@ -143,11 +143,10 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
         )
     });
     scheduler::with_scheduler(|scheduler| {
-        scheduler.run_world("kernel_tick_1", ticking_world as *const fn() -> !, None)
+        scheduler.run_world("clock_tick", ticking_world as *const fn() -> !, None)
     });
-    scheduler::with_scheduler(|scheduler| {
-        scheduler.run_world("kernel_tick_2", ticking_world as *const fn() -> !, None)
-    });
+
+    window_manager::init();
 
     scheduler::run()
 }
@@ -155,41 +154,7 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
 static mut BOOT_INFO: Option<&'static BootInfo> = None;
 
 fn initial_world() -> ! {
-    let boot_info =
-        unsafe { BOOT_INFO.expect("initial world should have access to the boot information") };
-
-    let mut framebuffer = Framebuffer::from_display_info(&boot_info.display_info);
-    framebuffer.clear_screen(Color::rgb(0x2B, 0x2B, 0x33));
-
-    for (col, ch) in "KERNEL v0.0.0".char_indices() {
-        framebuffer.draw_ascii_char(
-            ch,
-            Color::rgb(0xaa, 0xaa, 0xad),
-            Color::rgb(0x2B, 0x2B, 0x33),
-            10,
-            10,
-            col,
-            0,
-        );
-        framebuffer.draw_ascii_char(
-            '-',
-            Color::rgb(0xaa, 0xaa, 0xad),
-            Color::rgb(0x2B, 0x2B, 0x33),
-            10,
-            10,
-            col,
-            1,
-        );
-    }
-
     let mut executor = executor::Executor::new();
-
-    let display_width = boot_info.display_info.width as usize;
-    let display_height = boot_info.display_info.height as usize;
-    executor.spawn(async move {
-        render_clock(framebuffer, display_width, display_height).await;
-    });
-
     loop {
         executor.tick();
         scheduler::defer();
@@ -197,50 +162,21 @@ fn initial_world() -> ! {
 }
 
 fn ticking_world() -> ! {
-    let mut tick_count = 1;
-    let mut last_tick_time = time::now();
+    // let mut tick_count = 1;
+    // let mut last_tick_time = time::now();
     loop {
         let start = time::now();
-        info!(
-            "TICK {tick_count} @ {}\t: {:?}",
-            apic::current_tick(),
-            start.duration_since(last_tick_time),
-        );
+        // info!(
+        //     "TICK {tick_count} @ {}\t: {:?}",
+        //     apic::current_tick(),
+        //     start.duration_since(last_tick_time),
+        // );
         while time::now().duration_since(start) < Duration::from_secs(1) {
             scheduler::defer();
         }
-        tick_count += 1;
-        last_tick_time = start;
-    }
-}
-
-async fn render_clock(mut framebuffer: Framebuffer, display_width: usize, display_height: usize) {
-    let clock_start_time = rtc::Time::now();
-    let clock_start_instant = time::Instant::now();
-
-    loop {
-        let dur = clock_start_instant.elapsed();
-        let current_time = clock_start_time + rtc::Time::from_seconds(dur.as_secs());
-        let time_string = format!("{current_time}");
-
-        let col_count = display_width / framebuffer::font::CHAR_WIDTH;
-        let row_count = display_height / framebuffer::font::CHAR_HEIGHT;
-        let start_col = col_count - 20; // MM/DD/YYYY HH:MM:SS <- 19 chars
-        let row = row_count.saturating_sub(2);
-
-        for (col, ch) in time_string.char_indices() {
-            framebuffer.draw_ascii_char(
-                ch,
-                Color::rgb(0xaa, 0xaa, 0xad),
-                Color::rgb(0x2B, 0x2B, 0x33),
-                10,
-                10,
-                start_col + col,
-                row,
-            );
-        }
-
-        executor::sleep(Duration::from_secs(1)).await;
+        window_manager::send_event(window_manager::Event::ClockTick);
+        // tick_count += 1;
+        // last_tick_time = start;
     }
 }
 
