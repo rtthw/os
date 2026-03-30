@@ -7,4 +7,5 @@ edition.workspace = true
 path = "src/virtio.rs"
 
 [dependencies]
+log = { path = "../../crates/log" }
 pci = { path = "../pci" }

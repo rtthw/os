@@ -13,7 +13,10 @@ pub mod virtio_input;
 
 use {
     alloc::{borrow::ToOwned as _, boxed::Box},
-    core::ptr::{read_volatile, write_volatile},
+    core::{
+        fmt::Debug,
+        ptr::{read_volatile, write_volatile},
+    },
 };
 
 
@@ -128,22 +131,26 @@ impl Device {
     pub fn initialize_queue<const QUEUE_SIZE: usize, const BUFFER_SIZE: usize>(
         &mut self,
         index: u16,
+        virtual_to_physical_addr: &impl Fn(usize) -> usize,
     ) -> Virtqueue<QUEUE_SIZE, BUFFER_SIZE> {
         let mut storage = Box::new(VirtqueueStorage::new());
 
         for desc in storage.descriptor_area.0.iter_mut() {
             let buffer = Box::new([0u8; BUFFER_SIZE]);
             let buf_ref = Box::leak(buffer);
-            let addr = buf_ref as *mut _;
+            let addr = virtual_to_physical_addr(buf_ref.as_mut_ptr().addr());
 
             unsafe {
                 write_volatile(&mut desc.addr, addr as u64);
             }
         }
 
-        let desc_area_addr = storage.descriptor_area.0.as_ref().as_ptr() as u64;
-        let driver_area_addr = (&storage.driver_area) as *const _ as u64;
-        let device_area_addr = (&storage.device_area) as *const _ as u64;
+        let desc_area_addr =
+            virtual_to_physical_addr(storage.descriptor_area.0.as_ref().as_ptr().addr()) as u64;
+        let driver_area_addr =
+            virtual_to_physical_addr((&storage.driver_area) as *const _ as usize) as u64;
+        let device_area_addr =
+            virtual_to_physical_addr((&storage.device_area) as *const _ as usize) as u64;
 
         unsafe {
             let c = &mut self.common_config;
@@ -284,18 +291,18 @@ impl<const QUEUE_SIZE: usize, const BUFFER_SIZE: usize> Virtqueue<QUEUE_SIZE, BU
         }
     }
 
-    pub unsafe fn push<const N: usize, T: Clone + Default>(
+    pub unsafe fn push<const N: usize, T: Clone + Debug + Default>(
         &mut self,
         messages: &[VirtqueueMessage<T>; N],
     ) -> Result<(), ()> {
-        assert!(N > 0);
+        assert!(N > 0 && N <= QUEUE_SIZE);
 
         let mut desc_indices = [0usize; N];
         for i in 0..N {
             match self.take_descriptor() {
                 Some(desc_index) => desc_indices[i] = desc_index,
                 None => {
-                    // log::debug!("FAILED PUSH @ {i}");
+                    // log::debug!("FAILED PUSH @ {i} (message={:?})", &messages[i]);
                     // Couldn't reserve the required number of descriptors.
                     for desc_index in &desc_indices[..i] {
                         self.return_descriptor(*desc_index);
@@ -401,11 +408,12 @@ impl<const QUEUE_SIZE: usize, const BUFFER_SIZE: usize> Virtqueue<QUEUE_SIZE, BU
 
             self.return_descriptor(desc_index);
 
-            if next_desc != 0 {
-                desc_index = next_desc
-            } else {
+            if next_desc == 0 {
                 break;
             }
+
+            out_index += 1;
+            desc_index = next_desc;
         }
 
         self.pop_index += 1;
@@ -429,13 +437,14 @@ impl<const QUEUE_SIZE: usize, const BUFFER_SIZE: usize> Virtqueue<QUEUE_SIZE, BU
     }
 }
 
-#[derive(Clone)]
-pub enum VirtqueueMessage<T: Clone + Default> {
+#[derive(Clone, Debug)]
+pub enum VirtqueueMessage<T: Clone + Debug + Default> {
     DeviceWrite,
     DeviceRead { data: T, len: Option<usize> },
 }
 
 #[derive(Debug)]
+#[repr(C)]
 struct VirtqueueStorage<const SIZE: usize> {
     descriptor_area: VirtqueueDescTable<SIZE>,
     driver_area: VirtqueueAvailableRing<SIZE>,
@@ -467,6 +476,7 @@ impl<const SIZE: usize> VirtqueueStorage<SIZE> {
 pub struct VirtqueueDescTable<const SIZE: usize>([VirtqueueDesc; SIZE]);
 
 #[derive(Clone, Copy, Debug)]
+#[repr(C)]
 pub struct VirtqueueDesc {
     /// Address (guest-physical).
     addr: u64,
