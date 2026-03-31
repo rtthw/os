@@ -22,7 +22,7 @@ use {
 };
 
 
-const IDLE_WORLD_ID: u64 = 0;
+const IDLE_PROCESS_ID: u64 = 0;
 const DEFAULT_STACK_SIZE: usize = PAGE_SIZE * 8;
 
 pub fn run() -> ! {
@@ -73,7 +73,7 @@ macro_rules! define_interrupt_handler_with_preemption {
                     $($body)*
                 }
 
-                // Finally, we schedule the next world to run. This function never returns.
+                // Finally, we schedule the next process to run. This function never returns.
                 schedule()
             }
         }
@@ -83,8 +83,8 @@ macro_rules! define_interrupt_handler_with_preemption {
 static SCHEDULER: Mutex<Scheduler> = Mutex::new(Scheduler::new());
 
 pub struct Scheduler {
-    current: Option<World>,
-    queue: BTreeMap<Priority, VecDeque<World>>,
+    current: Option<Process>,
+    queue: BTreeMap<Priority, VecDeque<Process>>,
 }
 
 impl Scheduler {
@@ -102,8 +102,8 @@ impl Scheduler {
             }
         }
 
-        self.add_to_queue(World {
-            id: IDLE_WORLD_ID,
+        self.add_to_queue(Process {
+            id: IDLE_PROCESS_ID,
             name: "idle".into(),
             stack: Vec::with_capacity(PAGE_SIZE),
             priority: Priority::Idle,
@@ -120,44 +120,44 @@ impl Scheduler {
         })
     }
 
-    fn add_to_queue(&mut self, world: World) {
+    fn add_to_queue(&mut self, process: Process) {
         self.queue
-            .entry(world.priority)
+            .entry(process.priority)
             .or_default()
-            .push_back(world);
+            .push_back(process);
     }
 
-    fn next_ready(&mut self) -> World {
+    fn next_ready(&mut self) -> Process {
         self.queue
             .values_mut()
             .find(|q| !q.is_empty())
-            .expect("should at least have an idle world available")
+            .expect("should at least have an idle process available")
             .pop_front()
             .unwrap()
     }
 
     fn schedule_next(&mut self) -> ExecutionContext {
         if self.current.is_none() {
-            let world = self.next_ready();
+            let process = self.next_ready();
 
-            // TODO: Load the world's address space.
+            // TODO: Load the process's address space.
 
-            self.current = Some(world);
+            self.current = Some(process);
         }
 
         self.current
             .as_mut()
-            .expect("current world should exist")
+            .expect("current process should exist")
             .context
             .take()
-            .expect("current world should have a context")
+            .expect("current process should have a context")
     }
 
     pub fn preempt_current_context(&mut self, context: ExecutionContext) {
         let prev_context = self
             .current
             .as_mut()
-            .expect("a world should be running")
+            .expect("a process should be running at this point")
             .context
             .replace(context);
 
@@ -166,23 +166,23 @@ impl Scheduler {
         if self.queue.is_empty() {
             warn!("Attempted preemption with an empty ready queue");
         } else {
-            let world = self
+            let process = self
                 .current
                 .take()
-                .expect("current world should be available for preemption");
-            self.add_to_queue(world);
+                .expect("current process should be available for preemption");
+            self.add_to_queue(process);
         }
     }
 
-    pub fn run_world(
+    pub fn run_process(
         &mut self,
         name: impl Into<String>,
         entry_point: *const fn() -> !,
         stack_size: Option<usize>,
     ) {
-        static WORLD_ID: AtomicU64 = AtomicU64::new(IDLE_WORLD_ID + 1);
+        static PROCESS_ID: AtomicU64 = AtomicU64::new(IDLE_PROCESS_ID + 1);
 
-        let id = WORLD_ID.fetch_add(1, Ordering::SeqCst);
+        let id = PROCESS_ID.fetch_add(1, Ordering::SeqCst);
         let name = name.into();
 
         let stack_size = stack_size.unwrap_or(DEFAULT_STACK_SIZE);
@@ -199,7 +199,7 @@ impl Scheduler {
             ),
         };
 
-        let world = World {
+        let process = Process {
             id,
             name,
             priority: Priority::Normal,
@@ -207,9 +207,9 @@ impl Scheduler {
             context: Some(context),
         };
 
-        info!("Running {world}");
+        info!("Running {process}");
 
-        self.add_to_queue(world);
+        self.add_to_queue(process);
     }
 }
 
@@ -267,7 +267,7 @@ pub fn defer() {
 }
 
 #[derive(Debug)]
-struct World {
+struct Process {
     id: u64,
     name: String,
     priority: Priority,
@@ -275,9 +275,9 @@ struct World {
     context: Option<ExecutionContext>,
 }
 
-impl fmt::Display for World {
+impl fmt::Display for Process {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("World #{} '{}'", self.id, self.name))
+        f.write_fmt(format_args!("Process #{} '{}'", self.id, self.name))
     }
 }
 

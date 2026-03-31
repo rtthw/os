@@ -139,21 +139,21 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
     info!("STARTUP SUCCESSFUL");
 
     scheduler::with_scheduler(|scheduler| {
-        scheduler.run_world(
+        scheduler.run_process(
             "init",
-            initial_world as *const fn() -> !,
+            init_process as *const fn() -> !,
             Some(PAGE_SIZE * 32),
         )
     });
     scheduler::with_scheduler(|scheduler| {
-        scheduler.run_world(
+        scheduler.run_process(
             "clock_update_dispatcher",
             dispatch_clock_updates as *const fn() -> !,
             None,
         )
     });
     scheduler::with_scheduler(|scheduler| {
-        scheduler.run_world(
+        scheduler.run_process(
             "input_event_dispatcher",
             input::dispatch_input_events as *const fn() -> !,
             Some(PAGE_SIZE * 32),
@@ -168,7 +168,7 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
 static mut BOOT_INFO: Option<&'static BootInfo> = None;
 static mut PAGE_TABLE: Option<OffsetPageTable<'static>> = None;
 
-fn initial_world() -> ! {
+fn init_process() -> ! {
     let mut executor = executor::Executor::new();
     loop {
         executor.tick();

@@ -16,7 +16,7 @@ static mut EVENT_QUEUE: Option<ArrayQueue<Event>> = None;
 pub fn init() {
     unsafe { EVENT_QUEUE = Some(ArrayQueue::new(128)) };
     with_scheduler(|scheduler| {
-        scheduler.run_world(
+        scheduler.run_process(
             "window_manager",
             window_manager as *const fn() -> !,
             Some(PAGE_SIZE * 16),
@@ -67,8 +67,9 @@ struct WindowManager {
 
 impl WindowManager {
     fn new() -> Self {
-        let boot_info =
-            unsafe { BOOT_INFO.expect("initial world should have access to the boot information") };
+        let boot_info = unsafe {
+            BOOT_INFO.expect("window manager should have access to the boot information")
+        };
 
         let mut framebuffer = Framebuffer::from_display_info(&boot_info.display_info);
         framebuffer.clear_screen(Color::rgb(0x2B, 0x2B, 0x33));
