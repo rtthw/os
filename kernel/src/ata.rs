@@ -107,10 +107,97 @@ pub fn init() {
                         entry.size(),
                         entry.cluster_index(),
                     );
+
+                    // I put a copy of the README in the esp directory for testing.
+                    if file_name.ends_with(".md") {
+                        let bytes = read_file_bytes(
+                            &mut drive,
+                            lba_start,
+                            &boot_sector,
+                            entry.cluster_index(),
+                            entry.size(),
+                        )
+                        .unwrap();
+
+                        debug!("DATA:\n{:?}", String::from_utf8(bytes));
+                    }
                 }
             }
         }
     }
+}
+
+// https://wiki.osdev.org/FAT#FAT_32_and_exFAT
+fn read_file_bytes(
+    drive: &mut Drive,
+    lba_start: u32,
+    boot_sector: &Fat16BootSector,
+    first_cluster: usize,
+    file_size: usize,
+) -> Result<Vec<u8>, &'static str> {
+    let mut bytes = vec![0; file_size];
+    let mut byte_offset = 0;
+    let cluster_size = boot_sector.sectors_per_cluster as usize * SECTOR_SIZE;
+
+    const MAX_CLUSTER_INDEX: u32 = 0x0FFF_FFF8;
+    const BAD_CLUSTER_INDEX: u32 = 0x0FFF_FFF7;
+
+    let mut current_cluster = first_cluster;
+    while current_cluster < MAX_CLUSTER_INDEX as usize {
+        let cluster_offset = boot_sector.data_sector_offset()
+            + ((current_cluster - 2) * boot_sector.sectors_per_cluster());
+
+        let mut cluster_bytes = vec![0; cluster_size];
+        for sector_offset in 0..boot_sector.sectors_per_cluster() {
+            let sector_start = sector_offset * SECTOR_SIZE;
+            let sector_end = sector_start + SECTOR_SIZE;
+
+            drive
+                .read(
+                    lba_start + cluster_offset as u32 + sector_offset as u32,
+                    &mut cluster_bytes[sector_start..sector_end],
+                )
+                .map_err(|_| "failed to read cluster sector")?;
+        }
+
+        let read_size = cluster_size.min(file_size - byte_offset);
+        bytes[byte_offset..byte_offset + read_size].copy_from_slice(&cluster_bytes[..read_size]);
+        byte_offset += read_size;
+
+        if byte_offset >= file_size {
+            break;
+        }
+
+        // Go to the next cluster and continue reading.
+        current_cluster = {
+            // VFAT stores FAT entries the same as FAT32.
+            let fat_offset = current_cluster * 4;
+            let first_fat_sector = boot_sector.reserved_sector_count();
+            let fat_sector = first_fat_sector + (fat_offset / SECTOR_SIZE);
+            let entry_offset = fat_offset % SECTOR_SIZE;
+
+            let mut sector = [0; SECTOR_SIZE];
+            drive
+                .read(lba_start + fat_sector as u32, &mut sector)
+                .map_err(|_| "failed to read sector for FAT entry")?;
+
+            let entry_addr = u32::from_le_bytes([
+                sector[entry_offset],
+                sector[entry_offset + 1],
+                sector[entry_offset + 2],
+                sector[entry_offset + 3],
+            ]);
+
+            // The highest 4 bits are reserved.
+            (entry_addr & 0x0FFF_FFFF) as usize
+        };
+
+        if current_cluster == BAD_CLUSTER_INDEX as usize {
+            return Err("encountered bad cluster");
+        }
+    }
+
+    Ok(bytes)
 }
 
 pub fn enumerate_drives() -> Vec<Drive> {
