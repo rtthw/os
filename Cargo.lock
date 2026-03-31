@@ -1854,6 +1854,7 @@ dependencies = [
  "time",
  "virtio",
  "x2apic",
+ "x86-port",
  "x86_64",
 ]
 

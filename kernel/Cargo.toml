@@ -18,3 +18,4 @@ time = { path = "../crates/time" }
 virtio = { path = "../drivers/virtio" }
 x2apic = "0.5.0"
 x86_64 = "0.15.4"
+x86-port = { path = "../drivers/x86-port" }
