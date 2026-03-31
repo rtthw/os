@@ -5,18 +5,11 @@
 //! [linker]: https://en.wikipedia.org/wiki/Linker_(computing)
 //! [loader]: https://en.wikipedia.org/wiki/Loader_(computing)
 
-// #![no_std]
+#![no_std]
 #![feature(fn_ptr_trait)]
 
-// #[macro_use]
-// extern crate alloc;
-
-use std::{
-    collections::{BTreeSet, HashMap},
-    marker::FnPtr,
-    ops::Range,
-    sync::{Arc, Weak},
-};
+#[cfg_attr(test, macro_use)]
+extern crate alloc;
 
 #[cfg(target_arch = "x86_64")]
 use abi::elf::Rela;
@@ -28,6 +21,14 @@ use {
         },
         mem::{MapFlags, MemoryMap},
     },
+    alloc::{
+        collections::BTreeSet,
+        string::{String, ToString as _},
+        sync::{Arc, Weak},
+        vec::Vec,
+    },
+    core::{marker::FnPtr, ops::Range},
+    hashbrown::HashMap,
     spin_mutex::Mutex,
 };
 
