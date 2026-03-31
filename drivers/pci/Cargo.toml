@@ -8,3 +8,4 @@ path = "src/pci.rs"
 
 [dependencies]
 bit-utils = { path = "../../crates/bit-utils" }
+x86-port = { path = "../x86-port" }

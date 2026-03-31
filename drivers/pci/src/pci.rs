@@ -11,7 +11,7 @@ mod pci_class;
 use {
     alloc::vec::Vec,
     bit_utils::{bit_field, bit_range},
-    core::{arch::asm, fmt::Debug},
+    core::fmt::Debug,
 };
 
 pub use {pci_capability::*, pci_class::*};
@@ -57,8 +57,8 @@ pub unsafe fn read(bus: u8, device: u8, function: u8, offset: u8) -> u32 {
         ((bus << 16) | (device << 11) | (function << 8) | (offset & 0xFC) | 0x80000000) as u32;
 
     unsafe {
-        write_to_port(CONFIG_ADDRESS, address);
-        read_from_port()
+        x86_port::write_u32(CONFIG_ADDRESS, address);
+        x86_port::read_u32(CONFIG_DATA)
     }
 }
 
@@ -72,8 +72,8 @@ pub unsafe fn write(bus: u8, device: u8, function: u8, offset: u8, value: u32) {
         ((bus << 16) | (device << 11) | (function << 8) | (offset & 0xfc) | 0x80000000) as u32;
 
     unsafe {
-        write_to_port(CONFIG_ADDRESS, address);
-        write_to_port(CONFIG_DATA, value);
+        x86_port::write_u32(CONFIG_ADDRESS, address);
+        x86_port::write_u32(CONFIG_DATA, value);
     }
 }
 
@@ -446,31 +446,6 @@ bit_field! {
 }
 
 
-
-unsafe fn read_from_port() -> u32 {
-    let value: u32;
-    unsafe {
-        asm!(
-            "in eax, dx",
-            out("eax") value,
-            in("dx") 0xCFC,
-            options(nomem, nostack, preserves_flags),
-        );
-    }
-
-    value
-}
-
-unsafe fn write_to_port(port: u16, value: u32) {
-    unsafe {
-        asm!(
-            "out dx, eax",
-            in("dx") port,
-            in("eax") value,
-            options(nomem, nostack, preserves_flags),
-        );
-    }
-}
 
 fn get_capabilities(bus: u8, device: u8, function: u8) -> Vec<DeviceCapability> {
     let mut offset = {

@@ -1,0 +1,9 @@
+[package]
+name = "x86-port"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/x86_port.rs"
+
+[dependencies]
