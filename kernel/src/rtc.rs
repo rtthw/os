@@ -1,9 +1,6 @@
 //! # Real Time Clock (RTC)
 
-use {
-    core::{fmt, ops::Add},
-    x86_64::instructions::port::Port,
-};
+use core::{fmt, ops::Add};
 
 const CMOS_COMMAND_PORT: u16 = 0x70;
 const CMOS_DATA_PORT: u16 = 0x71;
@@ -178,8 +175,8 @@ const fn convert_bcd(value: u8) -> u8 {
 
 fn read_cmos(register: u8) -> u8 {
     unsafe {
-        Port::new(CMOS_COMMAND_PORT).write(CMOS_DISABLE_NMI | register);
-        Port::new(CMOS_DATA_PORT).read()
+        x86_port::write_u8(CMOS_COMMAND_PORT, CMOS_DISABLE_NMI | register);
+        x86_port::read_u8(CMOS_DATA_PORT)
     }
 }
 

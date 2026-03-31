@@ -7,7 +7,6 @@ use {
     core::ptr::NonNull,
     log::{debug, info, warn},
     time::MICROS_PER_SECOND,
-    x86_64::instructions::port::Port,
 };
 
 
@@ -85,11 +84,10 @@ pub fn pm_timer_sleep(microseconds: u32) -> Result<(), &'static str> {
         let Some(port) = PM_TIMER_PORT else {
             return Err("ACPI PM timer unavailable");
         };
-        let mut port = Port::<u32>::new(port);
-        let start = port.read();
+        let start = x86_port::read_u32(port);
         let end = start + ((PM_TIMER_FREQ * microseconds) / MICROS_PER_SECOND as u32);
 
-        while port.read() < end {}
+        while x86_port::read_u32(port) < end {}
 
         Ok(())
     }
