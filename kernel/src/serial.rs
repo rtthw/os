@@ -1,10 +1,8 @@
 //! # Serial Port
 
 use {
-    core::fmt::Write,
-    log::LogLevel,
-    spin_mutex::Mutex,
-    x86_64::instructions::{interrupts::without_interrupts, port::Port},
+    core::fmt::Write, log::LogLevel, spin_mutex::Mutex,
+    x86_64::instructions::interrupts::without_interrupts,
 };
 
 
@@ -124,37 +122,43 @@ impl SerialPort {
         const PIN_OUT2: u8 = 0b_0000_1000;
 
         unsafe {
-            let mut data_port = Port::<u8>::new(self.0);
-            let mut interrupt_enable = Port::<u8>::new(self.0 + INTERRUPT_ENABLE_REGISTER);
-            let mut fifo_control = Port::<u8>::new(self.0 + FIFO_CONTROL_REGISTER);
-            let mut line_control = Port::<u8>::new(self.0 + LINE_CONTROL_REGISTER);
-            let mut modem_control = Port::<u8>::new(self.0 + MODEM_CONTROL_REGISTER);
+            let data_port = self.0;
+            let interrupt_enable = self.0 + INTERRUPT_ENABLE_REGISTER;
+            let fifo_control = self.0 + FIFO_CONTROL_REGISTER;
+            let line_control = self.0 + LINE_CONTROL_REGISTER;
+            let modem_control = self.0 + MODEM_CONTROL_REGISTER;
 
             // Disable interrupts.
-            interrupt_enable.write(0);
+            x86_port::write_u8(interrupt_enable, 0);
 
             // Set the divisor latch access bit (DLAB).
-            line_control.write(DLAB);
+            x86_port::write_u8(line_control, DLAB);
 
             // Set the baud rate. See the OSDev article for more:
             //      https://wiki.osdev.org/Serial_Ports#Baud_Rate
-            data_port.write(DIVISOR_LSB);
-            interrupt_enable.write(DIVISOR_MSB);
+            x86_port::write_u8(data_port, DIVISOR_LSB);
+            x86_port::write_u8(interrupt_enable, DIVISOR_MSB);
 
             // Finish setting the baud rate by clearing the DLAB, and at the same time set
             // the word length to 8 bits. I know `& !DLAB` isn't doing anything, it's easier
             // to read this way.
-            line_control.write(WORD_LEN_8BIT & !DLAB);
+            x86_port::write_u8(line_control, WORD_LEN_8BIT & !DLAB);
 
             // Enable FIFO, clear it, and set the interrupt trigger level to 14 bytes.
-            fifo_control.write(FIFO_ENABLE | FIFO_CLEAR_SEND | FIFO_CLEAR_RECV | FIFO_INT_LEVEL_14);
+            x86_port::write_u8(
+                fifo_control,
+                FIFO_ENABLE | FIFO_CLEAR_SEND | FIFO_CLEAR_RECV | FIFO_INT_LEVEL_14,
+            );
 
             // Set the data terminal ready pin, signal request to send, and enable hardware
             // pin OUT2 (enable IRQ).
-            modem_control.write(DATA_TERMINAL_READY | REQUEST_TO_SEND | PIN_OUT2);
+            x86_port::write_u8(
+                modem_control,
+                DATA_TERMINAL_READY | REQUEST_TO_SEND | PIN_OUT2,
+            );
 
             // Enable interrupts.
-            interrupt_enable.write(1);
+            x86_port::write_u8(interrupt_enable, 1);
         }
     }
 
@@ -185,7 +189,7 @@ impl SerialPort {
     pub fn try_send(&mut self, byte: u8) -> bool {
         if self.line_output_empty() {
             unsafe {
-                Port::<u8>::new(self.0).write(byte);
+                x86_port::write_u8(self.0, byte);
             }
 
             true
@@ -195,7 +199,7 @@ impl SerialPort {
     }
 
     pub fn read_line_status(&self) -> u8 {
-        unsafe { Port::<u8>::new(self.0 + LINE_STATUS_REGISTER).read() }
+        unsafe { x86_port::read_u8(self.0 + LINE_STATUS_REGISTER) }
     }
 
     pub fn line_output_empty(&self) -> bool {
