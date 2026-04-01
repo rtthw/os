@@ -21,6 +21,7 @@ mod rtc;
 mod scheduler;
 mod serial;
 mod tsc;
+mod vfat;
 mod window_manager;
 
 use {
