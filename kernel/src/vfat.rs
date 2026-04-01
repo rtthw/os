@@ -97,8 +97,8 @@ fn read_file_bytes(
     let mut byte_offset = 0;
     let cluster_size = boot_sector.sectors_per_cluster as usize * SECTOR_SIZE;
 
-    const MAX_CLUSTER_INDEX: u32 = 0x0FFF_FFF8;
-    const BAD_CLUSTER_INDEX: u32 = 0x0FFF_FFF7;
+    const MAX_CLUSTER_INDEX: u32 = 0xFFF8;
+    const BAD_CLUSTER_INDEX: u32 = 0xFFF7;
 
     let mut current_cluster = first_cluster;
     while current_cluster < MAX_CLUSTER_INDEX as usize {
@@ -114,8 +114,6 @@ fn read_file_bytes(
         for sector_offset in 0..max_sector {
             let sector_start = sector_offset * SECTOR_SIZE;
             let sector_end = sector_start + SECTOR_SIZE;
-
-            // log::trace!("\t{sector_offset:x} | {sector_start}..{sector_end}");
 
             drive
                 .read(
@@ -135,8 +133,8 @@ fn read_file_bytes(
 
         // Go to the next cluster and continue reading.
         current_cluster = {
-            // VFAT stores FAT entries the same as FAT32.
-            let fat_offset = current_cluster * 4;
+            // VFAT stores FAT entries the same as FAT16.
+            let fat_offset = current_cluster * 2;
             let first_fat_sector = boot_sector.reserved_sector_count();
             let fat_sector = first_fat_sector + (fat_offset / SECTOR_SIZE);
             let entry_offset = fat_offset % SECTOR_SIZE;
@@ -146,15 +144,7 @@ fn read_file_bytes(
                 .read(lba_start + fat_sector as u32, &mut sector)
                 .map_err(|_| "failed to read sector for FAT entry")?;
 
-            let entry_addr = u32::from_le_bytes([
-                sector[entry_offset],
-                sector[entry_offset + 1],
-                sector[entry_offset + 2],
-                sector[entry_offset + 3],
-            ]);
-
-            // The highest 4 bits are reserved.
-            (entry_addr & 0x0FFF_FFFF) as usize
+            u16::from_le_bytes([sector[entry_offset], sector[entry_offset + 1]]) as usize
         };
 
         if current_cluster == BAD_CLUSTER_INDEX as usize {
