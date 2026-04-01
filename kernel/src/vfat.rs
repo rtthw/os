@@ -1,15 +1,11 @@
 //! # Virtual File Allocation Table (VFAT)
 
-use core::fmt;
-
-use {alloc::collections::vec_deque::VecDeque, log::error};
-
 use {
-    alloc::{string::String, vec::Vec},
-    log::debug,
+    crate::ata::Drive,
+    alloc::{collections::vec_deque::VecDeque, string::String, vec::Vec},
+    core::fmt,
+    log::{debug, error},
 };
-
-use crate::ata::Drive;
 
 const SECTOR_SIZE: usize = 512;
 
@@ -109,10 +105,17 @@ fn read_file_bytes(
         let cluster_offset = boot_sector.data_sector_offset()
             + ((current_cluster - 2) * boot_sector.sectors_per_cluster());
 
+        // log::trace!("READ_CLUSTER @ {current_cluster} => {cluster_offset}");
+
         let mut cluster_bytes = vec![0; cluster_size];
-        for sector_offset in 0..boot_sector.sectors_per_cluster() {
+        let max_sector = boot_sector
+            .sectors_per_cluster()
+            .min(file_size.div_ceil(SECTOR_SIZE));
+        for sector_offset in 0..max_sector {
             let sector_start = sector_offset * SECTOR_SIZE;
             let sector_end = sector_start + SECTOR_SIZE;
+
+            // log::trace!("\t{sector_offset:x} | {sector_start}..{sector_end}");
 
             drive
                 .read(
