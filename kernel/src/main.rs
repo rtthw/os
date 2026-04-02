@@ -29,7 +29,6 @@ use {
     core::{arch::asm, time::Duration},
     log::{debug, info, warn},
     memory_types::PAGE_SIZE,
-    x86_64::structures::paging::OffsetPageTable,
 };
 
 
@@ -153,7 +152,6 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
 }
 
 static mut BOOT_INFO: Option<&'static BootInfo> = None;
-static mut PAGE_TABLE: Option<OffsetPageTable<'static>> = None;
 
 fn init_process() -> ! {
     let mut executor = executor::Executor::new();

@@ -1,11 +1,11 @@
 //! # User Input
 
 use {
-    crate::{PAGE_TABLE, memory::kernel_address_space, scheduler, window_manager},
+    crate::{memory::kernel_address_space, scheduler, window_manager},
     alloc::vec::Vec,
     log::warn,
     virtio::virtio_input,
-    x86_64::{VirtAddr, structures::paging::Translate},
+    x86_64::VirtAddr,
 };
 
 
