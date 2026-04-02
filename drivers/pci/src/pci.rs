@@ -89,6 +89,7 @@ pub struct Device {
     pub class: Class,
     pub subclass: u8,
     pub header_type: HeaderType,
+    pub interface: u8,
     pub interrupt_line: u8,
     pub interrupt_pin: u8,
 }
@@ -124,6 +125,7 @@ impl Device {
             class,
             subclass: reg_2.subclass(),
             header_type: HeaderType(reg_3.header_type()),
+            interface: reg_2.prog_if(),
             interrupt_line,
             interrupt_pin,
         })
@@ -278,7 +280,9 @@ impl Device {
 
 impl Debug for Device {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct(&format!("#{} '{}'", self.device, self.name()))
+        let mut debug_struct = f.debug_struct(&format!("#{} '{}'", self.device, self.name()));
+
+        debug_struct
             .field("id", &self.device_id)
             .field(
                 "vendor",
@@ -292,11 +296,17 @@ impl Debug for Device {
             .field("function", &self.function)
             .field("class", &self.class)
             .field("subclass", &self.subclass)
-            .field("header_type", &self.header_type)
-            .field(
-                "bars",
-                &(0..6).filter_map(|slot| self.bar(slot)).collect::<Vec<_>>(),
-            )
+            .field("header_type", &self.header_type);
+
+        for slot in 0..6 {
+            let Some(bar) = self.bar(slot) else {
+                continue;
+            };
+            debug_struct.field(&format!("bar_{slot}"), &bar);
+        }
+
+        debug_struct
+            .field("programming_interface", &self.interface)
             .field("interrupt_line", &self.interrupt_line)
             .field("interrupt_pin", &self.interrupt_pin)
             .field("capabilities", &self.capabilities())
