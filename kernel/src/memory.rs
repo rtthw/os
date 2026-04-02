@@ -9,10 +9,11 @@ use {
     spin_mutex::Mutex,
     x86_64::{
         VirtAddr,
-        registers::control::{Cr0, Cr0Flags},
+        instructions::interrupts::without_interrupts,
+        registers::control::{Cr0, Cr0Flags, Cr3},
         structures::paging::{
-            FrameAllocator as _, Mapper as _, OffsetPageTable, Page, PageTableFlags, PhysFrame,
-            Size4KiB, Translate as _,
+            FrameAllocator as ExternFrameAllocator, Mapper as _, OffsetPageTable, Page, PageTable,
+            PageTableFlags, PhysFrame, Size4KiB, Translate as _, page::PageRangeInclusive,
         },
     },
 };
@@ -25,8 +26,13 @@ static mut ALLOCATOR: LockedHeap = LockedHeap::empty();
 static FRAME_ALLOCATOR: Mutex<FrameAllocator> = Mutex::new(FrameAllocator::new());
 
 
-pub fn init(boot_info: &BootInfo, page_table: &mut OffsetPageTable) {
+pub fn init(boot_info: &BootInfo) {
     info!("Initializing memory management...");
+
+    init_kernel_address_space();
+    let addr_space = kernel_address_space();
+
+    assert!(addr_space.is_current());
 
     // Make sure write protection is off so we don't page fault when we try to write
     // to the read-only UEFI page tables.
@@ -39,37 +45,41 @@ pub fn init(boot_info: &BootInfo, page_table: &mut OffsetPageTable) {
         }
     }
 
-    let mut frame_allocator = FRAME_ALLOCATOR.lock();
-    frame_allocator.init(&boot_info.memory_map);
-    frame_allocator.reserve_range(PhysicalAddress::new(0), MEBIBYTE);
-    frame_allocator.reserve_range(
-        PhysicalAddress::new(boot_info.kernel_start),
-        boot_info.kernel_end - boot_info.kernel_start,
-    );
+    let free_frames = {
+        let mut frame_allocator = FRAME_ALLOCATOR.lock();
+        frame_allocator.init(&boot_info.memory_map);
+        frame_allocator.reserve_range(PhysicalAddress::new(0), MEBIBYTE);
+        frame_allocator.reserve_range(
+            PhysicalAddress::new(boot_info.kernel_start),
+            boot_info.kernel_end - boot_info.kernel_start,
+        );
 
-    let free_frames = frame_allocator.free_frames;
-    let total_frames = frame_allocator.total_frames;
-    let free_memory = (free_frames * PAGE_SIZE) / MEBIBYTE;
-    let total_memory = (total_frames * PAGE_SIZE) / MEBIBYTE;
-    info!(
-        "Physical memory allocator initialized\n\
+        let free_frames = frame_allocator.free_frames;
+        let total_frames = frame_allocator.total_frames;
+        let free_memory = (free_frames * PAGE_SIZE) / MEBIBYTE;
+        let total_memory = (total_frames * PAGE_SIZE) / MEBIBYTE;
+        info!(
+            "Physical memory allocator initialized\n\
         \tFree frames: {free_frames} / {total_frames}\n\
         \tFree memory: {free_memory} MiB / {total_memory} MiB",
-    );
+        );
 
-    match frame_allocator.allocate() {
-        Ok(frame) => {
-            debug!("    Allocated frame: {frame}");
-            if let Err(error) = frame_allocator.deallocate(frame) {
-                error!("    Failed to deallocate frame: {error:?}");
-            } else {
-                debug!("    Deallocated frame successfully");
+        match frame_allocator.allocate() {
+            Ok(frame) => {
+                debug!("    Allocated frame: {frame}");
+                if let Err(error) = frame_allocator.deallocate(frame) {
+                    error!("    Failed to deallocate frame: {error:?}");
+                } else {
+                    debug!("    Deallocated frame successfully");
+                }
+            }
+            Err(error) => {
+                error!("    Failed to allocate frame: {error:?}");
             }
         }
-        Err(error) => {
-            error!("    Failed to allocate frame: {error:?}");
-        }
-    }
+
+        free_frames
+    };
 
     let heap_size = (free_frames * PAGE_SIZE) / 2;
     let heap_start = VirtAddr::new(HEAP_BASE as u64);
@@ -80,25 +90,32 @@ pub fn init(boot_info: &BootInfo, page_table: &mut OffsetPageTable) {
         Page::range_inclusive(heap_start_page, heap_end_page)
     };
 
-    for page in heap_pages {
-        let frame = frame_allocator.allocate_frame().unwrap();
-        unsafe {
-            page_table
-                .map_to(
-                    page,
-                    frame,
-                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                    &mut *frame_allocator,
-                )
-                .unwrap()
-                .flush();
+    // Note that we can't use `addr_space.map_pages` here because it requires a heap
+    // to already be initialized (internally calls `Vec::push`).
+    {
+        let mut frame_allocator = FRAME_ALLOCATOR.lock();
+        let mut page_table = addr_space.page_table.lock();
+
+        for page in heap_pages {
+            let frame = frame_allocator.allocate_frame().unwrap();
+            unsafe {
+                page_table
+                    .map_to(
+                        page,
+                        frame,
+                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                        &mut *frame_allocator,
+                    )
+                    .unwrap()
+                    .flush();
+            }
         }
     }
 
     debug!(
         "Initializing heap at {:#x} ({} pages, {} MiB)...",
-        page_table
-            .translate_addr(heap_start)
+        addr_space
+            .translate_address(heap_start)
             .expect("should be able to translate HEAP_BASE after mapping it"),
         heap_size / PAGE_SIZE,
         heap_size / MEBIBYTE,
@@ -293,10 +310,110 @@ pub enum FrameAllocatorError {
     InvalidFrame,
 }
 
-unsafe impl x86_64::structures::paging::FrameAllocator<Size4KiB> for FrameAllocator {
+unsafe impl ExternFrameAllocator<Size4KiB> for FrameAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame> {
         self.allocate().ok().map(|frame| {
             PhysFrame::containing_address(x86_64::PhysAddr::new(frame.base_addr().to_raw() as u64))
         })
+    }
+}
+
+
+
+fn init_kernel_address_space() {
+    unsafe {
+        let (l4_frame, _) = Cr3::read();
+        let l4_ptr = l4_frame.start_address().as_u64() as *mut PageTable;
+
+        let page_table = OffsetPageTable::new(&mut *l4_ptr, VirtAddr::zero());
+
+        KERNEL_ADDRESS_SPACE = Some(AddressSpace {
+            frame: l4_frame,
+            frame_allocator: Mutex::new(FrameAllocatorProxy {
+                allocated_frames: Vec::new(),
+            }),
+            page_table: Mutex::new(page_table),
+        });
+    }
+}
+
+pub fn kernel_address_space<'a>() -> &'a AddressSpace {
+    unsafe {
+        KERNEL_ADDRESS_SPACE
+            .as_ref()
+            .expect("kernel address space should be initialized")
+    }
+}
+
+static mut KERNEL_ADDRESS_SPACE: Option<AddressSpace> = None;
+
+pub struct AddressSpace {
+    frame: PhysFrame,
+    frame_allocator: Mutex<FrameAllocatorProxy>,
+    page_table: Mutex<OffsetPageTable<'static>>,
+}
+
+impl AddressSpace {
+    pub fn is_current(&self) -> bool {
+        Cr3::read_raw().0 == self.frame
+    }
+
+    pub fn map_pages(&self, pages: PageRangeInclusive) {
+        let mut frame_allocator = self.frame_allocator.lock();
+        let mut page_table = self.page_table.lock();
+
+        for page in pages {
+            let frame = frame_allocator.allocate_frame().unwrap();
+            unsafe {
+                page_table
+                    .map_to(
+                        page,
+                        frame,
+                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                        &mut *frame_allocator,
+                    )
+                    .unwrap()
+                    .flush();
+            }
+        }
+    }
+
+    pub fn translate_address(&self, addr: VirtAddr) -> Option<x86_64::PhysAddr> {
+        self.page_table.lock().translate_addr(addr)
+    }
+}
+
+/// A proxy to the global [`FrameAllocator`]. Keeps track of allocated frames
+/// and deallocates them on drop.
+pub struct FrameAllocatorProxy {
+    allocated_frames: Vec<Frame>,
+}
+
+unsafe impl ExternFrameAllocator<Size4KiB> for FrameAllocatorProxy {
+    fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
+        let frame = without_interrupts(|| FRAME_ALLOCATOR.lock().allocate_frame());
+
+        if let Some(frame) = frame {
+            self.allocated_frames
+                .push(Frame::new(frame.start_address().as_u64() as usize));
+        }
+
+        frame
+    }
+}
+
+impl Drop for FrameAllocatorProxy {
+    fn drop(&mut self) {
+        without_interrupts(|| {
+            info!(
+                "Dropping frame allocator proxy with {} allocated frames",
+                self.allocated_frames.len(),
+            );
+
+            let mut global = FRAME_ALLOCATOR.lock();
+            for frame in self.allocated_frames.drain(..) {
+                let _ = global.deallocate(frame); // Ignore errors.
+            }
+        });
     }
 }

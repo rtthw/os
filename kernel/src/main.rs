@@ -94,20 +94,7 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
     gdt::init();
     idt::init();
 
-    let mut page_table = unsafe {
-        use x86_64::{
-            VirtAddr,
-            registers::control::Cr3,
-            structures::paging::{OffsetPageTable, PageTable},
-        };
-
-        let (l4_frame, _) = Cr3::read();
-        let l4_ptr = l4_frame.start_address().as_u64() as *mut PageTable;
-
-        OffsetPageTable::new(&mut *l4_ptr, VirtAddr::zero())
-    };
-
-    memory::init(boot_info, &mut page_table);
+    memory::init(boot_info);
 
     acpi::init(boot_info);
     tsc::init();
@@ -134,7 +121,6 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
 
     unsafe {
         BOOT_INFO = Some(boot_info);
-        PAGE_TABLE = Some(page_table);
     }
 
     info!("STARTUP SUCCESSFUL");

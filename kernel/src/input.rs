@@ -1,7 +1,7 @@
 //! # User Input
 
 use {
-    crate::{PAGE_TABLE, scheduler, window_manager},
+    crate::{PAGE_TABLE, memory::kernel_address_space, scheduler, window_manager},
     alloc::vec::Vec,
     log::warn,
     virtio::virtio_input,
@@ -22,10 +22,8 @@ pub enum InputEvent {
 pub fn dispatch_input_events() -> ! {
     let mut virtio_inputs = {
         let virtual_to_physical_addr = |vaddr| {
-            let page_table =
-                unsafe { PAGE_TABLE.as_ref().expect("page table should be available") };
-            page_table
-                .translate_addr(VirtAddr::new(vaddr as u64))
+            kernel_address_space()
+                .translate_address(VirtAddr::new(vaddr as u64))
                 .expect("should be able to translate virtual addresses to physical ones")
                 .as_u64() as usize
         };
