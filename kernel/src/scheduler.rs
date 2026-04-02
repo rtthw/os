@@ -1,28 +1,36 @@
 //! # Scheduler
 
 use {
-    crate::{KERNEL_STACK, KERNEL_STACK_SIZE, gdt},
+    crate::{
+        KERNEL_STACK, KERNEL_STACK_SIZE, gdt,
+        memory::{AddressSpace, kernel_address_space},
+    },
     alloc::{
         collections::{btree_map::BTreeMap, vec_deque::VecDeque},
         string::String,
-        vec::Vec,
     },
     core::{
         arch::asm,
         fmt,
         sync::atomic::{AtomicU64, Ordering},
     },
-    log::{info, warn},
+    log::{info, trace, warn},
     memory_types::PAGE_SIZE,
     spin_mutex::Mutex,
     x86_64::{
-        VirtAddr, instructions::interrupts::without_interrupts, registers::rflags::RFlags,
-        structures::idt::InterruptStackFrameValue,
+        VirtAddr,
+        instructions::interrupts::without_interrupts,
+        registers::rflags::RFlags,
+        structures::{
+            idt::InterruptStackFrameValue,
+            paging::{Page, PageTableFlags},
+        },
     },
 };
 
 
 const IDLE_PROCESS_ID: u64 = 0;
+const USER_STACK_TOP_ADDR: u64 = 0x4444_0000_0000;
 const DEFAULT_STACK_SIZE: usize = PAGE_SIZE * 8;
 
 pub fn run() -> ! {
@@ -105,7 +113,7 @@ impl Scheduler {
         self.add_to_queue(Process {
             id: IDLE_PROCESS_ID,
             name: "idle".into(),
-            stack: Vec::with_capacity(PAGE_SIZE),
+            address_space: AddressSpace::new(None),
             priority: Priority::Idle,
             context: Some(ExecutionContext {
                 registers: CpuRegisters::EMPTY,
@@ -139,9 +147,7 @@ impl Scheduler {
     fn schedule_next(&mut self) -> ExecutionContext {
         if self.current.is_none() {
             let process = self.next_ready();
-
-            // TODO: Load the process's address space.
-
+            process.address_space.enter();
             self.current = Some(process);
         }
 
@@ -185,8 +191,21 @@ impl Scheduler {
         let id = PROCESS_ID.fetch_add(1, Ordering::SeqCst);
         let name = name.into();
 
+        // TODO: Process address spaces shouldn't just inherit the kernel address space.
+
+        let address_space = AddressSpace::new(Some(kernel_address_space()));
+
         let stack_size = stack_size.unwrap_or(DEFAULT_STACK_SIZE);
-        let stack = Vec::<u8>::with_capacity(stack_size);
+        let stack_top_addr = VirtAddr::new(USER_STACK_TOP_ADDR);
+        {
+            let top_page = Page::containing_address(stack_top_addr);
+            let bottom_page = Page::containing_address(stack_top_addr - (stack_size as u64 - 1));
+            let stack_pages = Page::range_inclusive(bottom_page, top_page);
+            address_space.map_pages(
+                stack_pages,
+                PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+            );
+        }
 
         let context = ExecutionContext {
             registers: CpuRegisters::EMPTY,
@@ -194,7 +213,7 @@ impl Scheduler {
                 VirtAddr::from_ptr(entry_point),
                 gdt::selectors().kernel_code,
                 RFlags::INTERRUPT_FLAG,
-                VirtAddr::from_ptr(unsafe { stack.as_ptr().add(stack_size) }),
+                stack_top_addr,
                 gdt::selectors().kernel_data,
             ),
         };
@@ -203,7 +222,7 @@ impl Scheduler {
             id,
             name,
             priority: Priority::Normal,
-            stack,
+            address_space,
             context: Some(context),
         };
 
@@ -271,7 +290,7 @@ struct Process {
     id: u64,
     name: String,
     priority: Priority,
-    stack: Vec<u8>,
+    address_space: AddressSpace,
     context: Option<ExecutionContext>,
 }
 

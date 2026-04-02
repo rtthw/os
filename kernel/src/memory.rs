@@ -3,6 +3,7 @@
 use {
     alloc::vec::Vec,
     boot_info::{BootInfo, MemoryMap, MemoryRegionKind},
+    core::fmt,
     linked_list_allocator::LockedHeap,
     log::{debug, error, info, warn},
     memory_types::{Frame, GIBIBYTE, MEBIBYTE, PAGE_SIZE, PhysicalAddress},
@@ -10,7 +11,7 @@ use {
     x86_64::{
         VirtAddr,
         instructions::interrupts::without_interrupts,
-        registers::control::{Cr0, Cr0Flags, Cr3},
+        registers::control::{Cr0, Cr0Flags, Cr3, Cr3Flags},
         structures::paging::{
             FrameAllocator as ExternFrameAllocator, Mapper as _, OffsetPageTable, Page, PageTable,
             PageTableFlags, PhysFrame, Size4KiB, Translate as _, page::PageRangeInclusive,
@@ -353,12 +354,55 @@ pub struct AddressSpace {
     page_table: Mutex<OffsetPageTable<'static>>,
 }
 
+impl fmt::Debug for AddressSpace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "AddressSpace @ {:?}", self.frame)
+    }
+}
+
 impl AddressSpace {
+    pub fn new(inherit: Option<&AddressSpace>) -> Self {
+        let mut frame_allocator = FrameAllocatorProxy {
+            allocated_frames: Vec::new(),
+        };
+        let frame = frame_allocator
+            .allocate_frame()
+            .expect("failed to allocate frame for new address space");
+
+        let page_table = unsafe {
+            let l4_ptr = frame.start_address().as_u64() as *mut PageTable;
+
+            OffsetPageTable::new(&mut *l4_ptr, VirtAddr::zero())
+        };
+
+        if let Some(parent) = inherit {
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    parent.frame.start_address().as_u64() as *const u8,
+                    frame.start_address().as_u64() as *mut _,
+                    frame.size() as usize,
+                );
+            }
+        }
+
+        Self {
+            frame,
+            frame_allocator: Mutex::new(frame_allocator),
+            page_table: Mutex::new(page_table),
+        }
+    }
+
     pub fn is_current(&self) -> bool {
         Cr3::read_raw().0 == self.frame
     }
 
-    pub fn map_pages(&self, pages: PageRangeInclusive) {
+    pub fn enter(&self) {
+        unsafe {
+            Cr3::write(self.frame, Cr3Flags::empty());
+        }
+    }
+
+    pub fn map_pages(&self, pages: PageRangeInclusive, flags: PageTableFlags) {
         let mut frame_allocator = self.frame_allocator.lock();
         let mut page_table = self.page_table.lock();
 
@@ -366,12 +410,7 @@ impl AddressSpace {
             let frame = frame_allocator.allocate_frame().unwrap();
             unsafe {
                 page_table
-                    .map_to(
-                        page,
-                        frame,
-                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                        &mut *frame_allocator,
-                    )
+                    .map_to(page, frame, flags, &mut *frame_allocator)
                     .unwrap()
                     .flush();
             }
@@ -385,6 +424,7 @@ impl AddressSpace {
 
 /// A proxy to the global [`FrameAllocator`]. Keeps track of allocated frames
 /// and deallocates them on drop.
+#[derive(Debug)]
 pub struct FrameAllocatorProxy {
     allocated_frames: Vec<Frame>,
 }
