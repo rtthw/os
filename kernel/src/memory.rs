@@ -5,7 +5,7 @@ use {
     boot_info::{BootInfo, MemoryMap, MemoryRegionKind},
     core::fmt,
     linked_list_allocator::LockedHeap,
-    log::{debug, error, info, warn},
+    log::{debug, error, info, trace, warn},
     memory_types::{Frame, GIBIBYTE, MEBIBYTE, PAGE_SIZE, PhysicalAddress},
     spin_mutex::Mutex,
     x86_64::{
@@ -14,7 +14,8 @@ use {
         registers::control::{Cr0, Cr0Flags, Cr3, Cr3Flags},
         structures::paging::{
             FrameAllocator as ExternFrameAllocator, Mapper as _, OffsetPageTable, Page, PageTable,
-            PageTableFlags, PhysFrame, Size4KiB, Translate as _, page::PageRangeInclusive,
+            PageTableFlags, PhysFrame, Size4KiB, Translate as _, mapper::MapToError,
+            page::PageRangeInclusive,
         },
     },
 };
@@ -369,6 +370,8 @@ impl AddressSpace {
             .allocate_frame()
             .expect("failed to allocate frame for new address space");
 
+        trace!("New address space frame: {frame:?}");
+
         let page_table = unsafe {
             let l4_ptr = frame.start_address().as_u64() as *mut PageTable;
 
@@ -408,13 +411,60 @@ impl AddressSpace {
 
         for page in pages {
             let frame = frame_allocator.allocate_frame().unwrap();
+            // trace!("MAPPING {page:?} TO {frame:?}");
             unsafe {
-                page_table
-                    .map_to(page, frame, flags, &mut *frame_allocator)
-                    .unwrap()
-                    .flush();
+                match page_table.map_to(page, frame, flags, &mut *frame_allocator) {
+                    Ok(flush) => flush.flush(),
+                    Err(MapToError::PageAlreadyMapped(other_frame)) => {
+                        if other_frame == frame {
+                            // Everything is fine. This can happen because
+                            // `Scheduler::run_process` double maps the stack
+                            // pages for whatever reason.
+                        } else {
+                            panic!(
+                                "Attempted to map {page:?} to {frame:?} while it is already \
+                                mapped to {other_frame:?}",
+                            );
+                        }
+                    }
+                    Err(other_error) => panic!("Failed to map page: {other_error:?}"),
+                }
             }
         }
+    }
+
+    pub fn map_page(&self, page: Page, flags: PageTableFlags) {
+        let mut frame_allocator = self.frame_allocator.lock();
+        let mut page_table = self.page_table.lock();
+
+        let frame = frame_allocator.allocate_frame().unwrap();
+        unsafe {
+            page_table
+                .map_to(page, frame, flags, &mut *frame_allocator)
+                .unwrap()
+                .flush();
+        }
+    }
+
+    pub fn map_page_to(&self, page: Page, frame: PhysFrame, flags: PageTableFlags) {
+        let mut frame_allocator = self.frame_allocator.lock();
+        let mut page_table = self.page_table.lock();
+
+        unsafe {
+            page_table
+                .map_to(page, frame, flags, &mut *frame_allocator)
+                .unwrap()
+                .flush();
+        }
+    }
+
+    pub fn unmap_page(&self, page: Page) -> PhysFrame {
+        let mut page_table = self.page_table.lock();
+
+        let (frame, flush) = page_table.unmap(page).unwrap();
+        flush.flush();
+
+        frame
     }
 
     pub fn translate_address(&self, addr: VirtAddr) -> Option<x86_64::PhysAddr> {

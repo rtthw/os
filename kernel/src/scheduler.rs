@@ -8,13 +8,15 @@ use {
     alloc::{
         collections::{btree_map::BTreeMap, vec_deque::VecDeque},
         string::String,
+        vec::Vec,
     },
     core::{
         arch::asm,
         fmt,
         sync::atomic::{AtomicU64, Ordering},
     },
-    log::{info, trace, warn},
+    elf::SectionHeaderType,
+    log::{info, warn},
     memory_types::PAGE_SIZE,
     spin_mutex::Mutex,
     x86_64::{
@@ -23,7 +25,7 @@ use {
         registers::rflags::RFlags,
         structures::{
             idt::InterruptStackFrameValue,
-            paging::{Page, PageTableFlags},
+            paging::{Page, PageTableFlags, PhysFrame},
         },
     },
 };
@@ -32,6 +34,8 @@ use {
 const IDLE_PROCESS_ID: u64 = 0;
 const USER_STACK_TOP_ADDR: u64 = 0x4444_0000_0000;
 const DEFAULT_STACK_SIZE: usize = PAGE_SIZE * 8;
+
+static PROCESS_ID: AtomicU64 = AtomicU64::new(IDLE_PROCESS_ID + 1);
 
 pub fn run() -> ! {
     SCHEDULER.lock().init();
@@ -186,8 +190,6 @@ impl Scheduler {
         entry_point: *const fn() -> !,
         stack_size: Option<usize>,
     ) {
-        static PROCESS_ID: AtomicU64 = AtomicU64::new(IDLE_PROCESS_ID + 1);
-
         let id = PROCESS_ID.fetch_add(1, Ordering::SeqCst);
         let name = name.into();
 
@@ -211,6 +213,95 @@ impl Scheduler {
             registers: CpuRegisters::EMPTY,
             frame: InterruptStackFrameValue::new(
                 VirtAddr::from_ptr(entry_point),
+                gdt::selectors().kernel_code,
+                RFlags::INTERRUPT_FLAG,
+                stack_top_addr,
+                gdt::selectors().kernel_data,
+            ),
+        };
+
+        let process = Process {
+            id,
+            name,
+            priority: Priority::Normal,
+            address_space,
+            context: Some(context),
+        };
+
+        info!("Running {process}");
+
+        self.add_to_queue(process);
+    }
+
+    pub fn run_process_from_bytes(
+        &mut self,
+        name: impl Into<String>,
+        bytes: Vec<u8>,
+        stack_size: Option<usize>,
+    ) {
+        let id = PROCESS_ID.fetch_add(1, Ordering::SeqCst);
+        let name = name.into();
+
+        // TODO: Process address spaces shouldn't just inherit the kernel address space.
+
+        let address_space = AddressSpace::new(Some(kernel_address_space()));
+        let user_code_addr = VirtAddr::new(USER_STACK_TOP_ADDR + PAGE_SIZE as u64 * 8);
+        let user_code_page = Page::containing_address(user_code_addr);
+
+        // FIXME: This only works with programs that fit within a single page.
+
+        address_space.map_page(
+            user_code_page,
+            PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+        );
+        let user_code_frame =
+            PhysFrame::containing_address(address_space.translate_address(user_code_addr).unwrap());
+
+        kernel_address_space().map_page_to(
+            user_code_page,
+            user_code_frame,
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+        );
+
+        let elf = elf::ElfFile::new(&bytes).unwrap();
+        for section in elf.section_iter() {
+            if section.get_type().unwrap() == SectionHeaderType::Null {
+                continue;
+            }
+            if section.size() == 0 {
+                continue;
+            }
+
+            let name = section.get_name(&elf).unwrap();
+            if name == ".text.main" {
+                let offset = section.offset() as usize;
+                let size = section.size() as usize;
+                unsafe {
+                    let dst =
+                        core::slice::from_raw_parts_mut(user_code_addr.as_mut_ptr(), PAGE_SIZE);
+                    dst[..size].copy_from_slice(&bytes[offset..(offset + size)]);
+                }
+            }
+        }
+
+        kernel_address_space().unmap_page(user_code_page);
+
+        let stack_size = stack_size.unwrap_or(DEFAULT_STACK_SIZE);
+        let stack_top_addr = VirtAddr::new(USER_STACK_TOP_ADDR);
+        {
+            let top_page = Page::containing_address(stack_top_addr);
+            let bottom_page = Page::containing_address(stack_top_addr - (stack_size as u64 + 1));
+            let stack_pages = Page::range_inclusive(bottom_page, top_page);
+            address_space.map_pages(
+                stack_pages,
+                PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+            );
+        }
+
+        let context = ExecutionContext {
+            registers: CpuRegisters::EMPTY,
+            frame: InterruptStackFrameValue::new(
+                user_code_addr,
                 gdt::selectors().kernel_code,
                 RFlags::INTERRUPT_FLAG,
                 stack_top_addr,

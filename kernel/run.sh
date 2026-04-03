@@ -29,8 +29,19 @@ fi
 cd ../bootloader
     cargo build --release
 
+# Build the example program.
+cd ..
+    rustc example/src/example.rs \
+        --out-dir=kernel/esp \
+        --crate-type=lib \
+        --emit=obj \
+        -L tests/output \
+        -C panic=abort \
+        -C relocation-model=static \
+        -Z share-generics=no
+
 # Build the kernel.
-cd ../kernel
+cd kernel
     cargo rustc \
 		--release \
 		--manifest-path "$SOURCE_DIR/Cargo.toml" \

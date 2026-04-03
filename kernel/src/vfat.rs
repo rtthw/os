@@ -1,7 +1,7 @@
 //! # Virtual File Allocation Table (VFAT)
 
 use {
-    crate::ata::Drive,
+    crate::{ata::Drive, scheduler::with_scheduler},
     alloc::{collections::vec_deque::VecDeque, string::String, vec::Vec},
     core::fmt,
     log::{debug, error},
@@ -68,8 +68,7 @@ pub fn init(drive: &mut Drive, lba_start: u32, lba_sector_count: u32) {
                 entry.cluster_index(),
             );
 
-            // I put a copy of the README in the esp directory for testing.
-            if file_name.ends_with(".md") {
+            if file_name == "example.o" {
                 let bytes = read_file_bytes(
                     drive,
                     lba_start,
@@ -79,7 +78,9 @@ pub fn init(drive: &mut Drive, lba_start: u32, lba_sector_count: u32) {
                 )
                 .unwrap();
 
-                debug!("DATA:\n{:?}", String::from_utf8(bytes));
+                with_scheduler(|scheduler| {
+                    scheduler.run_process_from_bytes("Example", bytes, None);
+                });
             }
         }
     }
