@@ -43,7 +43,7 @@ pub fn run() -> ! {
 }
 
 #[macro_export]
-macro_rules! define_interrupt_handler_with_preemption {
+macro_rules! define_interrupt_handler_with_context {
     ($name:ident { $($body:tt)* }) => {
         #[unsafe(naked)]
         pub extern "x86-interrupt" fn $name(
@@ -79,7 +79,7 @@ macro_rules! define_interrupt_handler_with_preemption {
             extern "C" fn __handler(context: ExecutionContext) -> ! {
                 assert!(!::x86_64::instructions::interrupts::are_enabled());
 
-                with_scheduler(|scheduler| scheduler.preempt_current_context(context));
+                with_scheduler(|scheduler| scheduler.set_current_context(context));
 
                 {
                     $($body)*
@@ -163,7 +163,7 @@ impl Scheduler {
             .expect("current process should have a context")
     }
 
-    pub fn preempt_current_context(&mut self, context: ExecutionContext) {
+    pub fn set_current_context(&mut self, context: ExecutionContext) {
         let prev_context = self
             .current
             .as_mut()
@@ -172,7 +172,9 @@ impl Scheduler {
             .replace(context);
 
         assert!(prev_context.is_none());
+    }
 
+    pub fn preempt_current(&mut self) {
         if self.queue.is_empty() {
             warn!("Attempted preemption with an empty ready queue");
         } else {
@@ -365,8 +367,8 @@ pub fn schedule() -> ! {
 
 pub const DEFER_INTERRUPT_NUMBER: u8 = 0x40; // TODO: Choose a less arbitrary number.
 
-define_interrupt_handler_with_preemption!(defer_interrupt_handler {
-    // Do nothing, allow preemption.
+define_interrupt_handler_with_context!(defer_interrupt_handler {
+    with_scheduler(|scheduler| scheduler.preempt_current());
 });
 
 /// Defer execution to the scheduler.

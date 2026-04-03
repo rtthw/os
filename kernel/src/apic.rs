@@ -1,7 +1,7 @@
 //! # Advanced Programmable Interrupt Controller (APIC)
 
 use {
-    crate::define_interrupt_handler_with_preemption,
+    crate::define_interrupt_handler_with_context,
     acpi::platform::interrupt::Apic,
     core::sync::atomic::{AtomicU64, Ordering},
     log::info,
@@ -43,9 +43,10 @@ pub fn init(info: Apic) {
     }
 }
 
-define_interrupt_handler_with_preemption!(timer_interrupt_handler {
+define_interrupt_handler_with_context!(timer_interrupt_handler {
     TICKS.fetch_add(1, Ordering::Acquire);
     end_of_interrupt();
+    with_scheduler(|scheduler| scheduler.preempt_current());
 });
 
 fn end_of_interrupt() {
