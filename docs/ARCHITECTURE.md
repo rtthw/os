@@ -5,12 +5,9 @@
 
 The project consists of 3 major components:
 
-- Bare metal operating system kernel (in [/kernel](../kernel)).
+- Bare metal operating system kernel (in [/kernel](../kernel), with a simple example program in [/example](../example)).
 - UEFI Bootloader (in [/bootloader](../bootloader)).
-- Linux distribution (in [/linux](../linux), with an example application in [/example](../example)).
-
-> [!NOTE]
-> The Linux distribution is likely to be deprecated once the kernel is in a usable state. Not that it ever worked properly anyway.
+- **Mostly deprecated** Linux distribution (in [/linux](../linux)).
 
 The [/crates](../crates) directory contains various crates (e.g. [`boot-info`](../crates/boot-info)) used by one or more of the major components.
 
@@ -39,6 +36,6 @@ The [/drivers](../drivers) directory contains device drivers used by the kernel.
 - [/drivers](../drivers)
   - [/pci](../crates/pci) ✔️
   - [/virtio](../crates/virtio) ✔️
-- [/example](../example) ❌
+- [/example](../example) ✔️
 - [/kernel](../kernel) ✔️
 - [/linux](../linux) ❌
