@@ -247,7 +247,7 @@ impl Scheduler {
         // TODO: Process address spaces shouldn't just inherit the kernel address space.
 
         let address_space = AddressSpace::new(Some(kernel_address_space()));
-        let user_code_addr = VirtAddr::new(USER_STACK_TOP_ADDR + PAGE_SIZE as u64 * 8);
+        let user_code_addr = VirtAddr::new(USER_STACK_TOP_ADDR + PAGE_SIZE as u64);
         let user_code_page = Page::containing_address(user_code_addr);
 
         // FIXME: This only works with programs that fit within a single page.
@@ -256,14 +256,8 @@ impl Scheduler {
             user_code_page,
             PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
         );
-        let user_code_frame =
-            PhysFrame::containing_address(address_space.translate_address(user_code_addr).unwrap());
 
-        kernel_address_space().map_page_to(
-            user_code_page,
-            user_code_frame,
-            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-        );
+        address_space.enter();
 
         let elf = elf::ElfFile::new(&bytes).unwrap();
         for section in elf.section_iter() {
@@ -282,21 +276,24 @@ impl Scheduler {
                     let dst =
                         core::slice::from_raw_parts_mut(user_code_addr.as_mut_ptr(), PAGE_SIZE);
                     dst[..size].copy_from_slice(&bytes[offset..(offset + size)]);
+                    dst[size..].fill(0);
                 }
             }
         }
 
-        kernel_address_space().unmap_page(user_code_page);
+        kernel_address_space().enter();
 
         let stack_size = stack_size.unwrap_or(DEFAULT_STACK_SIZE);
         let stack_top_addr = VirtAddr::new(USER_STACK_TOP_ADDR);
         {
             let top_page = Page::containing_address(stack_top_addr);
-            let bottom_page = Page::containing_address(stack_top_addr - (stack_size as u64 + 1));
+            let bottom_page = Page::containing_address(stack_top_addr - stack_size as u64);
             let stack_pages = Page::range_inclusive(bottom_page, top_page);
             address_space.map_pages(
                 stack_pages,
-                PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+                PageTableFlags::PRESENT
+                    | PageTableFlags::WRITABLE
+                    | PageTableFlags::USER_ACCESSIBLE,
             );
         }
 

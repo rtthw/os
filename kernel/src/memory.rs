@@ -446,27 +446,6 @@ impl AddressSpace {
         }
     }
 
-    pub fn map_page_to(&self, page: Page, frame: PhysFrame, flags: PageTableFlags) {
-        let mut frame_allocator = self.frame_allocator.lock();
-        let mut page_table = self.page_table.lock();
-
-        unsafe {
-            page_table
-                .map_to(page, frame, flags, &mut *frame_allocator)
-                .unwrap()
-                .flush();
-        }
-    }
-
-    pub fn unmap_page(&self, page: Page) -> PhysFrame {
-        let mut page_table = self.page_table.lock();
-
-        let (frame, flush) = page_table.unmap(page).unwrap();
-        flush.flush();
-
-        frame
-    }
-
     pub fn translate_address(&self, addr: VirtAddr) -> Option<x86_64::PhysAddr> {
         self.page_table.lock().translate_addr(addr)
     }
