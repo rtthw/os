@@ -105,7 +105,9 @@ pub fn init(boot_info: &BootInfo) {
                     .map_to(
                         page,
                         frame,
-                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                        PageTableFlags::PRESENT
+                            | PageTableFlags::WRITABLE
+                            | PageTableFlags::USER_ACCESSIBLE,
                         &mut *frame_allocator,
                     )
                     .unwrap()

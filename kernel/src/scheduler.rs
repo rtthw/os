@@ -25,7 +25,7 @@ use {
         registers::rflags::RFlags,
         structures::{
             idt::InterruptStackFrameValue,
-            paging::{Page, PageTableFlags, PhysFrame},
+            paging::{Page, PageTableFlags},
         },
     },
 };
@@ -363,15 +363,39 @@ pub fn schedule() -> ! {
 }
 
 pub const DEFER_INTERRUPT_NUMBER: u8 = 0x40; // TODO: Choose a less arbitrary number.
+pub const EXIT_INTERRUPT_NUMBER: u8 = 0x41;
 
 define_interrupt_handler_with_context!(defer_interrupt_handler {
     with_scheduler(|scheduler| scheduler.preempt_current());
+});
+
+define_interrupt_handler_with_context!(exit_interrupt_handler {
+    // Exiting the current process is as simple as dropping it. The process
+    // will no longer exist within the run queue, and its allocated frames will
+    // be deallocated when the address space is dropped.
+
+    kernel_address_space().enter(); // ???: Is this necessary?
+    if let Some(process) = with_scheduler(|scheduler| scheduler.current.take()) {
+        info!("Exiting {process}");
+    } else {
+        unreachable!()
+    }
+
+    // Immediately after this block is finished, `Scheduler::schedule_next` is
+    // called to set the next execution context.
 });
 
 /// Defer execution to the scheduler.
 pub fn defer() {
     unsafe {
         core::arch::asm!("int 0x40");
+    }
+}
+
+/// Exit the current process.
+pub fn exit() {
+    unsafe {
+        core::arch::asm!("int 0x41");
     }
 }
 

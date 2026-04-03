@@ -36,7 +36,10 @@ pub fn init() {
 
         IDT[scheduler::DEFER_INTERRUPT_NUMBER]
             .set_handler_fn(scheduler::defer_interrupt_handler)
-            .set_stack_index(gdt::DEFER_IST);
+            .set_stack_index(gdt::USER_IST);
+        IDT[scheduler::EXIT_INTERRUPT_NUMBER]
+            .set_handler_fn(scheduler::exit_interrupt_handler)
+            .set_stack_index(gdt::USER_IST);
 
         IDT.load();
     }

@@ -1,7 +1,10 @@
 //! # Window Manager
 
 use {
-    crate::{BOOT_INFO, input, rtc, scheduler::with_scheduler},
+    crate::{
+        BOOT_INFO, input, rtc,
+        scheduler::{self, with_scheduler},
+    },
     boot_info::BootInfo,
     crossbeam_queue::ArrayQueue,
     framebuffer::{Color, Framebuffer},
@@ -157,6 +160,11 @@ impl WindowManager {
                         0,
                         0,
                     );
+                }
+                input::InputEvent::KeyPress {
+                    code: virtio::virtio_input::codes::KEY_Q,
+                } => {
+                    scheduler::exit();
                 }
                 other => {
                     trace!("UNHANDLED USER INPUT: {other:?}");

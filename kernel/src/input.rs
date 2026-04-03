@@ -47,7 +47,18 @@ pub fn dispatch_input_events() -> ! {
             for input_event in input_device.poll() {
                 // trace!("RAW_INPUT: {input_event:?}");
                 if let Some(event) = convert_input_event(input_event) {
+                    let exit = matches!(
+                        event,
+                        InputEvent::KeyPress {
+                            code: virtio_input::codes::KEY_Q,
+                        },
+                    );
+
                     window_manager::send_event(window_manager::Event::UserInput(event));
+
+                    if exit {
+                        scheduler::exit();
+                    }
                 }
             }
         }
