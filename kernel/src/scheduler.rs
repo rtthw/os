@@ -32,7 +32,7 @@ use {
 
 
 const IDLE_PROCESS_ID: u64 = 0;
-const USER_STACK_TOP_ADDR: u64 = 0x4444_0000_0000;
+const USER_CODE_ADDR: u64 = 0x4444_0000_0000;
 const DEFAULT_STACK_SIZE: usize = PAGE_SIZE * 8;
 
 static PROCESS_ID: AtomicU64 = AtomicU64::new(IDLE_PROCESS_ID + 1);
@@ -200,10 +200,10 @@ impl Scheduler {
         let address_space = AddressSpace::new(Some(kernel_address_space()));
 
         let stack_size = stack_size.unwrap_or(DEFAULT_STACK_SIZE);
-        let stack_top_addr = VirtAddr::new(USER_STACK_TOP_ADDR);
+        let stack_top_addr = VirtAddr::new(USER_CODE_ADDR);
         {
-            let top_page = Page::containing_address(stack_top_addr);
-            let bottom_page = Page::containing_address(stack_top_addr - (stack_size as u64 - 1));
+            let top_page = Page::containing_address(stack_top_addr - 1);
+            let bottom_page = Page::containing_address(stack_top_addr - stack_size as u64);
             let stack_pages = Page::range_inclusive(bottom_page, top_page);
             address_space.map_pages(
                 stack_pages,
@@ -247,7 +247,7 @@ impl Scheduler {
         // TODO: Process address spaces shouldn't just inherit the kernel address space.
 
         let address_space = AddressSpace::new(Some(kernel_address_space()));
-        let user_code_addr = VirtAddr::new(USER_STACK_TOP_ADDR + PAGE_SIZE as u64);
+        let user_code_addr = VirtAddr::new(USER_CODE_ADDR);
         let user_code_page = Page::containing_address(user_code_addr);
 
         // FIXME: This only works with programs that fit within a single page.
@@ -284,9 +284,9 @@ impl Scheduler {
         kernel_address_space().enter();
 
         let stack_size = stack_size.unwrap_or(DEFAULT_STACK_SIZE);
-        let stack_top_addr = VirtAddr::new(USER_STACK_TOP_ADDR);
+        let stack_top_addr = VirtAddr::new(USER_CODE_ADDR);
         {
-            let top_page = Page::containing_address(stack_top_addr);
+            let top_page = Page::containing_address(stack_top_addr - 1);
             let bottom_page = Page::containing_address(stack_top_addr - stack_size as u64);
             let stack_pages = Page::range_inclusive(bottom_page, top_page);
             address_space.map_pages(
