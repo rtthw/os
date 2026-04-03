@@ -14,8 +14,7 @@ use {
         registers::control::{Cr0, Cr0Flags, Cr3, Cr3Flags},
         structures::paging::{
             FrameAllocator as ExternFrameAllocator, Mapper as _, OffsetPageTable, Page, PageTable,
-            PageTableFlags, PhysFrame, Size4KiB, Translate as _, mapper::MapToError,
-            page::PageRangeInclusive,
+            PageTableFlags, PhysFrame, Size4KiB, Translate as _, page::PageRangeInclusive,
         },
     },
 };
@@ -415,22 +414,10 @@ impl AddressSpace {
             let frame = frame_allocator.allocate_frame().unwrap();
             // trace!("MAPPING {page:?} TO {frame:?}");
             unsafe {
-                match page_table.map_to(page, frame, flags, &mut *frame_allocator) {
-                    Ok(flush) => flush.flush(),
-                    Err(MapToError::PageAlreadyMapped(other_frame)) => {
-                        if other_frame == frame {
-                            // Everything is fine. This can happen because
-                            // `Scheduler::run_process` double maps the stack
-                            // pages for whatever reason.
-                        } else {
-                            panic!(
-                                "Attempted to map {page:?} to {frame:?} while it is already \
-                                mapped to {other_frame:?}",
-                            );
-                        }
-                    }
-                    Err(other_error) => panic!("Failed to map page: {other_error:?}"),
-                }
+                page_table
+                    .map_to(page, frame, flags, &mut *frame_allocator)
+                    .unwrap()
+                    .flush();
             }
         }
     }
