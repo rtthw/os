@@ -3,7 +3,10 @@
 use {
     alloc::vec::Vec,
     boot_info::{BootInfo, MemoryMap, MemoryRegionKind},
-    core::fmt,
+    core::{
+        fmt,
+        sync::atomic::{AtomicUsize, Ordering},
+    },
     linked_list_allocator::LockedHeap,
     log::{debug, error, info, trace, warn},
     memory_types::{Frame, GIBIBYTE, MEBIBYTE, PAGE_SIZE, PhysicalAddress},
@@ -128,6 +131,12 @@ pub fn init(boot_info: &BootInfo) {
         ALLOCATOR.lock().init(HEAP_BASE, heap_size);
     }
 
+    // Update the kernel mapping offset so kernel mappings start at the right
+    // address.
+    KERNEL_MAPPING_OFFSET.store(HEAP_BASE + heap_size, Ordering::SeqCst);
+
+    info!("Kernel mappings start at {:#x}", HEAP_BASE + heap_size);
+
     // Make sure the heap allocator actually works.
     initial_heap_test();
 
@@ -154,6 +163,56 @@ fn initial_heap_test() {
     // The heap should start at `HEAP_START` and grow upwards, so this object should
     // have a higher virtual address.
     assert!(object_3_addr > HEAP_BASE);
+}
+
+
+
+static KERNEL_MAPPING_OFFSET: AtomicUsize = AtomicUsize::new(0);
+
+/// A set of mapped pages within the kernel's [`AddressSpace`].
+#[derive(Debug)]
+pub struct KernelMapping {
+    pub addr: VirtAddr,
+    pub size: usize,
+    pub pages: PageRangeInclusive<Size4KiB>,
+}
+
+impl KernelMapping {
+    pub fn new(size_in_bytes: usize, flags: PageTableFlags) -> Self {
+        let addr = VirtAddr::new(KERNEL_MAPPING_OFFSET.fetch_add(
+            size_in_bytes.div_ceil(PAGE_SIZE) * PAGE_SIZE,
+            Ordering::SeqCst,
+        ) as u64);
+        let start_page = Page::containing_address(addr);
+        let end_page = Page::containing_address(addr + size_in_bytes as u64);
+        let pages = Page::range_inclusive(start_page, end_page);
+
+        assert_eq!(pages.count(), size_in_bytes.div_ceil(PAGE_SIZE));
+
+        kernel_address_space().map_pages(pages, flags);
+
+        Self {
+            addr,
+            size: size_in_bytes,
+            pages,
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn as_slice_mut(&mut self, offset: usize, len: usize) -> &mut [u8] {
+        assert!(kernel_address_space().is_current());
+        assert!(
+            offset + len <= self.size(),
+            "Requested offset and length would overflow kernel mapping",
+        );
+
+        let addr = self.addr + offset as u64;
+
+        unsafe { core::slice::from_raw_parts_mut(addr.as_mut_ptr(), len) }
+    }
 }
 
 
@@ -422,21 +481,37 @@ impl AddressSpace {
         }
     }
 
-    pub fn map_page(&self, page: Page, flags: PageTableFlags) {
+    pub fn map_kernel_pages_to(
+        &self,
+        kernel_pages: PageRangeInclusive,
+        local_pages: PageRangeInclusive,
+        flags: PageTableFlags,
+    ) {
+        assert_eq!(kernel_pages.count(), local_pages.count());
+
         let mut frame_allocator = self.frame_allocator.lock();
         let mut page_table = self.page_table.lock();
 
-        let frame = frame_allocator.allocate_frame().unwrap();
-        unsafe {
-            page_table
-                .map_to(page, frame, flags, &mut *frame_allocator)
-                .unwrap()
-                .flush();
+        for (local_page, kernel_page) in local_pages.zip(kernel_pages) {
+            let frame = kernel_address_space()
+                .translate_page(kernel_page)
+                .expect("should be a mapped kernel page");
+
+            unsafe {
+                page_table
+                    .map_to(local_page, frame, flags, &mut *frame_allocator)
+                    .unwrap()
+                    .flush();
+            }
         }
     }
 
     pub fn translate_address(&self, addr: VirtAddr) -> Option<x86_64::PhysAddr> {
         self.page_table.lock().translate_addr(addr)
+    }
+
+    pub fn translate_page(&self, page: Page) -> Option<PhysFrame> {
+        self.page_table.lock().translate_page(page).ok()
     }
 }
 
