@@ -3,6 +3,7 @@
 use {
     crate::{
         KERNEL_STACK, KERNEL_STACK_SIZE, gdt,
+        loader::{Loader, global_object_provider},
         memory::{AddressSpace, kernel_address_space},
     },
     alloc::{
@@ -15,7 +16,6 @@ use {
         fmt,
         sync::atomic::{AtomicU64, Ordering},
     },
-    elf::SectionHeaderType,
     log::{info, warn},
     memory_types::PAGE_SIZE,
     spin_mutex::Mutex,
@@ -252,36 +252,26 @@ impl Scheduler {
 
         // FIXME: This only works with programs that fit within a single page.
 
-        address_space.map_page(
-            user_code_page,
+        let loader = Loader::new(global_object_provider());
+        let object = loader.load_object(&name, &bytes).unwrap();
+        log::debug!("OBJECT: {object:#?}");
+
+        let entry_point_section = loader
+            .get_section_ending_with("main")
+            .unwrap()
+            .upgrade()
+            .unwrap();
+        let entry_point = user_code_addr + entry_point_section.mapping_offset as u64;
+
+        // Map the loaded sections into the process address space.
+        address_space.map_kernel_pages_to(
+            entry_point_section.mapping.lock().pages,
+            Page::range_inclusive(
+                user_code_page,
+                Page::containing_address(user_code_addr + entry_point_section.size as u64),
+            ),
             PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
         );
-
-        address_space.enter();
-
-        let elf = elf::ElfFile::new(&bytes).unwrap();
-        for section in elf.section_iter() {
-            if section.get_type().unwrap() == SectionHeaderType::Null {
-                continue;
-            }
-            if section.size() == 0 {
-                continue;
-            }
-
-            let name = section.get_name(&elf).unwrap();
-            if name == ".text.main" {
-                let offset = section.offset() as usize;
-                let size = section.size() as usize;
-                unsafe {
-                    let dst =
-                        core::slice::from_raw_parts_mut(user_code_addr.as_mut_ptr(), PAGE_SIZE);
-                    dst[..size].copy_from_slice(&bytes[offset..(offset + size)]);
-                    dst[size..].fill(0);
-                }
-            }
-        }
-
-        kernel_address_space().enter();
 
         let stack_size = stack_size.unwrap_or(DEFAULT_STACK_SIZE);
         let stack_top_addr = VirtAddr::new(USER_CODE_ADDR);
@@ -300,7 +290,7 @@ impl Scheduler {
         let context = ExecutionContext {
             registers: CpuRegisters::EMPTY,
             frame: InterruptStackFrameValue::new(
-                user_code_addr,
+                entry_point,
                 gdt::selectors().kernel_code,
                 RFlags::INTERRUPT_FLAG,
                 stack_top_addr,

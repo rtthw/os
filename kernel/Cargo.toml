@@ -10,10 +10,12 @@ boot-info = { path = "../crates/boot-info" }
 crossbeam-queue = { version = "0.3.12", default-features = false, features = ["alloc"] }
 elf = { path = "../crates/elf" }
 framebuffer = { path = "../crates/framebuffer" }
+hashbrown = "0.16.1"
 linked_list_allocator = "0.9.0"
 log = { path = "../crates/log" }
 memory-types = { path = "../crates/memory-types" }
 pci = { path = "../drivers/pci" }
+rustc-demangle = "0.1.27"
 spin-mutex = { path = "../crates/spin-mutex" }
 time = { path = "../crates/time" }
 virtio = { path = "../drivers/virtio" }
