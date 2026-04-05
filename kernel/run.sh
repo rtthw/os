@@ -31,11 +31,20 @@ cd ../bootloader
 
 # Build the example program.
 cd ..
+    rustc crates/time/src/time.rs \
+        --out-dir=kernel/esp \
+        --crate-type=lib \
+        --emit=link,obj \
+        -L kernel/esp \
+        -C panic=abort \
+        -C relocation-model=static \
+        -Z share-generics=no
     rustc example/src/example.rs \
         --out-dir=kernel/esp \
         --crate-type=lib \
         --emit=obj \
-        -L tests/output \
+        -L kernel/esp \
+        -l time \
         -C panic=abort \
         -C relocation-model=static \
         -Z share-generics=no

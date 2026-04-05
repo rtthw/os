@@ -7,3 +7,4 @@ edition.workspace = true
 path = "src/example.rs"
 
 [dependencies]
+time = { path = "../crates/time" }
