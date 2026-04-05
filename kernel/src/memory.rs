@@ -487,6 +487,14 @@ impl AddressSpace {
         local_pages: PageRangeInclusive,
         flags: PageTableFlags,
     ) {
+        trace!(
+            "KERNEL_MAP @ {:#x} | {:#x}..={:#x} >> {:#x}..={:#x}",
+            self.frame.start_address(),
+            kernel_pages.start.start_address(),
+            kernel_pages.end.start_address(),
+            local_pages.start.start_address(),
+            local_pages.end.start_address(),
+        );
         assert_eq!(kernel_pages.count(), local_pages.count());
 
         let mut frame_allocator = self.frame_allocator.lock();

@@ -250,11 +250,11 @@ impl Scheduler {
         let user_code_addr = VirtAddr::new(USER_CODE_ADDR);
         let user_code_page = Page::containing_address(user_code_addr);
 
-        // FIXME: This only works with programs that fit within a single page.
-
         let loader = Loader::new(global_object_provider());
-        let object = loader.load_object(&name, &bytes).unwrap();
-        log::debug!("OBJECT: {object:#?}");
+        let _object = loader
+            .load_object(&name, &bytes, &address_space, user_code_page)
+            .unwrap();
+        // log::debug!("OBJECT: {object:#?}");
 
         let entry_point_section = loader
             .get_section_ending_with("main")
@@ -262,16 +262,6 @@ impl Scheduler {
             .upgrade()
             .unwrap();
         let entry_point = user_code_addr + entry_point_section.mapping_offset as u64;
-
-        // Map the loaded sections into the process address space.
-        address_space.map_kernel_pages_to(
-            entry_point_section.mapping.lock().pages,
-            Page::range_inclusive(
-                user_code_page,
-                Page::containing_address(user_code_addr + entry_point_section.size as u64),
-            ),
-            PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
-        );
 
         let stack_size = stack_size.unwrap_or(DEFAULT_STACK_SIZE);
         let stack_top_addr = VirtAddr::new(USER_CODE_ADDR);

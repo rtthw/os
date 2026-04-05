@@ -2,9 +2,11 @@
 
 #[cfg(target_arch = "x86_64")]
 use elf::Rela;
-
 use {
-    crate::{FileSystem, memory::KernelMapping},
+    crate::{
+        FileSystem,
+        memory::{AddressSpace, KernelMapping},
+    },
     alloc::{
         boxed::Box,
         collections::btree_set::BTreeSet,
@@ -20,7 +22,10 @@ use {
     hashbrown::HashMap,
     log::{error, trace},
     spin_mutex::Mutex,
-    x86_64::{VirtAddr, structures::paging::PageTableFlags},
+    x86_64::{
+        VirtAddr,
+        structures::paging::{Page, PageTableFlags},
+    },
 };
 
 
@@ -165,10 +170,12 @@ impl<P: ObjectProvider> Loader<P> {
             .map(|(_name, section)| section.clone())
     }
 
-    pub fn get_or_load_section(
+    fn get_or_load_section(
         &self,
         name: &str,
         for_object: &LoadedObject,
+        address_space: &AddressSpace,
+        start_page: &mut Page,
     ) -> Weak<LoadedSection> {
         if let Some(section) = self.sections.lock().get(name) {
             return section.clone();
@@ -184,9 +191,11 @@ impl<P: ObjectProvider> Loader<P> {
                     "Loading object '{object_name}' as a dependency of `{}`",
                     for_object.name,
                 );
-                self.load_object(
+                self.load_object_impl(
                     &object_name,
                     &self.provider.read_object(&object_name).unwrap(),
+                    address_space,
+                    start_page,
                 )
                 .unwrap();
                 if let Some(section) = self.sections.lock().get(name) {
@@ -202,13 +211,26 @@ impl<P: ObjectProvider> Loader<P> {
         &self,
         object_name: &str,
         object_bytes: &[u8],
+        address_space: &AddressSpace,
+        mut start_page: Page,
     ) -> Result<Arc<Mutex<LoadedObject>>, &'static str> {
-        let (object, elf_file) = self.load_object_sections(object_name, object_bytes)?;
+        self.load_object_impl(object_name, object_bytes, address_space, &mut start_page)
+    }
+
+    fn load_object_impl(
+        &self,
+        object_name: &str,
+        object_bytes: &[u8],
+        address_space: &AddressSpace,
+        start_page: &mut Page,
+    ) -> Result<Arc<Mutex<LoadedObject>>, &'static str> {
+        let (object, elf_file) =
+            self.load_object_sections(object_name, object_bytes, address_space, start_page)?;
         self.add_sections(object.lock().sections.values());
         self.objects
             .lock()
             .insert(object_name.into(), Arc::clone(&object));
-        self.relocate_object_sections(&elf_file, &object)?;
+        self.relocate_object_sections(&elf_file, &object, address_space, start_page)?;
 
         Ok(object)
     }
@@ -217,6 +239,8 @@ impl<P: ObjectProvider> Loader<P> {
         &self,
         object_name: &'obj str,
         object_bytes: &'obj [u8],
+        address_space: &AddressSpace,
+        start_page: &mut Page,
     ) -> Result<(Arc<Mutex<LoadedObject>>, ElfFile<'obj>), &'static str> {
         let elf_file = ElfFile::new(object_bytes)?;
         if elf_file.header.get_type() != ObjectFileType::Relocatable {
@@ -228,6 +252,37 @@ impl<P: ObjectProvider> Loader<P> {
             read_only: read_only_mapping,
             read_write: read_write_mapping,
         } = allocate_section_mappings(&elf_file)?;
+
+        // Map loaded sections into the object's address space.
+        {
+            address_space.map_kernel_pages_to(
+                executable_mapping.pages,
+                Page::range_inclusive(
+                    *start_page,
+                    *start_page + executable_mapping.pages.count().saturating_sub(1) as u64,
+                ),
+                PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+            );
+            *start_page += executable_mapping.pages.count() as u64;
+            address_space.map_kernel_pages_to(
+                read_only_mapping.pages,
+                Page::range_inclusive(
+                    *start_page,
+                    *start_page + read_only_mapping.pages.count().saturating_sub(1) as u64,
+                ),
+                PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+            );
+            *start_page += read_only_mapping.pages.count() as u64;
+            address_space.map_kernel_pages_to(
+                read_write_mapping.pages,
+                Page::range_inclusive(
+                    *start_page,
+                    *start_page + read_write_mapping.pages.count().saturating_sub(1) as u64,
+                ),
+                PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+            );
+            *start_page += read_write_mapping.pages.count() as u64;
+        }
 
         let executable_mapping = Arc::new(Mutex::new(executable_mapping));
         let read_only_mapping = Arc::new(Mutex::new(read_only_mapping));
@@ -575,6 +630,8 @@ impl<P: ObjectProvider> Loader<P> {
         &self,
         elf_file: &ElfFile,
         object: &Arc<Mutex<LoadedObject>>,
+        address_space: &AddressSpace,
+        start_page: &mut Page,
     ) -> Result<(), &'static str> {
         let object = object.lock();
         let symbol_table = elf_file.get_symbol_table()?;
@@ -620,9 +677,14 @@ impl<P: ObjectProvider> Loader<P> {
 
                             let demangled_name = rustc_demangle::demangle(name).to_string();
 
-                            self.get_or_load_section(&demangled_name, &object)
-                                .upgrade()
-                                .ok_or("couldn't get section for relocation entry")
+                            self.get_or_load_section(
+                                &demangled_name,
+                                &object,
+                                address_space,
+                                start_page,
+                            )
+                            .upgrade()
+                            .ok_or("couldn't get section for relocation entry")
                         }
                     }?;
 
@@ -679,6 +741,12 @@ fn write_relocation(
     const R_X86_64_32: u32 = 10;
     const R_X86_64_32S: u32 = 11;
     const R_X86_64_PC64: u32 = 24;
+
+    // trace!(
+    //     "REL({}): {source_addr:#x} | {:#p}, {target_offset:#x}",
+    //     relocation_entry.get_type(),
+    //     target_slice.as_ptr(),
+    // );
 
     let source_addr = source_addr.as_u64();
     match relocation_entry.get_type() {
