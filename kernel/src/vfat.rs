@@ -1,9 +1,10 @@
 //! # Virtual File Allocation Table (VFAT)
 
 use {
-    crate::{ata::Drive, scheduler::with_scheduler},
+    crate::{FileSystem, ata::Drive, loader, scheduler::with_scheduler},
     alloc::{collections::vec_deque::VecDeque, string::String, vec::Vec},
     core::fmt,
+    hashbrown::HashMap,
     log::{debug, error},
 };
 
@@ -26,64 +27,14 @@ pub fn init(drive: &mut Drive, lba_start: u32, lba_sector_count: u32) {
         return;
     }
 
-    let mut data_buf = [0; SECTOR_SIZE];
-    drive
-        .read(
-            lba_start + boot_sector.root_sector_offset() as u32,
-            &mut data_buf,
-        )
-        .map_err(|_| "failed to read VFAT data sector")
-        .unwrap();
+    let mut fs = VfatFileSystem::new(drive.clone(), boot_sector, lba_start).unwrap();
+    let example_bytes = fs.read("/example.o").unwrap();
 
-    debug!("Listing root directory entries...");
+    loader::init(fs);
 
-    let entries: [DirectoryEntry; 16] = unsafe { core::mem::transmute(data_buf) };
-    let mut current_lfn_buf = VecDeque::new();
-    for entry in entries {
-        if entry.kind() == EntryKind::Null && entry.attr().is_none() {
-            continue;
-        }
-
-        if entry.lfn_index().is_some_and(|i| i >= 1) {
-            if let Some(name) = entry.long_file_name() {
-                current_lfn_buf.push_front(name);
-            }
-            continue;
-        }
-
-        if entry
-            .attr()
-            .is_some_and(|attr| matches!(attr, Attribute::Archive | Attribute::Directory))
-        {
-            let file_name = if current_lfn_buf.len() > 0 {
-                current_lfn_buf.iter().fold(String::new(), |acc, s| acc + s)
-            } else {
-                entry.short_file_name().unwrap()
-            };
-            current_lfn_buf.clear();
-
-            debug!(
-                "\t/{file_name} ({} bytes) @ {}",
-                entry.size(),
-                entry.cluster_index(),
-            );
-
-            if file_name == "example.o" {
-                let bytes = read_file_bytes(
-                    drive,
-                    lba_start,
-                    &boot_sector,
-                    entry.cluster_index(),
-                    entry.size(),
-                )
-                .unwrap();
-
-                with_scheduler(|scheduler| {
-                    scheduler.run_process_from_bytes("Example", bytes, None);
-                });
-            }
-        }
-    }
+    with_scheduler(|scheduler| {
+        scheduler.run_process_from_bytes("example", example_bytes, None);
+    });
 }
 
 // https://wiki.osdev.org/FAT#FAT_32_and_exFAT
@@ -302,6 +253,87 @@ impl VfatBootSector {
 
     const fn sectors_per_fat_16(&self) -> usize {
         u16::from_le_bytes(self.sectors_per_fat_16) as usize
+    }
+}
+
+pub struct VfatFileSystem {
+    drive: Drive,
+    lba_start: u32,
+    boot_sector: VfatBootSector,
+    cache: HashMap<String, DirectoryEntry>,
+}
+
+impl VfatFileSystem {
+    fn new(
+        mut drive: Drive,
+        boot_sector: VfatBootSector,
+        lba_start: u32,
+    ) -> Result<Self, &'static str> {
+        let mut data_buf = [0; SECTOR_SIZE];
+        drive
+            .read(
+                lba_start + boot_sector.root_sector_offset() as u32,
+                &mut data_buf,
+            )
+            .map_err(|_| "failed to read VFAT data sector")?;
+
+        debug!("Listing root directory entries...");
+
+        let mut cache = HashMap::new();
+        let entries: [DirectoryEntry; 16] = unsafe { core::mem::transmute(data_buf) };
+        let mut current_lfn_buf = VecDeque::new();
+        for entry in entries {
+            if entry.kind() == EntryKind::Null && entry.attr().is_none() {
+                continue;
+            }
+
+            if entry.lfn_index().is_some_and(|i| i >= 1) {
+                if let Some(name) = entry.long_file_name() {
+                    current_lfn_buf.push_front(name);
+                }
+                continue;
+            }
+
+            if entry
+                .attr()
+                .is_some_and(|attr| matches!(attr, Attribute::Archive | Attribute::Directory))
+            {
+                let file_name = if current_lfn_buf.len() > 0 {
+                    current_lfn_buf.iter().fold(String::new(), |acc, s| acc + s)
+                } else {
+                    entry.short_file_name().unwrap()
+                };
+                current_lfn_buf.clear();
+
+                debug!(
+                    "\t/{file_name} ({} bytes) @ {}",
+                    entry.size(),
+                    entry.cluster_index(),
+                );
+
+                cache.insert(format!("/{file_name}"), entry);
+            }
+        }
+
+        Ok(Self {
+            drive,
+            lba_start,
+            boot_sector,
+            cache,
+        })
+    }
+}
+
+impl FileSystem for VfatFileSystem {
+    fn read(&mut self, path: &str) -> Result<Vec<u8>, &'static str> {
+        let dir_entry = self.cache.get(path).unwrap_or_else(|| todo!());
+        read_file_bytes(
+            &mut self.drive,
+            self.lba_start,
+            &self.boot_sector,
+            dir_entry.cluster_index(),
+            dir_entry.size(),
+        )
     }
 }
 

@@ -26,6 +26,7 @@ mod vfat;
 mod window_manager;
 
 use {
+    alloc::vec::Vec,
     boot_info::BootInfo,
     core::{arch::asm, time::Duration},
     log::{debug, info, warn},
@@ -112,7 +113,6 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
     let dur = pit_start.elapsed();
     debug!("`pit::sleep(1ms)`\t\t: {dur:?}");
 
-    loader::init();
     ata::init();
 
     // info!("PCI Devices:");
@@ -241,4 +241,10 @@ fn init_monotonic_clock() {
             }
         }
     }
+}
+
+
+
+pub trait FileSystem {
+    fn read(&mut self, path: &str) -> Result<Vec<u8>, &'static str>;
 }

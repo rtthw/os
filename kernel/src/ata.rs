@@ -245,7 +245,7 @@ impl Bus {
 
 
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Drive {
     pub id: u8,
     pub bus: u8,

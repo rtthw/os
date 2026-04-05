@@ -2,9 +2,11 @@
 
 #[cfg(target_arch = "x86_64")]
 use elf::Rela;
+
 use {
-    crate::memory::KernelMapping,
+    crate::{FileSystem, memory::KernelMapping},
     alloc::{
+        boxed::Box,
         collections::btree_set::BTreeSet,
         string::{String, ToString as _},
         sync::{Arc, Weak},
@@ -23,10 +25,10 @@ use {
 
 
 
-pub fn init() {
+pub fn init(fs: impl FileSystem + 'static) {
     unsafe {
         PROVIDER = Some(GlobalObjectProvider {
-            // TODO
+            fs: Mutex::new(Box::new(fs)),
         });
     }
 }
@@ -34,16 +36,16 @@ pub fn init() {
 static mut PROVIDER: Option<GlobalObjectProvider> = None;
 
 pub struct GlobalObjectProvider {
-    // TODO
+    fs: Mutex<Box<dyn FileSystem>>,
 }
 
 impl<'a> ObjectProvider for &'a GlobalObjectProvider {
-    fn list_objects(&self, _prefix: &str) -> Result<Vec<String>, &'static str> {
-        todo!()
+    fn list_objects(&self, prefix: &str) -> Result<Vec<String>, &'static str> {
+        Ok(vec![prefix.to_string()])
     }
 
-    fn read_object(&self, _name: &str) -> Result<Vec<u8>, &'static str> {
-        todo!()
+    fn read_object(&self, name: &str) -> Result<Vec<u8>, &'static str> {
+        self.fs.lock().read(&format!("/{name}.o"))
     }
 }
 
