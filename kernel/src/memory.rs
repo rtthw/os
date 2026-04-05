@@ -9,7 +9,7 @@ use {
     },
     linked_list_allocator::LockedHeap,
     log::{debug, error, info, trace, warn},
-    memory_types::{Frame, GIBIBYTE, MEBIBYTE, PAGE_SIZE, PhysicalAddress},
+    memory_types::{Frame, GIBIBYTE, MEBIBYTE, PAGE_SIZE, PhysicalAddress, align_up},
     spin_mutex::Mutex,
     x86_64::{
         VirtAddr,
@@ -133,7 +133,7 @@ pub fn init(boot_info: &BootInfo) {
 
     // Update the kernel mapping offset so kernel mappings start at the right
     // address.
-    KERNEL_MAPPING_OFFSET.store(HEAP_BASE + heap_size, Ordering::SeqCst);
+    KERNEL_MAPPING_OFFSET.store(align_up(HEAP_BASE + heap_size, PAGE_SIZE), Ordering::SeqCst);
 
     info!("Kernel mappings start at {:#x}", HEAP_BASE + heap_size);
 
