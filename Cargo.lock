@@ -1202,8 +1202,12 @@ dependencies = [
 name = "example"
 version = "0.1.0"
 dependencies = [
- "time",
+ "example-dep",
 ]
+
+[[package]]
+name = "example-dep"
+version = "0.1.0"
 
 [[package]]
 name = "fastrand"

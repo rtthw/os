@@ -31,7 +31,7 @@ cd ../bootloader
 
 # Build the example program.
 cd ..
-    rustc crates/time/src/time.rs \
+    rustc example/example-dep/src/example_dep.rs \
         --out-dir=kernel/esp \
         --crate-type=lib \
         --emit=link,obj \
@@ -44,7 +44,7 @@ cd ..
         --crate-type=lib \
         --emit=obj \
         -L kernel/esp \
-        -l time \
+        -l example-dep \
         -C panic=abort \
         -C relocation-model=static \
         -Z share-generics=no
