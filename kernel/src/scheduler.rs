@@ -3,7 +3,7 @@
 use {
     crate::{
         KERNEL_STACK, KERNEL_STACK_SIZE, gdt,
-        loader::{Loader, global_object_provider},
+        loader::Loader,
         memory::{AddressSpace, kernel_address_space},
     },
     alloc::{
@@ -250,7 +250,7 @@ impl Scheduler {
         let user_code_addr = VirtAddr::new(USER_CODE_ADDR);
         let user_code_page = Page::containing_address(user_code_addr);
 
-        let loader = Loader::new(global_object_provider());
+        let loader = Loader::new();
         let _object = loader
             .load_object(&name, &bytes, &address_space, user_code_page)
             .unwrap();

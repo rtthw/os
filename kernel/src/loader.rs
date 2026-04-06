@@ -64,10 +64,9 @@ pub fn global_object_provider<'a>() -> &'a GlobalObjectProvider {
 
 /// A set of loaded [objects](LoadedObject) and [sections](LoadedSection).
 #[derive(Debug)]
-pub struct Loader<P: ObjectProvider> {
+pub struct Loader {
     objects: Mutex<HashMap<Arc<str>, Arc<Mutex<LoadedObject>>>>,
     sections: Mutex<HashMap<Arc<str>, Weak<LoadedSection>>>,
-    provider: P,
 }
 
 /// An object that has been loaded into memory.
@@ -145,12 +144,11 @@ pub trait ObjectProvider {
     fn read_object(&self, name: &str) -> Result<Vec<u8>, &'static str>;
 }
 
-impl<P: ObjectProvider> Loader<P> {
-    pub fn new(provider: P) -> Self {
+impl Loader {
+    pub fn new() -> Self {
         Self {
             objects: Mutex::new(HashMap::new()),
             sections: Mutex::new(HashMap::new()),
-            provider,
         }
     }
 
@@ -182,7 +180,7 @@ impl<P: ObjectProvider> Loader<P> {
         }
 
         for crate_name in crate_names_in_symbol(name) {
-            for object_name in self.provider.list_objects(crate_name).unwrap() {
+            for object_name in global_object_provider().list_objects(crate_name).unwrap() {
                 // Skip already loaded objects.
                 if self.get_object(&object_name).is_some() {
                     continue;
@@ -193,7 +191,7 @@ impl<P: ObjectProvider> Loader<P> {
                 );
                 self.load_object_impl(
                     &object_name,
-                    &self.provider.read_object(&object_name).unwrap(),
+                    &global_object_provider().read_object(&object_name).unwrap(),
                     address_space,
                     start_page,
                 )
