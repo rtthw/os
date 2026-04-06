@@ -1,4 +1,6 @@
 //! # Program Loading
+//!
+//! Types and functions used to dynamically load (and link) programs.
 
 #[cfg(target_arch = "x86_64")]
 use elf::Rela;
@@ -32,6 +34,7 @@ use {
 static LOADER: Loader = Loader::new();
 static mut PROVIDER: Option<GlobalObjectProvider> = None;
 
+/// Initialize the [global loader](global_loader).
 pub fn init(fs: impl FileSystem + 'static) {
     unsafe {
         PROVIDER = Some(GlobalObjectProvider {
@@ -40,10 +43,12 @@ pub fn init(fs: impl FileSystem + 'static) {
     }
 }
 
+/// Get a reference to the global object loader.
 pub fn global_loader<'a>() -> &'a Loader {
     &LOADER
 }
 
+/// Get a reference to the [`GlobalObjectProvider`].
 pub fn global_object_provider<'a>() -> &'a GlobalObjectProvider {
     unsafe {
         PROVIDER
@@ -52,6 +57,10 @@ pub fn global_object_provider<'a>() -> &'a GlobalObjectProvider {
     }
 }
 
+/// The global object provider.
+///
+/// Internally, this is just a [`FileSystem`] trait object wrapped in a
+/// [`Mutex`].
 pub struct GlobalObjectProvider {
     fs: Mutex<Box<dyn FileSystem>>,
 }
@@ -114,15 +123,22 @@ pub struct LoadedSection {
     pub owner: Weak<Mutex<LoadedObject>>,
 }
 
+/// The type of a [`LoadedSection`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SectionKind {
+    /// Executable code.
     Text,
+    /// Immutable program data.
     Rodata,
+    /// Mutable program data.
     Data,
+    /// Uninitialized program data.
     Bss,
+    /// Thread-local data.
     TlsData,
     TlsBss,
     GccExceptTable,
+    /// Exception handling (unwind) information.
     EhFrame,
 }
 
@@ -141,6 +157,7 @@ impl SectionKind {
     }
 }
 
+/// Something capable of reading object data and listing available objects.
 pub trait ObjectProvider {
     /// Get a list of object names that match the given prefix.
     fn list_objects(&self, prefix: &str) -> Result<Vec<String>, &'static str>;
@@ -149,6 +166,8 @@ pub trait ObjectProvider {
 }
 
 impl Loader {
+    /// Create an empty `Loader` without any loaded [objects](LoadedObject) or
+    /// [sections](LoadedSection).
     pub const fn new() -> Self {
         Self {
             objects: Mutex::new(HashMap::with_hasher(rustc_hash::FxBuildHasher)),
@@ -156,14 +175,17 @@ impl Loader {
         }
     }
 
+    /// Get the [object](LoadedObject) with the given name.
     pub fn get_object(&self, name: &str) -> Option<Weak<Mutex<LoadedObject>>> {
         self.objects.lock().get(name).map(Arc::downgrade)
     }
 
+    /// Get the [section](LoadedSection) with the given name.
     pub fn get_section(&self, name: &str) -> Option<Weak<LoadedSection>> {
         self.sections.lock().get(name).cloned()
     }
 
+    /// Get the first [section](LoadedSection) that ends with the given suffix.
     pub fn get_section_ending_with(&self, suffix: &str) -> Option<Weak<LoadedSection>> {
         self.sections
             .lock()
