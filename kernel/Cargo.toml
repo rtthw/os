@@ -16,6 +16,7 @@ log = { path = "../crates/log" }
 memory-types = { path = "../crates/memory-types" }
 pci = { path = "../drivers/pci" }
 rustc-demangle = "0.1.27"
+rustc-hash = { version = "2.1.2", default-features = false }
 spin-mutex = { path = "../crates/spin-mutex" }
 time = { path = "../crates/time" }
 virtio = { path = "../drivers/virtio" }

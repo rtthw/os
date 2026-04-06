@@ -29,6 +29,8 @@ use {
 };
 
 
+static LOADER: Loader = Loader::new();
+static mut PROVIDER: Option<GlobalObjectProvider> = None;
 
 pub fn init(fs: impl FileSystem + 'static) {
     unsafe {
@@ -38,7 +40,17 @@ pub fn init(fs: impl FileSystem + 'static) {
     }
 }
 
-static mut PROVIDER: Option<GlobalObjectProvider> = None;
+pub fn global_loader<'a>() -> &'a Loader {
+    &LOADER
+}
+
+pub fn global_object_provider<'a>() -> &'a GlobalObjectProvider {
+    unsafe {
+        PROVIDER
+            .as_ref()
+            .expect("global object provider should be initialized")
+    }
+}
 
 pub struct GlobalObjectProvider {
     fs: Mutex<Box<dyn FileSystem>>,
@@ -54,19 +66,11 @@ impl<'a> ObjectProvider for &'a GlobalObjectProvider {
     }
 }
 
-pub fn global_object_provider<'a>() -> &'a GlobalObjectProvider {
-    unsafe {
-        PROVIDER
-            .as_ref()
-            .expect("global object provider should be initialized")
-    }
-}
-
 /// A set of loaded [objects](LoadedObject) and [sections](LoadedSection).
 #[derive(Debug)]
 pub struct Loader {
-    objects: Mutex<HashMap<Arc<str>, Arc<Mutex<LoadedObject>>>>,
-    sections: Mutex<HashMap<Arc<str>, Weak<LoadedSection>>>,
+    objects: Mutex<HashMap<Arc<str>, Arc<Mutex<LoadedObject>>, rustc_hash::FxBuildHasher>>,
+    sections: Mutex<HashMap<Arc<str>, Weak<LoadedSection>, rustc_hash::FxBuildHasher>>,
 }
 
 /// An object that has been loaded into memory.
@@ -145,10 +149,10 @@ pub trait ObjectProvider {
 }
 
 impl Loader {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
-            objects: Mutex::new(HashMap::new()),
-            sections: Mutex::new(HashMap::new()),
+            objects: Mutex::new(HashMap::with_hasher(rustc_hash::FxBuildHasher)),
+            sections: Mutex::new(HashMap::with_hasher(rustc_hash::FxBuildHasher)),
         }
     }
 
