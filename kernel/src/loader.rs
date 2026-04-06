@@ -185,6 +185,26 @@ impl Loader {
         self.sections.lock().get(name).cloned()
     }
 
+    /// Get the first [section](LoadedSection) that starts with the given prefix
+    /// and ends with the given suffix.
+    pub fn get_section_with(&self, prefix: &str, suffix: &str) -> Option<Weak<LoadedSection>> {
+        self.sections
+            .lock()
+            .iter()
+            .find(|(name, _section)| name.starts_with(prefix) && name.ends_with(suffix))
+            .map(|(_name, section)| section.clone())
+    }
+
+    /// Get the first [section](LoadedSection) that starts with the given
+    /// prefix.
+    pub fn get_section_starting_with(&self, prefix: &str) -> Option<Weak<LoadedSection>> {
+        self.sections
+            .lock()
+            .iter()
+            .find(|(name, _section)| name.starts_with(prefix))
+            .map(|(_name, section)| section.clone())
+    }
+
     /// Get the first [section](LoadedSection) that ends with the given suffix.
     pub fn get_section_ending_with(&self, suffix: &str) -> Option<Weak<LoadedSection>> {
         self.sections

@@ -9,7 +9,6 @@ use {
     alloc::{
         collections::{btree_map::BTreeMap, vec_deque::VecDeque},
         string::String,
-        vec::Vec,
     },
     core::{
         arch::asm,
@@ -252,7 +251,7 @@ impl Scheduler {
         // log::debug!("LOADER: {:#?}", global_loader());
 
         let entry_point_section = global_loader()
-            .get_section_ending_with("main")
+            .get_section_with(&name, "main")
             .unwrap()
             .upgrade()
             .unwrap();
