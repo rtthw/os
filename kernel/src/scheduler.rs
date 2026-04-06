@@ -281,10 +281,10 @@ impl Scheduler {
             registers: CpuRegisters::EMPTY,
             frame: InterruptStackFrameValue::new(
                 entry_point,
-                gdt::selectors().kernel_code,
+                gdt::selectors().user_code,
                 RFlags::INTERRUPT_FLAG,
                 stack_top_addr,
-                gdt::selectors().kernel_data,
+                gdt::selectors().user_data,
             ),
         };
 
