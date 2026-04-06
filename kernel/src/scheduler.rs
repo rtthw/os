@@ -235,12 +235,7 @@ impl Scheduler {
         self.add_to_queue(process);
     }
 
-    pub fn run_process_from_bytes(
-        &mut self,
-        name: impl Into<String>,
-        bytes: Vec<u8>,
-        stack_size: Option<usize>,
-    ) {
+    pub fn run_program(&mut self, name: impl Into<String>, stack_size: Option<usize>) {
         let id = PROCESS_ID.fetch_add(1, Ordering::SeqCst);
         let name = name.into();
 
@@ -251,7 +246,7 @@ impl Scheduler {
         let user_code_page = Page::containing_address(user_code_addr);
 
         let _object = global_loader()
-            .load_object(&name, &bytes, &address_space, user_code_page)
+            .load_object(&name, &address_space, user_code_page)
             .unwrap();
 
         // log::debug!("LOADER: {:#?}", global_loader());

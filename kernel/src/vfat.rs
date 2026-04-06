@@ -27,13 +27,12 @@ pub fn init(drive: &mut Drive, lba_start: u32, lba_sector_count: u32) {
         return;
     }
 
-    let mut fs = VfatFileSystem::new(drive.clone(), boot_sector, lba_start).unwrap();
-    let example_bytes = fs.read("/example.o").unwrap();
+    let fs = VfatFileSystem::new(drive.clone(), boot_sector, lba_start).unwrap();
 
     loader::init(fs);
 
     with_scheduler(|scheduler| {
-        scheduler.run_process_from_bytes("example", example_bytes, None);
+        scheduler.run_program("example", None);
     });
 }
 

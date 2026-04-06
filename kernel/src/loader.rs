@@ -209,14 +209,25 @@ impl Loader {
         panic!("Failed to load `{name}`")
     }
 
+    /// Load an object into memory.
+    ///
+    /// Internally, this method uses the [`GlobalObjectProvider`] to read
+    /// object data.
+    ///
+    /// ## Arguments
+    ///
+    /// - `object_name`, the name of the object to be loaded.
+    /// - `address_space`, the [`AddressSpace`] to load the object into.
+    /// - `start_page`, the starting page within `address_space` at which the
+    ///   object (and its dependencies) will be loaded.
     pub fn load_object(
         &self,
         object_name: &str,
-        object_bytes: &[u8],
         address_space: &AddressSpace,
         mut start_page: Page,
     ) -> Result<Arc<Mutex<LoadedObject>>, &'static str> {
-        self.load_object_impl(object_name, object_bytes, address_space, &mut start_page)
+        let object_bytes = global_object_provider().read_object(object_name)?;
+        self.load_object_impl(object_name, &object_bytes, address_space, &mut start_page)
     }
 
     fn load_object_impl(
