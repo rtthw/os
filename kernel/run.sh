@@ -52,14 +52,14 @@ cd ..
 # Build the kernel.
 cd kernel
     cargo rustc \
-		--release \
-		--manifest-path "$SOURCE_DIR/Cargo.toml" \
-		--target "$SOURCE_DIR/x86_64-kernel.json" \
-		-Z build-std=core,alloc -Zbuild-std-features=compiler-builtins-mem \
-		-- \
-		-C link-arg=-T -Clink-arg="$SOURCE_DIR/kernel_x86_64.ld" \
-		-C link-arg=-z -Clink-arg=max-page-size=0x1000 \
-		--emit link="$SOURCE_DIR/esp/kernel"
+        --release \
+        --manifest-path "$SOURCE_DIR/Cargo.toml" \
+        --target "$SOURCE_DIR/x86_64-kernel.json" \
+        -Z build-std=core,alloc -Zbuild-std-features=compiler-builtins-mem \
+        -- \
+        -C link-arg=-T -Clink-arg="$SOURCE_DIR/kernel_x86_64.ld" \
+        -C link-arg=-z -Clink-arg=max-page-size=0x1000 \
+        --emit link="$SOURCE_DIR/esp/kernel"
 
     # Place the built bootloader into the ESP directory, where the firmware can find it.
     cp ../target/x86_64-unknown-uefi/release/bootloader.efi esp/efi/boot/bootx64.efi
