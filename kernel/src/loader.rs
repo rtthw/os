@@ -22,7 +22,7 @@ use {
         SectionHeaderType, SymbolBinding, SymbolType,
     },
     hashbrown::HashMap,
-    log::{error, trace},
+    log::{debug, error, trace},
     spin_mutex::Mutex,
     x86_64::{
         VirtAddr,
@@ -173,6 +173,43 @@ impl Loader {
             objects: Mutex::new(HashMap::with_hasher(rustc_hash::FxBuildHasher)),
             sections: Mutex::new(HashMap::with_hasher(rustc_hash::FxBuildHasher)),
         }
+    }
+
+    /// Dump debug information to the logger.
+    pub fn dump_info(&self) {
+        let objects = self.objects.lock();
+        let sections = self.sections.lock();
+
+        debug!(
+            "--- OBJECTS ---\n{}",
+            objects
+                .iter()
+                .map(|(name, object)| {
+                    let object = object.lock();
+                    format!(
+                        "    {name}:{}\n",
+                        object
+                            .sections
+                            .iter()
+                            .map(|(index, section)| format!(
+                                "\n    {index:>4} | {:#x} | {:>10} | {}{}",
+                                section.addr.as_u64(),
+                                section.kind.name(),
+                                if section.global { "pub " } else { "    " },
+                                section.name,
+                            ))
+                            .collect::<String>(),
+                    )
+                })
+                .collect::<String>(),
+        );
+        debug!(
+            "--- SECTIONS ---\n{}",
+            sections
+                .iter()
+                .map(|(name, section)| format!("    {name}: {} ref(s)\n", section.weak_count()))
+                .collect::<String>(),
+        );
     }
 
     /// Get the [object](LoadedObject) with the given name.

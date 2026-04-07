@@ -248,7 +248,7 @@ impl Scheduler {
             .load_object(&name, &address_space, user_code_page)
             .unwrap();
 
-        // log::debug!("LOADER: {:#?}", global_loader());
+        global_loader().dump_info();
 
         let entry_point_section = global_loader()
             .get_section_with(&name, "main")
