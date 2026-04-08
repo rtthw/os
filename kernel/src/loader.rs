@@ -16,13 +16,13 @@ use {
         sync::{Arc, Weak},
         vec::Vec,
     },
-    core::ops::Range,
+    core::{ops::Range, time::Duration},
     elf::{
         ElfFile, ObjectFileType, SHF_ALLOC, SHF_EXECINSTR, SHF_TLS, SHF_WRITE, SectionData,
         SectionHeaderType, SymbolBinding, SymbolType,
     },
     hashbrown::HashMap,
-    log::{debug, error, trace},
+    log::{debug, error, info, trace},
     spin_mutex::Mutex,
     x86_64::{
         VirtAddr,
@@ -267,13 +267,16 @@ impl Loader {
         for_object: &LoadedObject,
         address_space: &AddressSpace,
         start_page: &mut Page,
-    ) -> Weak<LoadedSection> {
+    ) -> Result<Weak<LoadedSection>, &'static str> {
         if let Some(section) = self.sections.lock().get(name) {
-            return section.clone();
+            return Ok(section.clone());
+        } else if let Some(section) = self.get_section_ending_with(name) {
+            self.sections.lock().insert(name.into(), section.clone());
+            return Ok(section.clone());
         }
 
         for crate_name in crate_names_in_symbol(name) {
-            for object_path in global_object_provider().list_objects(crate_name).unwrap() {
+            for object_path in global_object_provider().list_objects(crate_name)? {
                 let object_name = if object_path.starts_with('/') {
                     let base = object_path.strip_prefix('/').unwrap();
                     if let Some((name, _suffix)) = base.split_once('-') {
@@ -297,18 +300,20 @@ impl Loader {
 
                 self.load_object_impl(
                     &object_name,
-                    &global_object_provider().read_object(&object_name).unwrap(),
+                    &global_object_provider().read_object(&object_name)?,
                     address_space,
                     start_page,
-                )
-                .unwrap();
+                )?;
+
                 if let Some(section) = self.sections.lock().get(name) {
-                    return section.clone();
+                    return Ok(section.clone());
                 }
             }
         }
 
-        panic!("Failed to load `{name}`")
+        error!("Failed to load `{name}` for `{}`", for_object.name);
+
+        Err("section not found")
     }
 
     /// Load an object into memory.
@@ -328,6 +333,7 @@ impl Loader {
         address_space: &AddressSpace,
         mut start_page: Page,
     ) -> Result<Arc<Mutex<LoadedObject>>, &'static str> {
+        info!("Loading `{object_name}`...");
         let object_bytes = global_object_provider().read_object(object_name)?;
         self.load_object_impl(object_name, &object_bytes, address_space, &mut start_page)
     }
@@ -726,6 +732,7 @@ impl Loader {
             }
             // Unhandled section.
             else {
+                error!("Encountered unhandled section: `{section_name}`");
                 return Err("encountered unhandled section");
             }
         }
@@ -792,14 +799,37 @@ impl Loader {
 
                             let demangled_name = rustc_demangle::demangle(name).to_string();
 
-                            self.get_or_load_section(
+                            match self.get_or_load_section(
                                 &demangled_name,
                                 &object,
                                 address_space,
                                 start_page,
-                            )
-                            .upgrade()
-                            .ok_or("couldn't get section for relocation entry")
+                            ) {
+                                Ok(section) => section.upgrade().ok_or(
+                                    "couldn't upgrade section reference for relocation entry",
+                                ),
+                                Err(error) => {
+                                    // HACK: For now, fully relocating libcore isn't entirely
+                                    //       possible because many of the math symbols just aren't
+                                    //       supported yet. Remove this when they are.
+                                    if &*object.name == "core" {
+                                        let start = time::now();
+                                        while time::now().duration_since(start)
+                                            < Duration::from_millis(50)
+                                        {
+                                            core::hint::spin_loop();
+                                        }
+                                        continue;
+                                    } else {
+                                        error!(
+                                            "Couldn't get relocation section for `{}` <- `{}`: \
+                                            {error}",
+                                            target_section.name, demangled_name,
+                                        );
+                                        return Err(error);
+                                    }
+                                }
+                            }
                         }
                     }?;
 
@@ -899,7 +929,10 @@ fn write_relocation(
             target_ref.copy_from_slice(&source_val.to_ne_bytes());
         }
 
-        _ => return Err("unsupported relocation type"),
+        other => {
+            error!("Unsupported relocation type: {other}");
+            return Err("unsupported relocation type");
+        }
     }
 
     Ok(())
