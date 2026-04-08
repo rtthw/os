@@ -41,6 +41,38 @@ pub fn init(fs: impl FileSystem + 'static) {
             fs: Mutex::new(Box::new(fs)),
         });
     }
+
+    // FIXME: This is a really hacky way to make sure the objects get loaded in the
+    //        correct order.
+    let dummy_addr_space = AddressSpace::new(None);
+    // Note that these numbers don't matter because we're just loading these objects
+    // so the example can relocate correctly.
+    let comp_builtins_addr = VirtAddr::new(0x2222_0000_0000);
+    let dep_addr = VirtAddr::new(0x3333_0000_0000);
+    let core_addr = VirtAddr::new(0x4444_0000_0000);
+    global_loader()
+        .load_object(
+            "compiler_builtins",
+            &dummy_addr_space,
+            Page::containing_address(comp_builtins_addr),
+        )
+        .unwrap();
+    global_loader()
+        .load_object(
+            "example_dep",
+            &dummy_addr_space,
+            Page::containing_address(dep_addr),
+        )
+        .unwrap();
+    global_loader()
+        .load_object(
+            "core",
+            &dummy_addr_space,
+            Page::containing_address(core_addr),
+        )
+        .unwrap();
+
+    // global_loader().dump_info();
 }
 
 /// Get a reference to the global object loader.
@@ -196,19 +228,25 @@ impl Loader {
                 .iter()
                 .map(|(name, object)| {
                     let object = object.lock();
+                    let section_count = object.sections.len();
                     format!(
                         "    {name}:{}\n",
-                        object
-                            .sections
-                            .iter()
-                            .map(|(index, section)| format!(
-                                "\n    {index:>4} | {:#x} | {:>10} | {}{}",
-                                section.addr.as_u64(),
-                                section.kind.name(),
-                                if section.global { "pub " } else { "    " },
-                                section.name,
-                            ))
-                            .collect::<String>(),
+                        if section_count > 200 {
+                            format!("\n        {section_count} sections")
+                        } else {
+                            object
+                                .sections
+                                .iter()
+                                .map(|(index, section)| {
+                                    format!(
+                                        "\n    {index:>4} | {:#x} | {:>10} | {}",
+                                        section.addr.as_u64(),
+                                        section.kind.name(),
+                                        &section.name[..section.name.len().min(50)],
+                                    )
+                                })
+                                .collect::<String>()
+                        },
                     )
                 })
                 .collect::<String>(),
@@ -217,7 +255,16 @@ impl Loader {
             "--- SECTIONS ---\n{}",
             sections
                 .iter()
-                .map(|(name, section)| format!("    {name}: {} ref(s)\n", section.weak_count()))
+                .filter(|(name, _section)| !name.starts_with("<")
+                    && !name.contains("core[")
+                    && !name.contains("compiler_builtins[")
+                    && !name.contains("alloc[")
+                    && !name.starts_with("anon."))
+                .map(|(name, section)| format!(
+                    "    {}: {} ref(s)\n",
+                    &name[..name.len().min(60)],
+                    section.weak_count(),
+                ))
                 .collect::<String>(),
         );
     }

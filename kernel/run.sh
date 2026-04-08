@@ -31,23 +31,53 @@ cd ../bootloader
 
 # Build the example program.
 cd ..
-    rustc example/example-dep/src/example_dep.rs \
-        --out-dir=kernel/esp \
+    cargo rustc \
+        --release \
+        --manifest-path=example/example-dep/Cargo.toml \
+        --target=kernel/x86_64-app.json \
+        -Z build-std=core,alloc -Zbuild-std-features=compiler-builtins-mem \
+        -- \
         --crate-type=lib \
-        --emit=link,obj \
+        --emit=obj="kernel/esp/example_dep.o" \
         -L kernel/esp \
         -C panic=abort \
         -C relocation-model=static \
         -Z share-generics=no
-    rustc example/src/example.rs \
-        --out-dir=kernel/esp \
+    cargo rustc \
+        --release \
+        --manifest-path=example/Cargo.toml \
+        --target=kernel/x86_64-app.json \
+        -Z build-std=core,alloc -Zbuild-std-features=compiler-builtins-mem \
+        -- \
         --crate-type=lib \
-        --emit=obj \
+        --emit=obj="kernel/esp/example.o" \
         -L kernel/esp \
         -l example-dep \
         -C panic=abort \
         -C relocation-model=static \
         -Z share-generics=no
+
+    # Create object files for the core language dependencies.
+    for path in $(find target/x86_64-app/release/deps/ -name "*.rlib"); do
+        filename=$(basename ${path})
+
+        # Strip the `lib` prefix and everything after the last `-`. For example:
+        #       `libcore-60553895dc80afc7.rlib` -> `core`
+        realname="$(basename ${path} | sed -E 's/^lib(.*)-[^-]*$/\1/')"
+
+        # If the rlib archive is more than just a single object file, it's
+        # either core, alloc, or compiler_builtins.
+        if [ `ar -t ${path} | wc -l` != "2" ]; then
+            echo -e "Extracting '${filename}' to '${realname}.o'"
+
+            # Extract and link all necessary object files together.
+            mkdir -p "kernel/tmp/extracted/${filename}"
+            ar -xo --output "kernel/tmp/extracted/${filename}/" ${path}
+            ld -r \
+                --output "kernel/esp/${realname}.o" \
+                $(find kernel/tmp/extracted/${filename}/ -name "*.o")
+        fi
+    done
 
 # Build the kernel.
 cd kernel
