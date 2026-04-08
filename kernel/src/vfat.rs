@@ -2,7 +2,11 @@
 
 use {
     crate::{FileSystem, ata::Drive, loader, scheduler::with_scheduler},
-    alloc::{collections::vec_deque::VecDeque, string::String, vec::Vec},
+    alloc::{
+        collections::vec_deque::VecDeque,
+        string::{String, ToString as _},
+        vec::Vec,
+    },
     core::fmt,
     hashbrown::HashMap,
     log::{debug, error},
@@ -324,8 +328,20 @@ impl VfatFileSystem {
 }
 
 impl FileSystem for VfatFileSystem {
+    fn list(&self, dir_path: &str) -> Result<Vec<String>, &'static str> {
+        Ok(self
+            .cache
+            .iter()
+            .filter_map(|(path, _entry)| path.starts_with(dir_path).then(|| path.to_string()))
+            .collect())
+    }
+
     fn read(&mut self, path: &str) -> Result<Vec<u8>, &'static str> {
-        let dir_entry = self.cache.get(path).unwrap_or_else(|| todo!());
+        let dir_entry = self
+            .cache
+            .get(path)
+            .ok_or("TODO: Cache directory entries dynamically")?;
+
         read_file_bytes(
             &mut self.drive,
             self.lba_start,

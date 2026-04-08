@@ -67,11 +67,21 @@ pub struct GlobalObjectProvider {
 
 impl<'a> ObjectProvider for &'a GlobalObjectProvider {
     fn list_objects(&self, prefix: &str) -> Result<Vec<String>, &'static str> {
-        Ok(vec![prefix.to_string()])
+        self.fs.lock().list(&format!("/{prefix}"))
     }
 
     fn read_object(&self, name: &str) -> Result<Vec<u8>, &'static str> {
-        self.fs.lock().read(&format!("/{name}.o"))
+        if !name.starts_with("/") {
+            let path = self
+                .list_objects(name)?
+                .into_iter()
+                .next()
+                .ok_or("no object found")?;
+
+            self.fs.lock().read(&path)
+        } else {
+            self.fs.lock().read(name)
+        }
     }
 }
 
@@ -263,15 +273,28 @@ impl Loader {
         }
 
         for crate_name in crate_names_in_symbol(name) {
-            for object_name in global_object_provider().list_objects(crate_name).unwrap() {
+            for object_path in global_object_provider().list_objects(crate_name).unwrap() {
+                let object_name = if object_path.starts_with('/') {
+                    let base = object_path.strip_prefix('/').unwrap();
+                    if let Some((name, _suffix)) = base.split_once('-') {
+                        name
+                    } else {
+                        base
+                    }
+                } else {
+                    &object_path
+                };
+
                 // Skip already loaded objects.
                 if self.get_object(&object_name).is_some() {
                     continue;
                 }
+
                 trace!(
-                    "Loading object '{object_name}' as a dependency of `{}`",
+                    "Loading object `{object_name}` as a dependency of `{}` for symbol `{name}`",
                     for_object.name,
                 );
+
                 self.load_object_impl(
                     &object_name,
                     &global_object_provider().read_object(&object_name).unwrap(),

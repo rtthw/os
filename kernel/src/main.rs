@@ -26,7 +26,7 @@ mod vfat;
 mod window_manager;
 
 use {
-    alloc::vec::Vec,
+    alloc::{string::String, vec::Vec},
     boot_info::BootInfo,
     core::{arch::asm, time::Duration},
     log::{debug, info, warn},
@@ -246,5 +246,6 @@ fn init_monotonic_clock() {
 
 
 pub trait FileSystem {
+    fn list(&self, dir_path: &str) -> Result<Vec<String>, &'static str>;
     fn read(&mut self, path: &str) -> Result<Vec<u8>, &'static str>;
 }
