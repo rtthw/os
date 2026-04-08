@@ -521,7 +521,10 @@ impl Loader {
             // .text
             if is_exec && !is_write {
                 let is_global = global_sections.contains(&section_index);
-                let name = symbol_name_after_prefix!(section_name, ".text.");
+                let mut name = symbol_name_after_prefix!(section_name, ".text.");
+                if name.starts_with(".") {
+                    name = name.strip_prefix(".").unwrap();
+                }
                 let name = if is_global && name.starts_with("unlikely.") {
                     name.get("unlikely.".len()..)
                         .ok_or("failed to get `.text.unlikely.` section's name")?
@@ -649,6 +652,41 @@ impl Loader {
                     Ok(SectionData::Empty) => slice.fill(0),
                     _ => {
                         return Err("couldn't get data for `.rodata` section");
+                    }
+                }
+
+                loaded_sections.insert(
+                    section_index,
+                    Arc::new(LoadedSection {
+                        name: rustc_demangle::demangle(name).to_string().into(),
+                        kind: SectionKind::Rodata,
+                        size: section_size,
+                        addr: section_addr,
+                        global: global_sections.contains(&section_index),
+                        mapping: Arc::clone(&read_only_mapping),
+                        mapping_offset: rodata_offset,
+                        owner: Arc::downgrade(&object),
+                    }),
+                );
+
+                rodata_offset += section_size.next_multiple_of(section_align);
+            }
+            // .lrodata
+            else if section_name.starts_with(".lrodata") {
+                let mut name = symbol_name_after_prefix!(section_name, ".lrodata.");
+                if name.starts_with(".") {
+                    name = name.strip_prefix(".").unwrap();
+                }
+
+                assert!(rodata_offset < read_only_map_lock.size());
+                let section_addr = read_only_map_lock.addr + rodata_offset as u64;
+
+                let slice = read_only_map_lock.as_slice_mut(rodata_offset, section_size);
+                match section.get_data(&elf_file) {
+                    Ok(SectionData::Undefined(sec_data)) => slice.copy_from_slice(sec_data),
+                    Ok(SectionData::Empty) => slice.fill(0),
+                    _ => {
+                        return Err("couldn't get data for `.lrodata` section");
                     }
                 }
 
