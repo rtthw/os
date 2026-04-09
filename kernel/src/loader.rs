@@ -647,11 +647,14 @@ impl Loader {
             // .data/.bss
             else if is_write {
                 let is_bss = section.get_type() == Ok(SectionHeaderType::NoBits);
-                let name = if is_bss {
+                let mut name = if is_bss {
                     symbol_name_after_prefix!(section_name, ".bss.")
                 } else {
                     symbol_name_after_prefix!(section_name, ".data.")
                 };
+                if name.starts_with(".") {
+                    name = name.strip_prefix(".").unwrap();
+                }
 
                 assert!(data_offset < read_write_map_lock.size());
                 let section_addr = read_write_map_lock.addr + data_offset as u64;
