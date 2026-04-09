@@ -40,6 +40,7 @@ cd ..
         -- \
         --crate-type=lib \
         --emit=obj="kernel/esp/example_dep.o" \
+        -C link-dead-code=yes \
         -Z share-generics=no
     cargo rustc \
         --release \
@@ -49,6 +50,7 @@ cd ..
         -Z build-std-features=compiler-builtins-mem \
         -- \
         --emit=obj="kernel/esp/example.o" \
+        -C link-dead-code=yes \
         -Z share-generics=no
 
     # Create object files for the core language dependencies.
