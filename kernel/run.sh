@@ -35,26 +35,20 @@ cd ..
         --release \
         --manifest-path=example/example-dep/Cargo.toml \
         --target=kernel/x86_64-app.json \
-        -Z build-std=core,alloc -Zbuild-std-features=compiler-builtins-mem \
+        -Z build-std=core,alloc \
+        -Z build-std-features=compiler-builtins-mem \
         -- \
         --crate-type=lib \
         --emit=obj="kernel/esp/example_dep.o" \
-        -L kernel/esp \
-        -C panic=abort \
-        -C relocation-model=static \
         -Z share-generics=no
     cargo rustc \
         --release \
         --manifest-path=example/Cargo.toml \
         --target=kernel/x86_64-app.json \
-        -Z build-std=core,alloc -Zbuild-std-features=compiler-builtins-mem \
+        -Z build-std=core,alloc \
+        -Z build-std-features=compiler-builtins-mem \
         -- \
-        --crate-type=lib \
         --emit=obj="kernel/esp/example.o" \
-        -L kernel/esp \
-        -l example-dep \
-        -C panic=abort \
-        -C relocation-model=static \
         -Z share-generics=no
 
     # Create object files for the core language dependencies.
@@ -85,7 +79,8 @@ cd kernel
         --release \
         --manifest-path "$SOURCE_DIR/Cargo.toml" \
         --target "$SOURCE_DIR/x86_64-kernel.json" \
-        -Z build-std=core,alloc -Zbuild-std-features=compiler-builtins-mem \
+        -Z build-std=core,alloc \
+        -Z build-std-features=compiler-builtins-mem \
         -- \
         -C link-arg=-T -Clink-arg="$SOURCE_DIR/kernel_x86_64.ld" \
         -C link-arg=-z -Clink-arg=max-page-size=0x1000 \
