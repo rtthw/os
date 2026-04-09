@@ -107,7 +107,7 @@ impl<'a> ObjectProvider for &'a GlobalObjectProvider {
             let path = self
                 .list_objects(name)?
                 .into_iter()
-                .next()
+                .find(|object_name| object_name == &format!("/{name}.o"))
                 .ok_or("no object found")?;
 
             self.fs.lock().read(&path)
