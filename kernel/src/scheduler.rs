@@ -349,8 +349,8 @@ define_interrupt_handler_with_context!(exit_interrupt_handler {
     // be deallocated when the address space is dropped.
 
     kernel_address_space().enter(); // ???: Is this necessary?
-    if let Some(process) = with_scheduler(|scheduler| scheduler.current.take()) {
-        info!("Exiting {process}");
+    if let Some(mut process) = with_scheduler(|scheduler| scheduler.current.take()) {
+        info!("Exiting {process} with context: {:?}", process.context.take());
     } else {
         unreachable!()
     }
