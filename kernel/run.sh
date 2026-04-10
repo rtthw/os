@@ -33,6 +33,17 @@ cd ../bootloader
 cd ..
     cargo rustc \
         --release \
+        --manifest-path=crates/time/Cargo.toml \
+        --target=kernel/x86_64-app.json \
+        -Z build-std=core,alloc \
+        -Z build-std-features=compiler-builtins-mem \
+        -- \
+        --crate-type=lib \
+        --emit=obj="kernel/esp/time.o" \
+        -C link-dead-code=yes \
+        -Z share-generics=no
+    cargo rustc \
+        --release \
         --manifest-path=example/example-dep/Cargo.toml \
         --target=kernel/x86_64-app.json \
         -Z build-std=core,alloc \

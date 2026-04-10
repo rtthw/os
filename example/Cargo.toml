@@ -8,3 +8,4 @@ path = "src/example.rs"
 
 [dependencies]
 example-dep = { path = "./example-dep" }
+time = { path = "../crates/time" }

@@ -4,7 +4,7 @@
 
 use core::{
     ops::{Add, Sub},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 pub use core::time::*;
@@ -45,10 +45,8 @@ pub const FEMTOS_PER_NANO: u64 = 1_000_000;
 /// The amount of femtoseconds in a picosecond.
 pub const FEMTOS_PER_PICO: u64 = 1_000;
 
-static MONOTONIC_CLOCK_SET: AtomicBool = AtomicBool::new(false);
-
-static mut MONOTONIC_NOW: fn() -> u64 = dummy_monotonic_now;
-static mut MONOTONIC_PERIOD: u64 = 1;
+const INVALID_MONOTONIC_PERIOD: u64 = 1;
+pub static MONOTONIC_PERIOD: AtomicU64 = AtomicU64::new(INVALID_MONOTONIC_PERIOD);
 
 pub trait ClockMonotonic {
     /// The current clock value.
@@ -59,20 +57,12 @@ pub trait ClockMonotonic {
 
 /// Set the global monotonic clock.
 pub unsafe fn set_monotonic_clock<C: ClockMonotonic>() {
-    unsafe {
-        MONOTONIC_NOW = C::now;
-        MONOTONIC_PERIOD = C::period();
-    }
-    MONOTONIC_CLOCK_SET.store(true, Ordering::Relaxed);
+    MONOTONIC_PERIOD.store(C::period(), Ordering::SeqCst);
 }
 
 /// Returns `true` if the global monotonic clock has been set.
 pub fn monotonic_clock_ready() -> bool {
-    MONOTONIC_CLOCK_SET.load(Ordering::Relaxed)
-}
-
-fn dummy_monotonic_now() -> u64 {
-    panic!("called `MONOTONIC_NOW` before a monotonic clock was set")
+    MONOTONIC_PERIOD.load(Ordering::SeqCst) != INVALID_MONOTONIC_PERIOD
 }
 
 /// An alias for [`Instant::now`].
@@ -82,7 +72,7 @@ pub fn now() -> Instant {
 }
 
 /// A moment in time.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct Instant {
     value: u64,
@@ -108,7 +98,7 @@ impl Instant {
     /// by the kernel.
     pub fn now() -> Self {
         Self {
-            value: unsafe { MONOTONIC_NOW() },
+            value: unsafe { core::arch::x86_64::_rdtsc() },
         }
     }
 
@@ -145,7 +135,7 @@ impl Instant {
     /// Returns [`None`] if `earlier` is later than `self`.
     pub fn checked_duration_since(&self, earlier: Self) -> Option<Duration> {
         let delta = self.value.checked_sub(earlier.value)? as u128;
-        let femtos = delta * unsafe { MONOTONIC_PERIOD as u128 };
+        let femtos = delta * MONOTONIC_PERIOD.load(Ordering::SeqCst) as u128;
 
         Some(Duration::from_nanos_u128(femtos / FEMTOS_PER_NANO as u128))
     }
@@ -156,7 +146,7 @@ impl Instant {
 
     pub fn checked_add_duration(&self, duration: Duration) -> Option<Self> {
         let femtos = duration.as_nanos() * FEMTOS_PER_NANO as u128;
-        let delta = femtos / unsafe { MONOTONIC_PERIOD as u128 };
+        let delta = femtos / MONOTONIC_PERIOD.load(Ordering::SeqCst) as u128;
 
         Some(Self::from_raw(self.value.checked_add(delta as u64)?))
     }

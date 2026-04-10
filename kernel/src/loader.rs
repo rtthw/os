@@ -16,7 +16,11 @@ use {
         sync::{Arc, Weak},
         vec::Vec,
     },
-    core::{ops::Range, time::Duration},
+    core::{
+        ops::Range,
+        sync::atomic::{AtomicU64, Ordering},
+        time::Duration,
+    },
     elf::{
         ElfFile, ObjectFileType, SHF_ALLOC, SHF_EXECINSTR, SHF_TLS, SHF_WRITE, SectionData,
         SectionHeaderType, SymbolBinding, SymbolType,
@@ -39,6 +43,7 @@ const FUNDAMENTAL_SYMBOLS: &[&str] = &[
     "__divsf3",
     "__divdf3",
     "__udivti3",
+    "__umodti3",
     "__floatdidf",
     "__floatdisf",
     "__eqsf2",
@@ -71,6 +76,33 @@ pub fn init(fs: impl FileSystem + 'static) {
             Page::containing_address(VirtAddr::new(0x3333_0000_0000)),
         )
         .unwrap();
+
+    global_loader()
+        .load_object(
+            "time",
+            &AddressSpace::new(None),
+            // The actual value of this address doesn't matter.
+            Page::containing_address(VirtAddr::new(0x3333_0000_0000)),
+        )
+        .unwrap();
+
+    unsafe {
+        let mono_period_sym = global_loader()
+            .get_section_with("time", "MONOTONIC_PERIOD")
+            .unwrap();
+        let mono_period = mono_period_sym.upgrade().unwrap();
+        let mut mono_period_mapping = mono_period.mapping.lock();
+        let mono_period_ref = mono_period_mapping.as_mut::<AtomicU64>(mono_period.mapping_offset);
+
+        assert_eq!(mono_period_ref.load(Ordering::SeqCst), 1);
+
+        mono_period_ref.store(crate::tsc::TSC_PERIOD, Ordering::SeqCst);
+
+        assert_eq!(
+            mono_period_ref.load(Ordering::SeqCst),
+            crate::tsc::TSC_PERIOD
+        );
+    }
 
     // global_loader().dump_info();
 }

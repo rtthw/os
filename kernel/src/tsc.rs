@@ -6,7 +6,7 @@ use {
     time::{ClockMonotonic, FEMTOS_PER_MICRO},
 };
 
-static mut TSC_PERIOD: u64 = 0;
+pub static mut TSC_PERIOD: u64 = 0;
 
 
 pub fn init() {
