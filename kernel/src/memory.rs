@@ -213,6 +213,23 @@ impl KernelMapping {
 
         unsafe { core::slice::from_raw_parts_mut(addr.as_mut_ptr(), len) }
     }
+
+    /// Get a mutable reference to a value of type `T` at the given offset
+    /// within this mapping.
+    pub unsafe fn as_mut<T: Sized>(&mut self, offset: usize) -> &mut T {
+        assert!(kernel_address_space().is_current());
+        assert!(
+            size_of::<T>() + offset <= self.size(),
+            "Requested type and offset would not fit in kernel mapping",
+        );
+
+        unsafe {
+            (self.addr + offset as u64)
+                .as_mut_ptr::<T>()
+                .as_mut()
+                .unwrap()
+        }
+    }
 }
 
 
