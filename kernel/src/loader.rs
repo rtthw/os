@@ -318,43 +318,39 @@ impl Loader {
         if let Some(section) = self.sections.lock().get(name) {
             return Ok(section.clone());
         } else if let Some(section) = self.get_section_ending_with(name) {
+            // HACK: This is only necessary for `compiler_builtins` symbols (like memcpy and
+            //       memcmp). This should be removed in favor of some explicit loading
+            //       sequence.
+            trace!(
+                "Adding alias `{name}` to `{}`",
+                section
+                    .upgrade()
+                    .map_or("UNKNOWN".to_string(), |section| section.name.to_string()),
+            );
             self.sections.lock().insert(name.into(), section.clone());
             return Ok(section.clone());
         }
 
-        for crate_name in crate_names_in_symbol(name) {
-            for object_path in global_object_provider().list_objects(crate_name)? {
-                let object_name = if object_path.starts_with('/') {
-                    let base = object_path.strip_prefix('/').unwrap();
-                    if let Some((name, _suffix)) = base.split_once('-') {
-                        name
-                    } else {
-                        base
-                    }
-                } else {
-                    &object_path
-                };
+        for object_name in crate_names_in_symbol(name) {
+            // Skip already loaded objects.
+            if self.get_object(&object_name).is_some() {
+                continue;
+            }
 
-                // Skip already loaded objects.
-                if self.get_object(&object_name).is_some() {
-                    continue;
-                }
+            trace!(
+                "Loading object `{object_name}` as a dependency of `{}` for symbol `{name}`",
+                for_object.name,
+            );
 
-                trace!(
-                    "Loading object `{object_name}` as a dependency of `{}` for symbol `{name}`",
-                    for_object.name,
-                );
+            self.load_object_impl(
+                &object_name,
+                &global_object_provider().read_object(&object_name)?,
+                address_space,
+                start_page,
+            )?;
 
-                self.load_object_impl(
-                    &object_name,
-                    &global_object_provider().read_object(&object_name)?,
-                    address_space,
-                    start_page,
-                )?;
-
-                if let Some(section) = self.sections.lock().get(name) {
-                    return Ok(section.clone());
-                }
+            if let Some(section) = self.sections.lock().get(name) {
+                return Ok(section.clone());
             }
         }
 
