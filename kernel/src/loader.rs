@@ -30,6 +30,21 @@ use {
     },
 };
 
+const FUNDAMENTAL_SYMBOLS: &[&str] = &[
+    "memcmp",
+    "memcpy",
+    "memset",
+    "__muldf3",
+    "__mulsf3",
+    "__divsf3",
+    "__divdf3",
+    "__udivti3",
+    "__floatdidf",
+    "__floatdisf",
+    "__eqsf2",
+    "__gedf2",
+    "__gesf2",
+];
 
 static LOADER: Loader = Loader::new();
 static mut PROVIDER: Option<GlobalObjectProvider> = None;
@@ -42,37 +57,42 @@ pub fn init(fs: impl FileSystem + 'static) {
         });
     }
 
-    // FIXME: This is a really hacky way to make sure the objects get loaded in the
-    //        correct order.
-    let dummy_addr_space = AddressSpace::new(None);
-    // Note that these numbers don't matter because we're just loading these objects
-    // so the example can relocate correctly.
-    let comp_builtins_addr = VirtAddr::new(0x2222_0000_0000);
-    let dep_addr = VirtAddr::new(0x3333_0000_0000);
-    let core_addr = VirtAddr::new(0x4444_0000_0000);
-    global_loader()
-        .load_object(
-            "compiler_builtins",
-            &dummy_addr_space,
-            Page::containing_address(comp_builtins_addr),
-        )
-        .unwrap();
+    init_fundamental_symbols();
+
+    // FIXME: The only reason this exists is because `core` relies on a symbol
+    //        called `rust_begin_unwind`, which is only defined with the
+    //        `#[panic_handler]` lang item. When it gets loaded, it expects that
+    //        symbol to already be loaded. That's what this is doing.
     global_loader()
         .load_object(
             "example_dep",
-            &dummy_addr_space,
-            Page::containing_address(dep_addr),
-        )
-        .unwrap();
-    global_loader()
-        .load_object(
-            "core",
-            &dummy_addr_space,
-            Page::containing_address(core_addr),
+            &AddressSpace::new(None),
+            // The actual value of this address doesn't matter.
+            Page::containing_address(VirtAddr::new(0x3333_0000_0000)),
         )
         .unwrap();
 
     // global_loader().dump_info();
+}
+
+fn init_fundamental_symbols() {
+    let dummy_addr_space = AddressSpace::new(None);
+
+    global_loader()
+        .load_object(
+            "compiler_builtins",
+            &dummy_addr_space,
+            // The actual value of this address doesn't matter.
+            Page::containing_address(VirtAddr::new(0x2222_0000_0000)),
+        )
+        .unwrap();
+
+    for name in FUNDAMENTAL_SYMBOLS {
+        let Some(section) = global_loader().get_section_with("compiler_builtins", name) else {
+            panic!("Couldn't find section for fundamental symbol `{name}`");
+        };
+        global_loader().add_alias_to_section(name, section);
+    }
 }
 
 /// Get a reference to the global object loader.
@@ -317,18 +337,6 @@ impl Loader {
     ) -> Result<Weak<LoadedSection>, &'static str> {
         if let Some(section) = self.sections.lock().get(name) {
             return Ok(section.clone());
-        } else if let Some(section) = self.get_section_ending_with(name) {
-            // HACK: This is only necessary for `compiler_builtins` symbols (like memcpy and
-            //       memcmp). This should be removed in favor of some explicit loading
-            //       sequence.
-            trace!(
-                "Adding alias `{name}` to `{}`",
-                section
-                    .upgrade()
-                    .map_or("UNKNOWN".to_string(), |section| section.name.to_string()),
-            );
-            self.sections.lock().insert(name.into(), section.clone());
-            return Ok(section.clone());
         }
 
         for object_name in crate_names_in_symbol(name) {
@@ -357,6 +365,10 @@ impl Loader {
         error!("Failed to load `{name}` for `{}`", for_object.name);
 
         Err("section not found")
+    }
+
+    fn add_alias_to_section(&self, name: &str, section: Weak<LoadedSection>) {
+        self.sections.lock().insert(name.into(), section);
     }
 
     /// Load an object into memory.
