@@ -418,43 +418,47 @@ impl Loader {
         } = allocate_section_mappings(&elf_file)?;
 
         // Map loaded sections into the object's address space.
-        {
+        if let Some(mapping) = &executable_mapping {
             address_space.map_kernel_pages_to(
-                executable_mapping.pages,
+                mapping.pages,
                 Page::range_inclusive(
                     *start_page,
-                    *start_page + executable_mapping.pages.count().saturating_sub(1) as u64,
+                    *start_page + mapping.pages.count().saturating_sub(1) as u64,
                 ),
                 PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
             );
-            *start_page += executable_mapping.pages.count() as u64;
+            *start_page += mapping.pages.count() as u64;
+        }
+        if let Some(mapping) = &read_only_mapping {
             address_space.map_kernel_pages_to(
-                read_only_mapping.pages,
+                mapping.pages,
                 Page::range_inclusive(
                     *start_page,
-                    *start_page + read_only_mapping.pages.count().saturating_sub(1) as u64,
+                    *start_page + mapping.pages.count().saturating_sub(1) as u64,
                 ),
                 PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
             );
-            *start_page += read_only_mapping.pages.count() as u64;
+            *start_page += mapping.pages.count() as u64;
+        }
+        if let Some(mapping) = &read_write_mapping {
             address_space.map_kernel_pages_to(
-                read_write_mapping.pages,
+                mapping.pages,
                 Page::range_inclusive(
                     *start_page,
-                    *start_page + read_write_mapping.pages.count().saturating_sub(1) as u64,
+                    *start_page + mapping.pages.count().saturating_sub(1) as u64,
                 ),
                 PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
             );
-            *start_page += read_write_mapping.pages.count() as u64;
+            *start_page += mapping.pages.count() as u64;
         }
 
-        let executable_mapping = Arc::new(Mutex::new(executable_mapping));
-        let read_only_mapping = Arc::new(Mutex::new(read_only_mapping));
-        let read_write_mapping = Arc::new(Mutex::new(read_write_mapping));
+        let executable_mapping = executable_mapping.map(|mapping| Arc::new(Mutex::new(mapping)));
+        let read_only_mapping = read_only_mapping.map(|mapping| Arc::new(Mutex::new(mapping)));
+        let read_write_mapping = read_write_mapping.map(|mapping| Arc::new(Mutex::new(mapping)));
 
         // The `.text` sections always come at the beginning, so we can get the byte
         // range without needing to know the offset.
-        {
+        if let Some(executable_mapping) = &executable_mapping {
             let mut executable_map_lock = executable_mapping.lock();
             let text_size = executable_map_lock.size();
             let slice = elf_file.input.get(..text_size).ok_or_else(|| {
@@ -466,9 +470,6 @@ impl Loader {
                 .as_slice_mut(0, text_size)
                 .copy_from_slice(slice);
         }
-
-        let mut read_only_map_lock = read_only_mapping.lock();
-        let mut read_write_map_lock = read_write_mapping.lock();
 
         let object = Arc::new(Mutex::new(LoadedObject {
             name: rustc_demangle::demangle(object_name).to_string().into(),
@@ -563,6 +564,10 @@ impl Loader {
 
             // .text
             if is_exec && !is_write {
+                let Some(executable_mapping) = &executable_mapping else {
+                    continue;
+                };
+
                 let is_global = global_sections.contains(&section_index);
                 let mut name = symbol_name_after_prefix!(section_name, ".text.");
                 if name.starts_with(".") {
@@ -596,6 +601,11 @@ impl Loader {
             }
             // .tdata/.tbss
             else if is_tls {
+                let Some(read_only_mapping) = &read_only_mapping else {
+                    continue;
+                };
+                let mut read_only_map_lock = read_only_mapping.lock();
+
                 // check if this TLS section is .bss or .data
                 let is_bss = section.get_type() == Ok(SectionHeaderType::NoBits);
                 let name = if is_bss {
@@ -642,6 +652,11 @@ impl Loader {
             }
             // .data/.bss
             else if is_write {
+                let Some(read_write_mapping) = &read_write_mapping else {
+                    continue;
+                };
+                let mut read_write_map_lock = read_write_mapping.lock();
+
                 let is_bss = section.get_type() == Ok(SectionHeaderType::NoBits);
                 let mut name = if is_bss {
                     symbol_name_after_prefix!(section_name, ".bss.")
@@ -687,6 +702,11 @@ impl Loader {
             }
             // .rodata
             else if section_name.starts_with(".rodata") {
+                let Some(read_only_mapping) = &read_only_mapping else {
+                    continue;
+                };
+                let mut read_only_map_lock = read_only_mapping.lock();
+
                 let name = symbol_name_after_prefix!(section_name, ".rodata.");
 
                 assert!(rodata_offset < read_only_map_lock.size());
@@ -719,6 +739,11 @@ impl Loader {
             }
             // .lrodata
             else if section_name.starts_with(".lrodata") {
+                let Some(read_only_mapping) = &read_only_mapping else {
+                    continue;
+                };
+                let mut read_only_map_lock = read_only_mapping.lock();
+
                 let mut name = symbol_name_after_prefix!(section_name, ".lrodata.");
                 if name.starts_with(".") {
                     name = name.strip_prefix(".").unwrap();
@@ -754,6 +779,11 @@ impl Loader {
             }
             // .gcc_except_table
             else if section_name.starts_with(".gcc_except_table") {
+                let Some(read_only_mapping) = &read_only_mapping else {
+                    continue;
+                };
+                let mut read_only_map_lock = read_only_mapping.lock();
+
                 assert!(rodata_offset < read_only_map_lock.size());
                 let section_addr = read_only_map_lock.addr + rodata_offset as u64;
 
@@ -785,6 +815,11 @@ impl Loader {
             }
             // .eh_frame
             else if section_name == ".eh_frame" {
+                let Some(read_only_mapping) = &read_only_mapping else {
+                    continue;
+                };
+                let mut read_only_map_lock = read_only_mapping.lock();
+
                 assert!(rodata_offset < read_only_map_lock.size());
                 let section_addr = read_only_map_lock.addr + rodata_offset as u64;
 
@@ -1089,26 +1124,20 @@ fn allocate_section_mappings(elf_file: &ElfFile) -> Result<SectionMappings, &'st
         (executable_len, read_only_len, read_write_len)
     };
 
-    // HACK: Mappings should be optional, this is just a workaround for the
-    //       possibility of an empty mapping.
-    let executable_len = executable_len.max(1);
-    let read_only_len = read_only_len.max(1);
-    let read_write_len = read_write_len.max(1);
-
     let flags =
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
 
     Ok(SectionMappings {
-        executable: KernelMapping::new(executable_len, flags),
-        read_only: KernelMapping::new(read_only_len, flags),
-        read_write: KernelMapping::new(read_write_len, flags),
+        executable: (executable_len > 0).then(|| KernelMapping::new(executable_len, flags)),
+        read_only: (read_only_len > 0).then(|| KernelMapping::new(read_only_len, flags)),
+        read_write: (read_write_len > 0).then(|| KernelMapping::new(read_write_len, flags)),
     })
 }
 
 struct SectionMappings {
-    executable: KernelMapping,
-    read_only: KernelMapping,
-    read_write: KernelMapping,
+    executable: Option<KernelMapping>,
+    read_only: Option<KernelMapping>,
+    read_write: Option<KernelMapping>,
 }
 
 
