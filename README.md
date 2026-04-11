@@ -1,6 +1,8 @@
 
 > [!WARNING]
-> This project is very much still a work in progress.
+> This project is very much still a work in progress. I'm still fleshing out many of the core system, so much of the code is undocumented. There are a few notable exceptions that I recommend starting with if you're interested in exploring the project:
+> - [kernel/src/loader.rs](./kernel/src/loader.rs)
+> - [kernel/src/scheduler.rs](./kernel/src/scheduler.rs)
 
 <details>
 <summary>Table of Contents</summary>
