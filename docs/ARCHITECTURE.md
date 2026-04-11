@@ -23,6 +23,7 @@ The [/drivers](../drivers) directory contains device drivers used by the kernel.
   - [/abi-tests](../crates/abi-tests) ✔️
   - [/bit-utils](../crates/bit-utils) ✔️
   - [/boot-info](../crates/boot-info) ✔️
+  - [/defer-mutex](../crates/defer-mutex) ✔️
   - [/driver](../crates/driver) ❌
   - [/elf](../crates/elf) ✔️
   - [/emulator](../crates/emulator) ✔️

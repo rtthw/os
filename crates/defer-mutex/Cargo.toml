@@ -1,0 +1,10 @@
+[package]
+name = "defer-mutex"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/defer_mutex.rs"
+
+[dependencies]
+spin-mutex = { path = "../spin-mutex" }

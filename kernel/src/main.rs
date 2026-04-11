@@ -9,7 +9,6 @@ extern crate alloc;
 mod acpi;
 mod apic;
 mod ata;
-mod defer_mutex;
 mod executor;
 mod gdt;
 mod hpet;
