@@ -463,8 +463,8 @@ impl Loader {
 
         // Map loaded sections into the object's address space.
         if let Some(mapping) = &executable_mapping {
-            address_space.map_kernel_pages_to(
-                mapping.pages,
+            mapping.map_into(
+                address_space,
                 Page::range_inclusive(
                     *start_page,
                     *start_page + mapping.pages.count().saturating_sub(1) as u64,
@@ -474,8 +474,8 @@ impl Loader {
             *start_page += mapping.pages.count() as u64;
         }
         if let Some(mapping) = &read_only_mapping {
-            address_space.map_kernel_pages_to(
-                mapping.pages,
+            mapping.map_into(
+                address_space,
                 Page::range_inclusive(
                     *start_page,
                     *start_page + mapping.pages.count().saturating_sub(1) as u64,
@@ -485,8 +485,8 @@ impl Loader {
             *start_page += mapping.pages.count() as u64;
         }
         if let Some(mapping) = &read_write_mapping {
-            address_space.map_kernel_pages_to(
-                mapping.pages,
+            mapping.map_into(
+                address_space,
                 Page::range_inclusive(
                     *start_page,
                     *start_page + mapping.pages.count().saturating_sub(1) as u64,

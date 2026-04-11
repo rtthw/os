@@ -230,6 +230,23 @@ impl KernelMapping {
                 .unwrap()
         }
     }
+
+    /// Make this mapping available within the given [`AddressSpace`].
+    ///
+    /// ## Arguments
+    ///
+    /// - `address_space`, the [`AddressSpace`] that will receive the newly
+    ///   mapped pages.
+    /// - `pages`, the pages to map within `address_space`.
+    /// - `flags`, the [`PageTableFlags`] to apply to the new mapping.
+    pub fn map_into(
+        &self,
+        address_space: &AddressSpace,
+        pages: PageRangeInclusive,
+        flags: PageTableFlags,
+    ) {
+        address_space.map_kernel_pages_to(self.pages, pages, flags);
+    }
 }
 
 
@@ -498,7 +515,7 @@ impl AddressSpace {
         }
     }
 
-    pub fn map_kernel_pages_to(
+    fn map_kernel_pages_to(
         &self,
         kernel_pages: PageRangeInclusive,
         local_pages: PageRangeInclusive,
