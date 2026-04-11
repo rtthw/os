@@ -1,4 +1,6 @@
 //! # Scheduler
+//!
+//! A preemptive, multitasking process scheduler.
 
 use {
     crate::{
@@ -32,15 +34,20 @@ use {
 
 const IDLE_PROCESS_ID: u64 = 0;
 const USER_CODE_ADDR: u64 = 0x4444_0000_0000;
-const DEFAULT_STACK_SIZE: usize = PAGE_SIZE * 8;
+
+pub const DEFAULT_KERNEL_STACK_SIZE: usize = PAGE_SIZE * 8;
+pub const DEFAULT_USER_STACK_SIZE: usize = PAGE_SIZE * 16;
 
 static PROCESS_ID: AtomicU64 = AtomicU64::new(IDLE_PROCESS_ID + 1);
 
+/// Start preemptive multitasking.
 pub fn run() -> ! {
     SCHEDULER.lock().init();
     schedule()
 }
 
+/// Define an interrupt handler that makes use of the [`ExecutionContext`] at
+/// the time of interruption.
 #[macro_export]
 macro_rules! define_interrupt_handler_with_context {
     ($name:ident { $($body:tt)* }) => {
@@ -91,8 +98,10 @@ macro_rules! define_interrupt_handler_with_context {
     };
 }
 
+/// The global [`Scheduler`] instance.
 static SCHEDULER: Mutex<Scheduler> = Mutex::new(Scheduler::new());
 
+/// The kernel's process scheduler.
 pub struct Scheduler {
     current: Option<Process>,
     queue: BTreeMap<Priority, VecDeque<Process>>,
@@ -162,6 +171,7 @@ impl Scheduler {
             .expect("current process should have a context")
     }
 
+    /// Set the current process's [`ExecutionContext`].
     pub fn set_current_context(&mut self, context: ExecutionContext) {
         let prev_context = self
             .current
@@ -173,6 +183,8 @@ impl Scheduler {
         assert!(prev_context.is_none());
     }
 
+    /// Preempt the currently running process, and place it at the end of the
+    /// run queue.
     pub fn preempt_current(&mut self) {
         if self.queue.is_empty() {
             warn!("Attempted preemption with an empty ready queue");
@@ -185,7 +197,16 @@ impl Scheduler {
         }
     }
 
-    pub fn run_process(
+    /// Add a kernel process with the given parameters to the run queue.
+    ///
+    /// ## Arguments
+    ///
+    /// - `name`, the name of the process to be run.
+    /// - `entry_point`, a pointer to the entry point of the process. The
+    ///   function must be diverging.
+    /// - `stack_size`, a size for the new process's stack. If `None` is
+    ///   provided, the [`DEFAULT_KERNEL_STACK_SIZE`] will be used.
+    pub fn run_kernel_process(
         &mut self,
         name: impl Into<String>,
         entry_point: *const fn() -> !,
@@ -194,11 +215,11 @@ impl Scheduler {
         let id = PROCESS_ID.fetch_add(1, Ordering::SeqCst);
         let name = name.into();
 
-        // TODO: Process address spaces shouldn't just inherit the kernel address space.
-
+        // This is a kernel process running kernel code, so just inherit the kernel's
+        // address space.
         let address_space = AddressSpace::new(Some(kernel_address_space()));
 
-        let stack_size = stack_size.unwrap_or(DEFAULT_STACK_SIZE);
+        let stack_size = stack_size.unwrap_or(DEFAULT_KERNEL_STACK_SIZE);
         let stack_top_addr = VirtAddr::new(USER_CODE_ADDR);
         {
             let top_page = Page::containing_address(stack_top_addr - 1);
@@ -234,7 +255,16 @@ impl Scheduler {
         self.add_to_queue(process);
     }
 
-    pub fn run_program(&mut self, name: impl Into<String>, stack_size: Option<usize>) {
+    /// Add a user process with the given parameters to the run queue.
+    ///
+    /// ## Arguments
+    ///
+    /// - `name`, the name of the process to be run.
+    /// - `entry_point`, a pointer to the entry point of the process. The
+    ///   function must be diverging.
+    /// - `stack_size`, a size for the new process's stack. If `None` is
+    ///   provided, the [`DEFAULT_USER_STACK_SIZE`] will be used.
+    pub fn run_user_process(&mut self, name: impl Into<String>, stack_size: Option<usize>) {
         let id = PROCESS_ID.fetch_add(1, Ordering::SeqCst);
         let name = name.into();
 
@@ -257,7 +287,7 @@ impl Scheduler {
             .unwrap();
         let entry_point = user_code_addr + entry_point_section.mapping_offset as u64;
 
-        let stack_size = stack_size.unwrap_or(DEFAULT_STACK_SIZE);
+        let stack_size = stack_size.unwrap_or(DEFAULT_USER_STACK_SIZE);
         let stack_top_addr = VirtAddr::new(USER_CODE_ADDR);
         {
             let top_page = Page::containing_address(stack_top_addr - 1);
@@ -296,6 +326,7 @@ impl Scheduler {
     }
 }
 
+/// Perform some operation on the [`Scheduler`] with interrupts disabled.
 pub fn with_scheduler<F, R>(op: F) -> R
 where
     F: FnOnce(&mut Scheduler) -> R,
@@ -306,6 +337,7 @@ where
     })
 }
 
+/// Schedule the next process to run.
 pub fn schedule() -> ! {
     let next_context = with_scheduler(Scheduler::schedule_next);
     unsafe {
@@ -373,12 +405,21 @@ pub fn exit() {
     }
 }
 
+/// The state of a running process.
 #[derive(Debug)]
 struct Process {
+    /// The ID of the process.
     id: u64,
+    /// The name of the process. For user processes, this is the basename of the
+    /// process's object file (e.g. "example" for "/example.o").
     name: String,
+    /// The run [`Priority`] of the process.
     priority: Priority,
+    /// The [`AddressSpace`] of the process. That is, everything the process can
+    /// "see" in virtual memory.
     address_space: AddressSpace,
+    /// The [`ExecutionContext`] of the process. If this is `None`, the process
+    /// is currently running.
     context: Option<ExecutionContext>,
 }
 
@@ -388,6 +429,7 @@ impl fmt::Display for Process {
     }
 }
 
+/// The execution priority of a [`Process`].
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum Priority {
@@ -395,6 +437,7 @@ pub enum Priority {
     Idle = 255,
 }
 
+/// All information necessary for preempting/resuming a [`Process`].
 #[derive(Debug)]
 #[repr(C)]
 pub struct ExecutionContext {

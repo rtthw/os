@@ -19,7 +19,7 @@ static mut EVENT_QUEUE: Option<ArrayQueue<Event>> = None;
 pub fn init() {
     unsafe { EVENT_QUEUE = Some(ArrayQueue::new(128)) };
     with_scheduler(|scheduler| {
-        scheduler.run_process(
+        scheduler.run_kernel_process(
             "window_manager",
             window_manager as *const fn() -> !,
             Some(PAGE_SIZE * 16),

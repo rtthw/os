@@ -126,21 +126,21 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
     info!("STARTUP SUCCESSFUL");
 
     scheduler::with_scheduler(|scheduler| {
-        scheduler.run_process(
+        scheduler.run_kernel_process(
             "init",
             init_process as *const fn() -> !,
             Some(PAGE_SIZE * 32),
         )
     });
     scheduler::with_scheduler(|scheduler| {
-        scheduler.run_process(
+        scheduler.run_kernel_process(
             "clock_update_dispatcher",
             dispatch_clock_updates as *const fn() -> !,
             None,
         )
     });
     scheduler::with_scheduler(|scheduler| {
-        scheduler.run_process(
+        scheduler.run_kernel_process(
             "input_event_dispatcher",
             input::dispatch_input_events as *const fn() -> !,
             Some(PAGE_SIZE * 32),
