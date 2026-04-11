@@ -1,12 +1,13 @@
 //! # Memory Management
 
 use {
-    alloc::vec::Vec,
+    alloc::{string::String, vec::Vec},
     boot_info::{BootInfo, MemoryMap, MemoryRegionKind},
     core::{
         fmt,
         sync::atomic::{AtomicUsize, Ordering},
     },
+    hashbrown::HashMap,
     linked_list_allocator::LockedHeap,
     log::{debug, error, info, trace, warn},
     memory_types::{Frame, GIBIBYTE, MEBIBYTE, PAGE_SIZE, PhysicalAddress, align_up},
@@ -17,7 +18,8 @@ use {
         registers::control::{Cr0, Cr0Flags, Cr3, Cr3Flags},
         structures::paging::{
             FrameAllocator as ExternFrameAllocator, Mapper as _, OffsetPageTable, Page, PageTable,
-            PageTableFlags, PhysFrame, Size4KiB, Translate as _, page::PageRangeInclusive,
+            PageTableFlags, PhysFrame, Size4KiB, Translate as _, frame::PhysFrameRangeInclusive,
+            page::PageRangeInclusive,
         },
     },
 };
@@ -172,13 +174,15 @@ static KERNEL_MAPPING_OFFSET: AtomicUsize = AtomicUsize::new(0);
 /// A set of mapped pages within the kernel's [`AddressSpace`].
 #[derive(Debug)]
 pub struct KernelMapping {
+    pub name: String,
     pub addr: VirtAddr,
     pub size: usize,
     pub pages: PageRangeInclusive<Size4KiB>,
 }
 
 impl KernelMapping {
-    pub fn new(size_in_bytes: usize, flags: PageTableFlags) -> Self {
+    pub fn new(name: impl Into<String>, size_in_bytes: usize, flags: PageTableFlags) -> Self {
+        let name = name.into();
         let addr = VirtAddr::new(KERNEL_MAPPING_OFFSET.fetch_add(
             size_in_bytes.div_ceil(PAGE_SIZE) * PAGE_SIZE,
             Ordering::SeqCst,
@@ -191,7 +195,16 @@ impl KernelMapping {
 
         kernel_address_space().map_pages(pages, flags);
 
+        TRACKER
+            .lock()
+            .mappings
+            .entry(name.clone())
+            .insert(TrackedMapping {
+                kernel_pages: pages,
+            });
+
         Self {
+            name,
             addr,
             size: size_in_bytes,
             pages,
@@ -246,6 +259,11 @@ impl KernelMapping {
         flags: PageTableFlags,
     ) {
         address_space.map_kernel_pages_to(self.pages, pages, flags);
+        let mut mm = TRACKER.lock();
+        mm.spaces
+            .entry(address_space.frame)
+            .or_insert(Vec::new())
+            .push((self.name.clone(), pages));
     }
 }
 
@@ -591,4 +609,80 @@ impl Drop for FrameAllocatorProxy {
             }
         });
     }
+}
+
+
+
+pub static TRACKER: Mutex<MemoryTracker> = Mutex::new(MemoryTracker::new());
+
+pub struct MemoryTracker {
+    mappings: HashMap<String, TrackedMapping, rustc_hash::FxBuildHasher>,
+    spaces: HashMap<PhysFrame, Vec<(String, PageRangeInclusive)>, rustc_hash::FxBuildHasher>,
+}
+
+impl MemoryTracker {
+    const fn new() -> Self {
+        Self {
+            mappings: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+            spaces: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+        }
+    }
+
+    pub fn dump_info(&self) {
+        let mut mappings = self
+            .mappings
+            .iter()
+            .map(|(name, mapping)| {
+                (
+                    mapping.kernel_pages.start.start_address().as_u64(),
+                    format!(
+                        "\n    {:0>16x} {:0>16x} | {name}",
+                        mapping.kernel_pages.start.start_address(),
+                        mapping.kernel_pages.end.start_address() + mapping.kernel_pages.end.size(),
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+        mappings.sort_by_key(|(key, _string)| *key);
+
+        debug!(
+            "\n--- MEMORY ---{}{}\n--------------",
+            mappings
+                .into_iter()
+                .map(|(_key, string)| string)
+                .collect::<String>(),
+            self.spaces
+                .iter()
+                .map(|(frame, mappings)| {
+                    let mut mappings = mappings
+                        .iter()
+                        .map(|(name, mapping)| {
+                            (
+                                mapping.start.start_address().as_u64(),
+                                format!(
+                                    "\n        {:0>16x} {:0>16x} | {name}",
+                                    mapping.start.start_address(),
+                                    mapping.end.start_address() + mapping.end.size(),
+                                ),
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    mappings.sort_by_key(|(key, _string)| *key);
+
+                    format!(
+                        "\n    {:0>16x}{}",
+                        frame.start_address(),
+                        mappings
+                            .into_iter()
+                            .map(|(_key, string)| string)
+                            .collect::<String>(),
+                    )
+                })
+                .collect::<String>(),
+        );
+    }
+}
+
+struct TrackedMapping {
+    kernel_pages: PageRangeInclusive,
 }

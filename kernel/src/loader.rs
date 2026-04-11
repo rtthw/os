@@ -459,7 +459,7 @@ impl Loader {
             executable: executable_mapping,
             read_only: read_only_mapping,
             read_write: read_write_mapping,
-        } = allocate_section_mappings(&elf_file)?;
+        } = allocate_section_mappings(object_name, &elf_file)?;
 
         // Map loaded sections into the object's address space.
         if let Some(mapping) = &executable_mapping {
@@ -1104,7 +1104,10 @@ fn write_relocation(
 
 
 // TODO: This needs to be thoroughly tested.
-fn allocate_section_mappings(elf_file: &ElfFile) -> Result<SectionMappings, &'static str> {
+fn allocate_section_mappings(
+    object_name: &str,
+    elf_file: &ElfFile,
+) -> Result<SectionMappings, &'static str> {
     let (executable_len, read_only_len, read_write_len): (usize, usize, usize) = {
         let mut executable_len = 0;
         let mut read_only_len = 0;
@@ -1172,9 +1175,12 @@ fn allocate_section_mappings(elf_file: &ElfFile) -> Result<SectionMappings, &'st
         PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE;
 
     Ok(SectionMappings {
-        executable: (executable_len > 0).then(|| KernelMapping::new(executable_len, flags)),
-        read_only: (read_only_len > 0).then(|| KernelMapping::new(read_only_len, flags)),
-        read_write: (read_write_len > 0).then(|| KernelMapping::new(read_write_len, flags)),
+        executable: (executable_len > 0)
+            .then(|| KernelMapping::new(format!("x.{object_name}"), executable_len, flags)),
+        read_only: (read_only_len > 0)
+            .then(|| KernelMapping::new(format!("r.{object_name}"), read_only_len, flags)),
+        read_write: (read_write_len > 0)
+            .then(|| KernelMapping::new(format!("w.{object_name}"), read_write_len, flags)),
     })
 }
 

@@ -149,6 +149,8 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
 
     window_manager::init();
 
+    memory::TRACKER.lock().dump_info();
+
     scheduler::run()
 }
 
