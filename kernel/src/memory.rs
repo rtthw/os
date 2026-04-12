@@ -18,8 +18,7 @@ use {
         registers::control::{Cr0, Cr0Flags, Cr3, Cr3Flags},
         structures::paging::{
             FrameAllocator as ExternFrameAllocator, Mapper as _, OffsetPageTable, Page, PageTable,
-            PageTableFlags, PhysFrame, Size4KiB, Translate as _, frame::PhysFrameRangeInclusive,
-            page::PageRangeInclusive,
+            PageTableFlags, PhysFrame, Size4KiB, Translate as _, page::PageRangeInclusive,
         },
     },
 };
@@ -193,15 +192,7 @@ impl KernelMapping {
 
         assert_eq!(pages.count(), size_in_bytes.div_ceil(PAGE_SIZE));
 
-        kernel_address_space().map_pages(pages, flags);
-
-        TRACKER
-            .lock()
-            .mappings
-            .entry(name.clone())
-            .insert(TrackedMapping {
-                kernel_pages: pages,
-            });
+        kernel_address_space().map_pages(&name, pages, flags);
 
         Self {
             name,
@@ -261,7 +252,7 @@ impl KernelMapping {
         address_space.map_kernel_pages_to(self.pages, pages, flags);
         let mut mm = TRACKER.lock();
         mm.spaces
-            .entry(address_space.frame)
+            .entry((address_space.name.clone(), address_space.frame))
             .or_insert(Vec::new())
             .push((self.name.clone(), pages));
     }
@@ -442,6 +433,7 @@ fn init_kernel_address_space() {
         let page_table = OffsetPageTable::new(&mut *l4_ptr, VirtAddr::zero());
 
         KERNEL_ADDRESS_SPACE = Some(AddressSpace {
+            name: None,
             frame: l4_frame,
             frame_allocator: Mutex::new(FrameAllocatorProxy {
                 allocated_frames: Vec::new(),
@@ -462,6 +454,7 @@ pub fn kernel_address_space<'a>() -> &'a AddressSpace {
 static mut KERNEL_ADDRESS_SPACE: Option<AddressSpace> = None;
 
 pub struct AddressSpace {
+    name: Option<String>,
     frame: PhysFrame,
     frame_allocator: Mutex<FrameAllocatorProxy>,
     page_table: Mutex<OffsetPageTable<'static>>,
@@ -474,7 +467,7 @@ impl fmt::Debug for AddressSpace {
 }
 
 impl AddressSpace {
-    pub fn new(inherit: Option<&AddressSpace>) -> Self {
+    pub fn new(name: impl Into<Option<String>>, inherit: Option<&AddressSpace>) -> Self {
         let mut frame_allocator = FrameAllocatorProxy {
             allocated_frames: Vec::new(),
         };
@@ -501,6 +494,7 @@ impl AddressSpace {
         }
 
         Self {
+            name: name.into(),
             frame,
             frame_allocator: Mutex::new(frame_allocator),
             page_table: Mutex::new(page_table),
@@ -517,7 +511,12 @@ impl AddressSpace {
         }
     }
 
-    pub fn map_pages(&self, pages: PageRangeInclusive, flags: PageTableFlags) {
+    pub fn map_pages(
+        &self,
+        name: impl Into<String>,
+        pages: PageRangeInclusive,
+        flags: PageTableFlags,
+    ) {
         let mut frame_allocator = self.frame_allocator.lock();
         let mut page_table = self.page_table.lock();
 
@@ -531,6 +530,13 @@ impl AddressSpace {
                     .flush();
             }
         }
+
+        TRACKER
+            .lock()
+            .spaces
+            .entry((self.name.clone(), self.frame))
+            .or_insert(Vec::new())
+            .push((name.into(), pages));
     }
 
     fn map_kernel_pages_to(
@@ -616,51 +622,33 @@ impl Drop for FrameAllocatorProxy {
 pub static TRACKER: Mutex<MemoryTracker> = Mutex::new(MemoryTracker::new());
 
 pub struct MemoryTracker {
-    mappings: HashMap<String, TrackedMapping, rustc_hash::FxBuildHasher>,
-    spaces: HashMap<PhysFrame, Vec<(String, PageRangeInclusive)>, rustc_hash::FxBuildHasher>,
+    spaces: HashMap<
+        (Option<String>, PhysFrame),
+        Vec<(String, PageRangeInclusive)>,
+        rustc_hash::FxBuildHasher,
+    >,
 }
 
 impl MemoryTracker {
     const fn new() -> Self {
         Self {
-            mappings: HashMap::with_hasher(rustc_hash::FxBuildHasher),
             spaces: HashMap::with_hasher(rustc_hash::FxBuildHasher),
         }
     }
 
     pub fn dump_info(&self) {
-        let mut mappings = self
-            .mappings
-            .iter()
-            .map(|(name, mapping)| {
-                (
-                    mapping.kernel_pages.start.start_address().as_u64(),
-                    format!(
-                        "\n    {:0>16x} {:0>16x} | {name}",
-                        mapping.kernel_pages.start.start_address(),
-                        mapping.kernel_pages.end.start_address() + mapping.kernel_pages.end.size(),
-                    ),
-                )
-            })
-            .collect::<Vec<_>>();
-        mappings.sort_by_key(|(key, _string)| *key);
-
         debug!(
-            "\n--- MEMORY ---{}{}\n--------------",
-            mappings
-                .into_iter()
-                .map(|(_key, string)| string)
-                .collect::<String>(),
+            "\n--- MEMORY ---{}\n--------------",
             self.spaces
                 .iter()
-                .map(|(frame, mappings)| {
+                .map(|((name, frame), mappings)| {
                     let mut mappings = mappings
                         .iter()
                         .map(|(name, mapping)| {
                             (
                                 mapping.start.start_address().as_u64(),
                                 format!(
-                                    "\n        {:0>16x} {:0>16x} | {name}",
+                                    "\n        {:0>16x} {:0>16x}        {name}",
                                     mapping.start.start_address(),
                                     mapping.end.start_address() + mapping.end.size(),
                                 ),
@@ -670,8 +658,10 @@ impl MemoryTracker {
                     mappings.sort_by_key(|(key, _string)| *key);
 
                     format!(
-                        "\n    {:0>16x}{}",
+                        "\n    {:0>16x}{:25}{}{}",
                         frame.start_address(),
+                        " ",
+                        name.as_ref().unwrap_or(&"KERNEL".into()),
                         mappings
                             .into_iter()
                             .map(|(_key, string)| string)
@@ -681,8 +671,4 @@ impl MemoryTracker {
                 .collect::<String>(),
         );
     }
-}
-
-struct TrackedMapping {
-    kernel_pages: PageRangeInclusive,
 }

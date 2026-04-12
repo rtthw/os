@@ -125,7 +125,7 @@ impl Scheduler {
         self.add_to_queue(Process {
             id: IDLE_PROCESS_ID,
             name: "idle".into(),
-            address_space: AddressSpace::new(None),
+            address_space: AddressSpace::new(Some("idle".into()), None),
             priority: Priority::Idle,
             context: Some(ExecutionContext {
                 registers: CpuRegisters::EMPTY,
@@ -217,7 +217,7 @@ impl Scheduler {
 
         // This is a kernel process running kernel code, so just inherit the kernel's
         // address space.
-        let address_space = AddressSpace::new(Some(kernel_address_space()));
+        let address_space = AddressSpace::new(format!("{name}.{id}"), Some(kernel_address_space()));
 
         let stack_size = stack_size.unwrap_or(DEFAULT_KERNEL_STACK_SIZE);
         let stack_top_addr = VirtAddr::new(USER_CODE_ADDR);
@@ -226,6 +226,7 @@ impl Scheduler {
             let bottom_page = Page::containing_address(stack_top_addr - stack_size as u64);
             let stack_pages = Page::range_inclusive(bottom_page, top_page);
             address_space.map_pages(
+                format!("kernel_stack.{id}"),
                 stack_pages,
                 PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
             );
@@ -270,7 +271,7 @@ impl Scheduler {
 
         // TODO: Process address spaces shouldn't just inherit the kernel address space.
 
-        let address_space = AddressSpace::new(Some(kernel_address_space()));
+        let address_space = AddressSpace::new(format!("{name}.{id}"), Some(kernel_address_space()));
         let user_code_addr = VirtAddr::new(USER_CODE_ADDR);
         let user_code_page = Page::containing_address(user_code_addr);
 
@@ -294,6 +295,7 @@ impl Scheduler {
             let bottom_page = Page::containing_address(stack_top_addr - stack_size as u64);
             let stack_pages = Page::range_inclusive(bottom_page, top_page);
             address_space.map_pages(
+                format!("user_stack.{id}"),
                 stack_pages,
                 PageTableFlags::PRESENT
                     | PageTableFlags::WRITABLE
