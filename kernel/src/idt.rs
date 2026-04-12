@@ -4,7 +4,7 @@ use {
     crate::{apic, gdt, scheduler},
     log::info,
     x86_64::{
-        registers::control::Cr2,
+        registers::control::{Cr2, Cr3},
         set_general_handler,
         structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode},
     },
@@ -63,7 +63,8 @@ extern "x86-interrupt" fn page_fault_handler(
     error_code: PageFaultErrorCode,
 ) {
     let addr = Cr2::read_raw();
-    panic!("PAGE_FAULT({error_code:?}) @ {addr:#x} : {stack_frame:#?}");
+    let addr_space_frame = Cr3::read_raw().0;
+    panic!("PAGE_FAULT({error_code:?}) at {addr:#x} in {addr_space_frame:?} : {stack_frame:#?}");
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(
