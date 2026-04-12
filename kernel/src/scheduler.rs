@@ -269,9 +269,7 @@ impl Scheduler {
         let id = PROCESS_ID.fetch_add(1, Ordering::SeqCst);
         let name = name.into();
 
-        // TODO: Process address spaces shouldn't just inherit the kernel address space.
-
-        let address_space = AddressSpace::new(format!("{name}.{id}"), Some(kernel_address_space()));
+        let address_space = AddressSpace::new(format!("{name}.{id}"), None);
         let user_code_addr = VirtAddr::new(USER_CODE_ADDR);
         let user_code_page = Page::containing_address(user_code_addr);
 

@@ -10,7 +10,7 @@ use {
     hashbrown::HashMap,
     linked_list_allocator::LockedHeap,
     log::{debug, error, info, trace, warn},
-    memory_types::{Frame, GIBIBYTE, MEBIBYTE, PAGE_SIZE, PhysicalAddress, align_up},
+    memory_types::{Frame, GIBIBYTE, MEBIBYTE, PAGE_SIZE, PhysicalAddress},
     spin_mutex::Mutex,
     x86_64::{
         VirtAddr,
@@ -24,7 +24,8 @@ use {
 };
 
 
-const HEAP_BASE: usize = 0xFFFF_FE80_0000_0000;
+const HEAP_BASE: usize = (509 << (12 + (9 * 3))) | 0xFFFF_0000_0000_0000;
+const KERNEL_MAPPING_BASE: usize = (510 << (12 + (9 * 3))) | 0xFFFF_0000_0000_0000;
 
 #[global_allocator]
 static mut ALLOCATOR: LockedHeap = LockedHeap::empty();
@@ -108,9 +109,7 @@ pub fn init(boot_info: &BootInfo) {
                     .map_to(
                         page,
                         frame,
-                        PageTableFlags::PRESENT
-                            | PageTableFlags::WRITABLE
-                            | PageTableFlags::USER_ACCESSIBLE,
+                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
                         &mut *frame_allocator,
                     )
                     .unwrap()
@@ -131,12 +130,6 @@ pub fn init(boot_info: &BootInfo) {
     unsafe {
         ALLOCATOR.lock().init(HEAP_BASE, heap_size);
     }
-
-    // Update the kernel mapping offset so kernel mappings start at the right
-    // address.
-    KERNEL_MAPPING_OFFSET.store(align_up(HEAP_BASE + heap_size, PAGE_SIZE), Ordering::SeqCst);
-
-    info!("Kernel mappings start at {:#x}", HEAP_BASE + heap_size);
 
     // Make sure the heap allocator actually works.
     initial_heap_test();
@@ -168,7 +161,7 @@ fn initial_heap_test() {
 
 
 
-static KERNEL_MAPPING_OFFSET: AtomicUsize = AtomicUsize::new(0);
+static KERNEL_MAPPING_OFFSET: AtomicUsize = AtomicUsize::new(KERNEL_MAPPING_BASE);
 
 /// A set of mapped pages within the kernel's [`AddressSpace`].
 #[derive(Debug)]
@@ -468,6 +461,9 @@ impl fmt::Debug for AddressSpace {
 
 impl AddressSpace {
     pub fn new(name: impl Into<Option<String>>, inherit: Option<&AddressSpace>) -> Self {
+        assert!(kernel_address_space().is_current());
+
+        let name = name.into();
         let mut frame_allocator = FrameAllocatorProxy {
             allocated_frames: Vec::new(),
         };
@@ -475,9 +471,9 @@ impl AddressSpace {
             .allocate_frame()
             .expect("failed to allocate frame for new address space");
 
-        trace!("New address space frame: {frame:?}");
+        trace!("New address space at {frame:?} for {name:?}");
 
-        let page_table = unsafe {
+        let mut page_table = unsafe {
             let l4_ptr = frame.start_address().as_u64() as *mut PageTable;
 
             OffsetPageTable::new(&mut *l4_ptr, VirtAddr::zero())
@@ -491,10 +487,18 @@ impl AddressSpace {
                     frame.size() as usize,
                 );
             }
+        } else {
+            let kernel_table = kernel_address_space().page_table.lock();
+
+            // Make sure the kernel is accessible from this address space so when we enter
+            // it we can still access memory while in ring 0.
+            // TODO: The kernel should be mapped in the higher half.
+            page_table.level_4_table_mut()[0] = kernel_table.level_4_table()[0].clone();
+            page_table.level_4_table_mut()[509] = kernel_table.level_4_table()[509].clone();
         }
 
         Self {
-            name: name.into(),
+            name,
             frame,
             frame_allocator: Mutex::new(frame_allocator),
             page_table: Mutex::new(page_table),
