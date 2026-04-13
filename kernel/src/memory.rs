@@ -18,7 +18,8 @@ use {
         registers::control::{Cr0, Cr0Flags, Cr3, Cr3Flags},
         structures::paging::{
             FrameAllocator as ExternFrameAllocator, Mapper as _, OffsetPageTable, Page, PageTable,
-            PageTableFlags, PhysFrame, Size4KiB, Translate as _, page::PageRangeInclusive,
+            PageTableFlags, PhysFrame, Size4KiB, Translate as _, mapper::MapToError,
+            page::PageRangeInclusive,
         },
     },
 };
@@ -241,13 +242,15 @@ impl KernelMapping {
         address_space: &AddressSpace,
         pages: PageRangeInclusive,
         flags: PageTableFlags,
-    ) {
-        address_space.map_kernel_pages_to(self.pages, pages, flags);
+    ) -> Result<(), MapToError<Size4KiB>> {
+        address_space.map_kernel_pages_to(self.pages, pages, flags)?;
         let mut mm = TRACKER.lock();
         mm.spaces
             .entry((address_space.name.clone(), address_space.frame))
             .or_insert(Vec::new())
             .push((self.name.clone(), pages));
+
+        Ok(())
     }
 }
 
@@ -548,7 +551,7 @@ impl AddressSpace {
         kernel_pages: PageRangeInclusive,
         local_pages: PageRangeInclusive,
         flags: PageTableFlags,
-    ) {
+    ) -> Result<(), MapToError<Size4KiB>> {
         trace!(
             "KERNEL_MAP @ {:#x} | {:#x}..={:#x} >> {:#x}..={:#x}",
             self.frame.start_address(),
@@ -569,11 +572,12 @@ impl AddressSpace {
 
             unsafe {
                 page_table
-                    .map_to(local_page, frame, flags, &mut *frame_allocator)
-                    .unwrap()
+                    .map_to(local_page, frame, flags, &mut *frame_allocator)?
                     .flush();
             }
         }
+
+        Ok(())
     }
 
     pub fn translate_address(&self, addr: VirtAddr) -> Option<x86_64::PhysAddr> {

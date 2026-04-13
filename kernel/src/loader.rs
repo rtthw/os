@@ -463,36 +463,45 @@ impl Loader {
 
         // Map loaded sections into the object's address space.
         if let Some(mapping) = &executable_mapping {
-            mapping.map_into(
-                address_space,
-                Page::range_inclusive(
-                    *start_page,
-                    *start_page + mapping.pages.count().saturating_sub(1) as u64,
-                ),
-                PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+            let pages = Page::range_inclusive(
+                *start_page,
+                *start_page + mapping.pages.count().saturating_sub(1) as u64,
             );
+            mapping
+                .map_into(
+                    address_space,
+                    pages,
+                    PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+                )
+                .unwrap();
             *start_page += mapping.pages.count() as u64;
         }
         if let Some(mapping) = &read_only_mapping {
-            mapping.map_into(
-                address_space,
-                Page::range_inclusive(
-                    *start_page,
-                    *start_page + mapping.pages.count().saturating_sub(1) as u64,
-                ),
-                PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+            let pages = Page::range_inclusive(
+                *start_page,
+                *start_page + mapping.pages.count().saturating_sub(1) as u64,
             );
+            mapping
+                .map_into(
+                    address_space,
+                    pages,
+                    PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+                )
+                .unwrap();
             *start_page += mapping.pages.count() as u64;
         }
         if let Some(mapping) = &read_write_mapping {
-            mapping.map_into(
-                address_space,
-                Page::range_inclusive(
-                    *start_page,
-                    *start_page + mapping.pages.count().saturating_sub(1) as u64,
-                ),
-                PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+            let pages = Page::range_inclusive(
+                *start_page,
+                *start_page + mapping.pages.count().saturating_sub(1) as u64,
             );
+            mapping
+                .map_into(
+                    address_space,
+                    pages,
+                    PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
+                )
+                .unwrap();
             *start_page += mapping.pages.count() as u64;
         }
 
