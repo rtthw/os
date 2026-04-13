@@ -193,6 +193,11 @@ pub struct LoadedObject {
     /// sections of this object. They can be used as keys for
     /// [`self.sections`](Self::sections).
     pub tls_sections: BTreeSet<usize>,
+    /// Objects this object depends on.
+    pub dependencies: Vec<Weak<Mutex<LoadedObject>>>,
+    pub executable_mapping: Option<Arc<Mutex<KernelMapping>>>,
+    pub read_only_mapping: Option<Arc<Mutex<KernelMapping>>>,
+    pub read_write_mapping: Option<Arc<Mutex<KernelMapping>>>,
 }
 
 /// An object section that has been loaded into memory.
@@ -432,13 +437,25 @@ impl Loader {
         address_space: &AddressSpace,
         start_page: &mut Page,
     ) -> Result<Arc<Mutex<LoadedObject>>, &'static str> {
-        let (object, elf_file) =
-            self.load_object_sections(object_name, object_bytes, address_space, start_page)?;
+        let mut mappings = BTreeSet::new();
+        let (object, elf_file) = self.load_object_sections(
+            object_name,
+            object_bytes,
+            address_space,
+            start_page,
+            &mut mappings,
+        )?;
         self.add_sections(object.lock().sections.values());
         self.objects
             .lock()
             .insert(object_name.into(), Arc::clone(&object));
-        self.relocate_object_sections(&elf_file, &object, address_space, start_page)?;
+        self.relocate_object_sections(
+            &elf_file,
+            &object,
+            address_space,
+            start_page,
+            &mut mappings,
+        )?;
 
         Ok(object)
     }
@@ -449,6 +466,7 @@ impl Loader {
         object_bytes: &'obj [u8],
         address_space: &AddressSpace,
         start_page: &mut Page,
+        mappings: &mut BTreeSet<VirtAddr>,
     ) -> Result<(Arc<Mutex<LoadedObject>>, ElfFile<'obj>), &'static str> {
         let elf_file = ElfFile::new(object_bytes)?;
         if elf_file.header.get_type() != ObjectFileType::Relocatable {
@@ -467,6 +485,7 @@ impl Loader {
                 *start_page,
                 *start_page + mapping.pages.count().saturating_sub(1) as u64,
             );
+            mappings.insert(mapping.addr);
             mapping
                 .map_into(
                     address_space,
@@ -481,6 +500,7 @@ impl Loader {
                 *start_page,
                 *start_page + mapping.pages.count().saturating_sub(1) as u64,
             );
+            mappings.insert(mapping.addr);
             mapping
                 .map_into(
                     address_space,
@@ -495,6 +515,7 @@ impl Loader {
                 *start_page,
                 *start_page + mapping.pages.count().saturating_sub(1) as u64,
             );
+            mappings.insert(mapping.addr);
             mapping
                 .map_into(
                     address_space,
@@ -530,6 +551,10 @@ impl Loader {
             global_sections: BTreeSet::new(),
             data_sections: BTreeSet::new(),
             tls_sections: BTreeSet::new(),
+            dependencies: Vec::new(),
+            executable_mapping: executable_mapping.clone(),
+            read_only_mapping: read_only_mapping.clone(),
+            read_write_mapping: read_write_mapping.clone(),
         }));
 
         let mut loaded_sections: HashMap<usize, Arc<LoadedSection>> = HashMap::new();
@@ -926,8 +951,9 @@ impl Loader {
         object: &Arc<Mutex<LoadedObject>>,
         address_space: &AddressSpace,
         start_page: &mut Page,
+        mappings: &mut BTreeSet<VirtAddr>,
     ) -> Result<(), &'static str> {
-        let object = object.lock();
+        let mut object = object.lock();
         let symbol_table = elf_file.get_symbol_table()?;
 
         for section in elf_file.section_iter().filter(|section| {
@@ -944,6 +970,7 @@ impl Loader {
             let target_section = object
                 .sections
                 .get(&target_section_index)
+                .cloned()
                 .ok_or("target section was not loaded for `rela` section")?;
 
             {
@@ -957,7 +984,7 @@ impl Loader {
                     let source_value = source_entry.value() as usize;
 
                     let source_section = match object.sections.get(&source_index) {
-                        Some(section) => Ok(section.clone()),
+                        Some(section) => section.clone(),
                         None => {
                             let name = source_entry
                                 .get_name(&elf_file)
@@ -971,7 +998,7 @@ impl Loader {
 
                             let demangled_name = rustc_demangle::demangle(name).to_string();
 
-                            match self.get_or_load_section(
+                            let section = match self.get_or_load_section(
                                 &demangled_name,
                                 &object,
                                 address_space,
@@ -1001,9 +1028,15 @@ impl Loader {
                                         return Err(error);
                                     }
                                 }
-                            }
+                            }?;
+
+                            // At this point, we know `section` is some external dependency (i.e.
+                            // `section.owner` != `object`).
+                            map_dependency(&mut object, &section, address_space, mappings);
+
+                            section
                         }
-                    }?;
+                    };
 
                     let target_offset =
                         target_section.mapping_offset + rela_entry.get_offset() as usize;
@@ -1042,7 +1075,74 @@ impl Loader {
     }
 }
 
+/// Map the section's dependencies into the object's address space.
+fn map_dependency(
+    object: &mut LoadedObject,
+    section: &Arc<LoadedSection>,
+    address_space: &AddressSpace,
+    mappings: &mut BTreeSet<VirtAddr>,
+) {
+    object.dependencies.push(section.owner.clone());
 
+    let owner = section
+        .owner
+        .upgrade()
+        .expect("should be able to get the source section owner");
+    let mut owner_lock = owner.lock();
+
+    map_dependency_sections(object, &mut owner_lock, address_space, mappings);
+}
+
+fn map_dependency_sections(
+    object: &mut LoadedObject,
+    dependency: &mut LoadedObject,
+    address_space: &AddressSpace,
+    mappings: &mut BTreeSet<VirtAddr>,
+) {
+    assert_ne!(object.name, dependency.name);
+
+    // An error in `map_into` just means it was already mapped. For kernel
+    // processes, this is fine.
+
+    // TODO: This should check if the address space has inherited the kernel address
+    //       space.
+    if let Some(exec_mapping) = dependency.executable_mapping.as_ref() {
+        let exec_lock = exec_mapping.lock();
+        if !mappings.contains(&exec_lock.addr) {
+            let pages = exec_lock.pages;
+            let flags = exec_lock.flags;
+            _ = exec_lock.map_into(address_space, pages, flags);
+            mappings.insert(exec_lock.addr);
+        }
+    }
+    if let Some(ro_mapping) = dependency.read_only_mapping.as_ref() {
+        let ro_lock = ro_mapping.lock();
+        if !mappings.contains(&ro_lock.addr) {
+            let pages = ro_lock.pages;
+            let flags = ro_lock.flags;
+            _ = ro_lock.map_into(address_space, pages, flags);
+            mappings.insert(ro_lock.addr);
+        }
+    }
+    if let Some(rw_mapping) = dependency.read_write_mapping.as_ref() {
+        let rw_lock = rw_mapping.lock();
+        if !mappings.contains(&rw_lock.addr) {
+            let pages = rw_lock.pages;
+            let flags = rw_lock.flags;
+            _ = rw_lock.map_into(address_space, pages, flags);
+            mappings.insert(rw_lock.addr);
+        }
+    }
+
+    for secondary_dep in dependency.dependencies.iter() {
+        map_dependency_sections(
+            object,
+            &mut secondary_dep.upgrade().unwrap().lock(),
+            address_space,
+            mappings,
+        );
+    }
+}
 
 #[cfg(target_arch = "x86_64")]
 fn write_relocation(
@@ -1185,11 +1285,11 @@ fn allocate_section_mappings(
 
     Ok(SectionMappings {
         executable: (executable_len > 0)
-            .then(|| KernelMapping::new(format!("x.{object_name}"), executable_len, flags)),
+            .then(|| KernelMapping::new(format!("{object_name}.x"), executable_len, flags)),
         read_only: (read_only_len > 0)
-            .then(|| KernelMapping::new(format!("r.{object_name}"), read_only_len, flags)),
+            .then(|| KernelMapping::new(format!("{object_name}.r"), read_only_len, flags)),
         read_write: (read_write_len > 0)
-            .then(|| KernelMapping::new(format!("w.{object_name}"), read_write_len, flags)),
+            .then(|| KernelMapping::new(format!("{object_name}.w"), read_write_len, flags)),
     })
 }
 

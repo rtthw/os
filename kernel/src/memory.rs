@@ -171,6 +171,7 @@ pub struct KernelMapping {
     pub addr: VirtAddr,
     pub size: usize,
     pub pages: PageRangeInclusive<Size4KiB>,
+    pub flags: PageTableFlags,
 }
 
 impl KernelMapping {
@@ -193,6 +194,7 @@ impl KernelMapping {
             addr,
             size: size_in_bytes,
             pages,
+            flags,
         }
     }
 
