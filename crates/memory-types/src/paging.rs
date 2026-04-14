@@ -1,0 +1,180 @@
+//! # Paging
+
+use {
+    crate::{Frame, PAGE_SIZE, POINTER_SIZE, PhysicalAddress},
+    core::{fmt, ops},
+};
+
+
+/// The number of entries in a [`PageTable`].
+pub const ENTRIES_PER_PAGE_TABLE: usize = PAGE_SIZE / POINTER_SIZE;
+/// The bit width of each page table index (9 bits).
+pub const PAGE_TABLE_INDEX_WIDTH: usize = ENTRIES_PER_PAGE_TABLE.trailing_zeros() as usize;
+/// The bit width of each page table offset (12 bits).
+pub const PAGE_TABLE_OFFSET_WIDTH: usize = PAGE_SIZE.trailing_zeros() as usize;
+
+
+#[repr(align(4096))]
+#[repr(C)]
+#[derive(Clone)]
+pub struct PageTable {
+    entries: [PageTableEntry; ENTRIES_PER_PAGE_TABLE],
+}
+
+impl PageTable {
+    /// Create an empty page table.
+    #[inline]
+    pub const fn new() -> Self {
+        const EMPTY_ENTRY: PageTableEntry = PageTableEntry::new();
+
+        Self {
+            entries: [EMPTY_ENTRY; ENTRIES_PER_PAGE_TABLE],
+        }
+    }
+
+    /// Set all entries to [`PageTableEntry::UNUSED`].
+    #[inline]
+    pub fn clear(&mut self) {
+        for entry in self.iter_mut() {
+            entry.set_unused();
+        }
+    }
+
+    #[inline]
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut PageTableEntry> {
+        let ptr = self.entries.as_mut_ptr();
+        (0..ENTRIES_PER_PAGE_TABLE).map(move |i| unsafe { &mut *ptr.add(i) })
+    }
+}
+
+impl ops::Index<usize> for PageTable {
+    type Output = PageTableEntry;
+
+    #[inline]
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.entries[index]
+    }
+}
+
+impl ops::IndexMut<usize> for PageTable {
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.entries[index]
+    }
+}
+
+bit_utils::bit_flags! {
+    pub struct PageTableFlags: usize {
+        PRESENT @ 0,
+        WRITABLE @ 1,
+        USER_ACCESSIBLE @ 2,
+        WRITE_THROUGH @ 3,
+        NO_CACHE @ 4,
+        ACCESSED @ 5,
+        DIRTY @ 6,
+        HUGE_PAGE @ 7,
+        GLOBAL @ 8,
+        NO_EXECUTE @ 63,
+    }
+}
+
+/// An entry within a [`PageTable`].
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct PageTableEntry {
+    value: usize,
+}
+
+impl PageTableEntry {
+    const ADDRESS_MASK: usize = 0x000F_FFFF_FFFF_F000;
+
+    pub const UNUSED: Self = Self::new();
+
+    #[inline]
+    pub const fn new() -> Self {
+        Self { value: 0 }
+    }
+
+    #[inline]
+    pub const fn is_unused(&self) -> bool {
+        self.value == 0
+    }
+
+    /// The [`PhysicalAddress`] mapped by this entry, might be zero.
+    #[inline]
+    pub fn addr(&self) -> PhysicalAddress {
+        PhysicalAddress::new(self.value & Self::ADDRESS_MASK)
+    }
+
+    /// The [`Frame`] mapped by this entry.
+    #[inline]
+    pub fn frame(&self) -> Result<Frame, EntryFrameError> {
+        if self.flags() & PageTableFlags::PRESENT != PageTableFlags::PRESENT {
+            Err(EntryFrameError::NotPresent)
+        } else if self.flags() & PageTableFlags::HUGE_PAGE == PageTableFlags::HUGE_PAGE {
+            Err(EntryFrameError::HugePage)
+        } else {
+            Ok(Frame::containing_addr(self.addr()))
+        }
+    }
+
+    /// The [`PageTableFlags] of this entry.
+    #[inline]
+    pub const fn flags(&self) -> PageTableFlags {
+        PageTableFlags(self.value & !Self::ADDRESS_MASK)
+    }
+
+    /// Set this entry to [`PageTableEntry::UNUSED`].
+    #[inline]
+    pub fn set_unused(&mut self) {
+        self.value = 0;
+    }
+
+    /// Set this entry's [`PhysicalAddress`] with the given [`PageTableFlags].
+    #[inline]
+    pub fn set_addr(&mut self, addr: PhysicalAddress, flags: PageTableFlags) {
+        assert!(addr.is_page_aligned());
+        self.value = (addr.to_raw()) | flags.bits();
+    }
+
+    /// Set this entry's [`Frame`] with the given [`PageTableFlags].
+    #[inline]
+    pub fn set_frame(&mut self, frame: Frame, flags: PageTableFlags) {
+        assert!(flags & PageTableFlags::HUGE_PAGE != PageTableFlags::HUGE_PAGE);
+        self.set_addr(frame.base_addr(), flags)
+    }
+
+    /// Set this entry's [`PageTableFlags].
+    #[inline]
+    pub fn set_flags(&mut self, flags: PageTableFlags) {
+        self.value = self.addr().to_raw() | flags.bits();
+    }
+}
+
+impl fmt::Debug for PageTableEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut f = f.debug_struct("PageTableEntry");
+        f.field("addr", &self.addr());
+        f.field("flags", &self.flags());
+        f.finish()
+    }
+}
+
+
+
+#[derive(Clone, Copy, Debug)]
+pub enum EntryFrameError {
+    NotPresent,
+    HugePage,
+}
+
+impl fmt::Display for EntryFrameError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotPresent => f.write_str("entry does not have the `PRESENT` flag set"),
+            Self::HugePage => f.write_str("entry has the `HUGE_PAGE` flag set"),
+        }
+    }
+}
+
+impl core::error::Error for EntryFrameError {}

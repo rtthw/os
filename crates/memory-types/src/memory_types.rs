@@ -4,10 +4,20 @@
 
 #![no_std]
 
+mod paging;
 mod physical_memory;
 mod virtual_memory;
 
-pub use {physical_memory::*, virtual_memory::*};
+pub use {
+    paging::{
+        ENTRIES_PER_PAGE_TABLE, PAGE_TABLE_INDEX_WIDTH, PAGE_TABLE_OFFSET_WIDTH, PageTable,
+        PageTableEntry, PageTableFlags,
+    },
+    physical_memory::{Frame, MAX_PHYSICAL_ADDR, PhysicalAddress},
+    virtual_memory::{
+        MAX_VIRTUAL_ADDR, Page, VIRTUAL_MEMORY_OFFSET, VIRTUAL_MEMORY_SHIFT, VirtualAddress,
+    },
+};
 
 
 /// A "kibibyte", or 1,024 bytes.

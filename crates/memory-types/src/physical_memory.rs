@@ -25,6 +25,15 @@ impl Frame {
     }
 
     #[inline]
+    pub const fn from_base_addr(addr: PhysicalAddress) -> Option<Self> {
+        if addr.is_page_aligned() {
+            Some(Self::containing_addr(addr))
+        } else {
+            None
+        }
+    }
+
+    #[inline]
     pub const fn containing_addr(addr: PhysicalAddress) -> Self {
         Self {
             number: addr.to_raw() / PAGE_SIZE,

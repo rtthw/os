@@ -2050,6 +2050,9 @@ dependencies = [
 [[package]]
 name = "memory-types"
 version = "0.1.0"
+dependencies = [
+ "bit-utils",
+]
 
 [[package]]
 name = "metal"
