@@ -539,14 +539,6 @@ impl AddressSpace {
         local_pages: PageRange,
         flags: PageTableFlags,
     ) -> Result<(), MappingError> {
-        trace!(
-            "KERNEL_MAP @ {:#x} | {:#x}..={:#x} >> {:#x}..={:#x}",
-            self.frame.base_addr(),
-            kernel_pages.start.base_addr(),
-            kernel_pages.end.base_addr(),
-            local_pages.start.base_addr(),
-            local_pages.end.base_addr(),
-        );
         assert_eq!(kernel_pages.count(), local_pages.count());
 
         let mut frame_allocator = self.frame_allocator.lock();
@@ -558,14 +550,7 @@ impl AddressSpace {
                 .expect("should be a mapped kernel page");
 
             page_table
-                .map_to(local_page, frame, flags, &mut *frame_allocator)
-                .map_err(|error| match error {
-                    MappingError::PageAlreadyMapped { to } => {
-                        error!("{local_page:?} already mapped to {to:?}");
-                        MappingError::PageAlreadyMapped { to }
-                    }
-                    other => other,
-                })?
+                .map_to(local_page, frame, flags, &mut *frame_allocator)?
                 .flush();
         }
 
@@ -607,7 +592,7 @@ impl DynFrameAllocator for FrameAllocatorProxy {
 impl Drop for FrameAllocatorProxy {
     fn drop(&mut self) {
         without_interrupts(|| {
-            info!(
+            trace!(
                 "Dropping frame allocator proxy with {} allocated frames",
                 self.allocated_frames.len(),
             );

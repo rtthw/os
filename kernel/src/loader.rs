@@ -274,7 +274,7 @@ impl Loader {
     /// Dump debug information to the logger.
     pub fn dump_info(&self) {
         let objects = self.objects.lock();
-        let sections = self.sections.lock();
+        // let sections = self.sections.lock();
 
         debug!(
             "--- OBJECTS ---\n{}",
@@ -305,22 +305,22 @@ impl Loader {
                 })
                 .collect::<String>(),
         );
-        debug!(
-            "--- SECTIONS ---\n{}",
-            sections
-                .iter()
-                .filter(|(name, _section)| !name.starts_with("<")
-                    && !name.contains("core[")
-                    && !name.contains("compiler_builtins[")
-                    && !name.contains("alloc[")
-                    && !name.starts_with("anon."))
-                .map(|(name, section)| format!(
-                    "    {}: {} ref(s)\n",
-                    &name[..name.len().min(60)],
-                    section.weak_count(),
-                ))
-                .collect::<String>(),
-        );
+        // debug!(
+        //     "--- SECTIONS ---\n{}",
+        //     sections
+        //         .iter()
+        //         .filter(|(name, _section)| !name.starts_with("<")
+        //             && !name.contains("core[")
+        //             && !name.contains("compiler_builtins[")
+        //             && !name.contains("alloc[")
+        //             && !name.starts_with("anon."))
+        //         .map(|(name, section)| format!(
+        //             "    {}: {} ref(s)\n",
+        //             &name[..name.len().min(60)],
+        //             section.weak_count(),
+        //         ))
+        //         .collect::<String>(),
+        // );
     }
 
     /// Get the [object](LoadedObject) with the given name.
@@ -396,7 +396,7 @@ impl Loader {
             }
         }
 
-        error!("Failed to load `{name}` for `{}`", for_object.name);
+        // error!("Failed to load `{name}` for `{}`", for_object.name);
 
         Err("section not found")
     }
