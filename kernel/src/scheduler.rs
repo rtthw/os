@@ -18,22 +18,17 @@ use {
         sync::atomic::{AtomicU64, Ordering},
     },
     log::{info, warn},
-    memory_types::PAGE_SIZE,
+    memory_types::{PAGE_SIZE, Page, PageRange, PageTableFlags, VirtualAddress},
     spin_mutex::Mutex,
     x86_64::{
-        VirtAddr,
-        instructions::interrupts::without_interrupts,
-        registers::rflags::RFlags,
-        structures::{
-            idt::InterruptStackFrameValue,
-            paging::{Page, PageTableFlags},
-        },
+        instructions::interrupts::without_interrupts, registers::rflags::RFlags,
+        structures::idt::InterruptStackFrameValue,
     },
 };
 
 
 const IDLE_PROCESS_ID: u64 = 0;
-const USER_CODE_ADDR: u64 = 0x4444_0000_0000;
+const USER_CODE_ADDR: usize = 0x4444_0000_0000;
 
 pub const DEFAULT_KERNEL_STACK_SIZE: usize = PAGE_SIZE * 8;
 pub const DEFAULT_USER_STACK_SIZE: usize = PAGE_SIZE * 16;
@@ -130,10 +125,12 @@ impl Scheduler {
             context: Some(ExecutionContext {
                 registers: CpuRegisters::EMPTY,
                 frame: InterruptStackFrameValue::new(
-                    VirtAddr::from_ptr(__idle_loop as *const fn() -> !),
+                    x86_64::VirtAddr::from_ptr(__idle_loop as *const fn() -> !),
                     gdt::selectors().kernel_code,
                     RFlags::INTERRUPT_FLAG,
-                    VirtAddr::from_ptr(unsafe { KERNEL_STACK.as_ptr().add(KERNEL_STACK_SIZE) }),
+                    x86_64::VirtAddr::from_ptr(unsafe {
+                        KERNEL_STACK.as_ptr().add(KERNEL_STACK_SIZE)
+                    }),
                     gdt::selectors().kernel_code,
                 ),
             }),
@@ -220,25 +217,20 @@ impl Scheduler {
         let address_space = AddressSpace::new(format!("{name}.{id}"), Some(kernel_address_space()));
 
         let stack_size = stack_size.unwrap_or(DEFAULT_KERNEL_STACK_SIZE);
-        let stack_top_addr = VirtAddr::new(USER_CODE_ADDR);
-        {
-            let top_page = Page::containing_address(stack_top_addr - 1);
-            let bottom_page = Page::containing_address(stack_top_addr - stack_size as u64);
-            let stack_pages = Page::range_inclusive(bottom_page, top_page);
-            address_space.map_pages(
-                format!("kernel_stack.{id}"),
-                stack_pages,
-                PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
-            );
-        }
+        let stack_top_addr = VirtualAddress::new(USER_CODE_ADDR);
+        address_space.map_pages(
+            format!("kernel_stack.{id}"),
+            PageRange::from_end_size(Page::containing_addr(stack_top_addr), stack_size),
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+        );
 
         let context = ExecutionContext {
             registers: CpuRegisters::EMPTY,
             frame: InterruptStackFrameValue::new(
-                VirtAddr::from_ptr(entry_point),
+                x86_64::VirtAddr::from_ptr(entry_point),
                 gdt::selectors().kernel_code,
                 RFlags::INTERRUPT_FLAG,
-                stack_top_addr,
+                x86_64::VirtAddr::new(stack_top_addr.to_raw() as u64),
                 gdt::selectors().kernel_data,
             ),
         };
@@ -270,8 +262,8 @@ impl Scheduler {
         let name = name.into();
 
         let address_space = AddressSpace::new(format!("{name}.{id}"), None);
-        let user_code_addr = VirtAddr::new(USER_CODE_ADDR);
-        let user_code_page = Page::containing_address(user_code_addr);
+        let user_code_addr = VirtualAddress::new(USER_CODE_ADDR);
+        let user_code_page = Page::containing_addr(user_code_addr);
 
         let _object = global_loader()
             .load_object(&name, &address_space, user_code_page)
@@ -284,30 +276,23 @@ impl Scheduler {
             .unwrap()
             .upgrade()
             .unwrap();
-        let entry_point = user_code_addr + entry_point_section.mapping_offset as u64;
+        let entry_point = user_code_addr + entry_point_section.mapping_offset;
 
         let stack_size = stack_size.unwrap_or(DEFAULT_USER_STACK_SIZE);
-        let stack_top_addr = VirtAddr::new(USER_CODE_ADDR);
-        {
-            let top_page = Page::containing_address(stack_top_addr - 1);
-            let bottom_page = Page::containing_address(stack_top_addr - stack_size as u64);
-            let stack_pages = Page::range_inclusive(bottom_page, top_page);
-            address_space.map_pages(
-                format!("user_stack.{id}"),
-                stack_pages,
-                PageTableFlags::PRESENT
-                    | PageTableFlags::WRITABLE
-                    | PageTableFlags::USER_ACCESSIBLE,
-            );
-        }
+        let stack_top_addr = VirtualAddress::new(USER_CODE_ADDR);
+        address_space.map_pages(
+            format!("user_stack.{id}"),
+            PageRange::from_end_size(Page::containing_addr(stack_top_addr), stack_size),
+            PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE,
+        );
 
         let context = ExecutionContext {
             registers: CpuRegisters::EMPTY,
             frame: InterruptStackFrameValue::new(
-                entry_point,
+                x86_64::VirtAddr::new(entry_point.to_raw() as u64),
                 gdt::selectors().user_code,
                 RFlags::INTERRUPT_FLAG,
-                stack_top_addr,
+                x86_64::VirtAddr::new(stack_top_addr.to_raw() as u64),
                 gdt::selectors().user_data,
             ),
         };

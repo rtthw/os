@@ -246,10 +246,14 @@ impl Iterator for PageRange {
 
 
 pub struct Level4PageTable {
-    inner: PageTable,
+    inner: &'static mut PageTable,
 }
 
 impl Level4PageTable {
+    pub unsafe fn new(table: &'static mut PageTable) -> Self {
+        Self { inner: table }
+    }
+
     pub fn map_to<A>(
         &mut self,
         page: Page,
@@ -351,6 +355,20 @@ impl Level4PageTable {
             offset: addr.page_offset(),
             flags: l1_entry.flags(),
         })
+    }
+}
+
+impl ops::Deref for Level4PageTable {
+    type Target = PageTable;
+
+    fn deref(&self) -> &Self::Target {
+        self.inner
+    }
+}
+
+impl ops::DerefMut for Level4PageTable {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.inner
     }
 }
 

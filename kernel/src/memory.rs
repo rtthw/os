@@ -10,17 +10,15 @@ use {
     hashbrown::HashMap,
     linked_list_allocator::LockedHeap,
     log::{debug, error, info, trace, warn},
-    memory_types::{Frame, GIBIBYTE, MEBIBYTE, PAGE_SIZE, PhysicalAddress},
+    memory_types::{
+        Frame, FrameAllocator as DynFrameAllocator, GIBIBYTE, Level4PageTable, MEBIBYTE, PAGE_SIZE,
+        Page, PageRange, PageTable, PageTableFlags, PhysicalAddress, VirtualAddress,
+        paging::MappingError,
+    },
     spin_mutex::Mutex,
     x86_64::{
-        VirtAddr,
         instructions::interrupts::without_interrupts,
         registers::control::{Cr0, Cr0Flags, Cr3, Cr3Flags},
-        structures::paging::{
-            FrameAllocator as ExternFrameAllocator, Mapper as _, OffsetPageTable, Page, PageTable,
-            PageTableFlags, PhysFrame, Size4KiB, Translate as _, mapper::MapToError,
-            page::PageRangeInclusive,
-        },
     },
 };
 
@@ -89,13 +87,8 @@ pub fn init(boot_info: &BootInfo) {
     };
 
     let heap_size = (free_frames * PAGE_SIZE) / 2;
-    let heap_start = VirtAddr::new(HEAP_BASE as u64);
-
-    let heap_pages = {
-        let heap_start_page = Page::containing_address(heap_start);
-        let heap_end_page = Page::containing_address(heap_start + heap_size as u64 - 1);
-        Page::range_inclusive(heap_start_page, heap_end_page)
-    };
+    let heap_start = VirtualAddress::new(HEAP_BASE);
+    let heap_pages = PageRange::from_base_size(heap_start, heap_size);
 
     // Note that we can't use `addr_space.map_pages` here because it requires a heap
     // to already be initialized (internally calls `Vec::push`).
@@ -105,17 +98,15 @@ pub fn init(boot_info: &BootInfo) {
 
         for page in heap_pages {
             let frame = frame_allocator.allocate_frame().unwrap();
-            unsafe {
-                page_table
-                    .map_to(
-                        page,
-                        frame,
-                        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-                        &mut *frame_allocator,
-                    )
-                    .unwrap()
-                    .flush();
-            }
+            page_table
+                .map_to(
+                    page,
+                    frame,
+                    PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+                    &mut *frame_allocator,
+                )
+                .unwrap()
+                .flush();
         }
     }
 
@@ -168,22 +159,20 @@ static KERNEL_MAPPING_OFFSET: AtomicUsize = AtomicUsize::new(KERNEL_MAPPING_BASE
 #[derive(Debug)]
 pub struct KernelMapping {
     pub name: String,
-    pub addr: VirtAddr,
+    pub addr: VirtualAddress,
     pub size: usize,
-    pub pages: PageRangeInclusive<Size4KiB>,
+    pub pages: PageRange,
     pub flags: PageTableFlags,
 }
 
 impl KernelMapping {
     pub fn new(name: impl Into<String>, size_in_bytes: usize, flags: PageTableFlags) -> Self {
         let name = name.into();
-        let addr = VirtAddr::new(KERNEL_MAPPING_OFFSET.fetch_add(
+        let addr = VirtualAddress::new(KERNEL_MAPPING_OFFSET.fetch_add(
             size_in_bytes.div_ceil(PAGE_SIZE) * PAGE_SIZE,
             Ordering::SeqCst,
-        ) as u64);
-        let start_page = Page::containing_address(addr);
-        let end_page = Page::containing_address(addr + size_in_bytes as u64);
-        let pages = Page::range_inclusive(start_page, end_page);
+        ));
+        let pages = PageRange::from_base_size(addr, size_in_bytes);
 
         assert_eq!(pages.count(), size_in_bytes.div_ceil(PAGE_SIZE));
 
@@ -209,9 +198,9 @@ impl KernelMapping {
             "Requested offset and length would overflow kernel mapping",
         );
 
-        let addr = self.addr + offset as u64;
+        let addr = self.addr + offset;
 
-        unsafe { core::slice::from_raw_parts_mut(addr.as_mut_ptr(), len) }
+        unsafe { core::slice::from_raw_parts_mut(addr.to_raw() as *mut _, len) }
     }
 
     /// Get a mutable reference to a value of type `T` at the given offset
@@ -223,12 +212,7 @@ impl KernelMapping {
             "Requested type and offset would not fit in kernel mapping",
         );
 
-        unsafe {
-            (self.addr + offset as u64)
-                .as_mut_ptr::<T>()
-                .as_mut()
-                .unwrap()
-        }
+        unsafe { ((self.addr + offset).to_raw() as *mut T).as_mut().unwrap() }
     }
 
     /// Make this mapping available within the given [`AddressSpace`].
@@ -242,9 +226,9 @@ impl KernelMapping {
     pub fn map_into(
         &self,
         address_space: &AddressSpace,
-        pages: PageRangeInclusive,
+        pages: PageRange,
         flags: PageTableFlags,
-    ) -> Result<(), MapToError<Size4KiB>> {
+    ) -> Result<(), MappingError> {
         address_space.map_kernel_pages_to(self.pages, pages, flags)?;
         let mut mm = TRACKER.lock();
         mm.spaces
@@ -413,11 +397,9 @@ pub enum FrameAllocatorError {
     InvalidFrame,
 }
 
-unsafe impl ExternFrameAllocator<Size4KiB> for FrameAllocator {
-    fn allocate_frame(&mut self) -> Option<PhysFrame> {
-        self.allocate().ok().map(|frame| {
-            PhysFrame::containing_address(x86_64::PhysAddr::new(frame.base_addr().to_raw() as u64))
-        })
+impl DynFrameAllocator for FrameAllocator {
+    fn allocate_frame(&mut self) -> Option<Frame> {
+        self.allocate().ok()
     }
 }
 
@@ -428,11 +410,14 @@ fn init_kernel_address_space() {
         let (l4_frame, _) = Cr3::read();
         let l4_ptr = l4_frame.start_address().as_u64() as *mut PageTable;
 
-        let page_table = OffsetPageTable::new(&mut *l4_ptr, VirtAddr::zero());
+        let page_table = Level4PageTable::new(&mut *l4_ptr);
 
         KERNEL_ADDRESS_SPACE = Some(AddressSpace {
             name: None,
-            frame: l4_frame,
+            frame: Frame::from_base_addr(PhysicalAddress::new(
+                l4_frame.start_address().as_u64() as usize
+            ))
+            .unwrap(),
             frame_allocator: Mutex::new(FrameAllocatorProxy {
                 allocated_frames: Vec::new(),
             }),
@@ -453,9 +438,9 @@ static mut KERNEL_ADDRESS_SPACE: Option<AddressSpace> = None;
 
 pub struct AddressSpace {
     name: Option<String>,
-    frame: PhysFrame,
+    frame: Frame,
     frame_allocator: Mutex<FrameAllocatorProxy>,
-    page_table: Mutex<OffsetPageTable<'static>>,
+    page_table: Mutex<Level4PageTable>,
 }
 
 impl fmt::Debug for AddressSpace {
@@ -479,17 +464,18 @@ impl AddressSpace {
         trace!("New address space at {frame:?} for {name:?}");
 
         let mut page_table = unsafe {
-            let l4_ptr = frame.start_address().as_u64() as *mut PageTable;
+            let l4_ptr = VirtualAddress::new(frame.base_addr().to_raw()).to_raw() as *mut PageTable;
 
-            OffsetPageTable::new(&mut *l4_ptr, VirtAddr::zero())
+            Level4PageTable::new(&mut *l4_ptr)
         };
+        page_table.clear();
 
         if let Some(parent) = inherit {
             unsafe {
                 core::ptr::copy_nonoverlapping(
-                    parent.frame.start_address().as_u64() as *const u8,
-                    frame.start_address().as_u64() as *mut _,
-                    frame.size() as usize,
+                    parent.frame.base_addr().to_raw() as *const u8,
+                    frame.base_addr().to_raw() as *mut _,
+                    PAGE_SIZE,
                 );
             }
         } else {
@@ -498,8 +484,8 @@ impl AddressSpace {
             // Make sure the kernel is accessible from this address space so when we enter
             // it we can still access memory while in ring 0.
             // TODO: The kernel should be mapped in the higher half.
-            page_table.level_4_table_mut()[0] = kernel_table.level_4_table()[0].clone();
-            page_table.level_4_table_mut()[509] = kernel_table.level_4_table()[509].clone();
+            page_table[0] = kernel_table[0].clone();
+            page_table[509] = kernel_table[509].clone();
         }
 
         Self {
@@ -511,33 +497,32 @@ impl AddressSpace {
     }
 
     pub fn is_current(&self) -> bool {
-        Cr3::read_raw().0 == self.frame
+        Cr3::read_raw().0.start_address().as_u64() as usize == self.frame.base_addr().to_raw()
     }
 
     pub fn enter(&self) {
         unsafe {
-            Cr3::write(self.frame, Cr3Flags::empty());
+            Cr3::write(
+                x86_64::structures::paging::PhysFrame::from_start_address(x86_64::PhysAddr::new(
+                    self.frame.base_addr().to_raw() as u64,
+                ))
+                .unwrap(),
+                Cr3Flags::empty(),
+            );
         }
     }
 
-    pub fn map_pages(
-        &self,
-        name: impl Into<String>,
-        pages: PageRangeInclusive,
-        flags: PageTableFlags,
-    ) {
+    pub fn map_pages(&self, name: impl Into<String>, pages: PageRange, flags: PageTableFlags) {
         let mut frame_allocator = self.frame_allocator.lock();
         let mut page_table = self.page_table.lock();
 
         for page in pages {
             let frame = frame_allocator.allocate_frame().unwrap();
             // trace!("MAPPING {page:?} TO {frame:?}");
-            unsafe {
-                page_table
-                    .map_to(page, frame, flags, &mut *frame_allocator)
-                    .unwrap()
-                    .flush();
-            }
+            page_table
+                .map_to(page, frame, flags, &mut *frame_allocator)
+                .unwrap()
+                .flush();
         }
 
         TRACKER
@@ -550,17 +535,17 @@ impl AddressSpace {
 
     fn map_kernel_pages_to(
         &self,
-        kernel_pages: PageRangeInclusive,
-        local_pages: PageRangeInclusive,
+        kernel_pages: PageRange,
+        local_pages: PageRange,
         flags: PageTableFlags,
-    ) -> Result<(), MapToError<Size4KiB>> {
+    ) -> Result<(), MappingError> {
         trace!(
             "KERNEL_MAP @ {:#x} | {:#x}..={:#x} >> {:#x}..={:#x}",
-            self.frame.start_address(),
-            kernel_pages.start.start_address(),
-            kernel_pages.end.start_address(),
-            local_pages.start.start_address(),
-            local_pages.end.start_address(),
+            self.frame.base_addr(),
+            kernel_pages.start.base_addr(),
+            kernel_pages.end.base_addr(),
+            local_pages.start.base_addr(),
+            local_pages.end.base_addr(),
         );
         assert_eq!(kernel_pages.count(), local_pages.count());
 
@@ -572,21 +557,30 @@ impl AddressSpace {
                 .translate_page(kernel_page)
                 .expect("should be a mapped kernel page");
 
-            unsafe {
-                page_table
-                    .map_to(local_page, frame, flags, &mut *frame_allocator)?
-                    .flush();
-            }
+            page_table
+                .map_to(local_page, frame, flags, &mut *frame_allocator)
+                .map_err(|error| match error {
+                    MappingError::PageAlreadyMapped { to } => {
+                        error!("{local_page:?} already mapped to {to:?}");
+                        MappingError::PageAlreadyMapped { to }
+                    }
+                    other => other,
+                })?
+                .flush();
         }
 
         Ok(())
     }
 
-    pub fn translate_address(&self, addr: VirtAddr) -> Option<x86_64::PhysAddr> {
-        self.page_table.lock().translate_addr(addr)
+    pub fn translate_address(&self, addr: VirtualAddress) -> Option<PhysicalAddress> {
+        self.page_table
+            .lock()
+            .translate(addr)
+            .ok()
+            .map(|res| res.frame.base_addr() + res.offset)
     }
 
-    pub fn translate_page(&self, page: Page) -> Option<PhysFrame> {
+    pub fn translate_page(&self, page: Page) -> Option<Frame> {
         self.page_table.lock().translate_page(page).ok()
     }
 }
@@ -598,13 +592,12 @@ pub struct FrameAllocatorProxy {
     allocated_frames: Vec<Frame>,
 }
 
-unsafe impl ExternFrameAllocator<Size4KiB> for FrameAllocatorProxy {
-    fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
+impl DynFrameAllocator for FrameAllocatorProxy {
+    fn allocate_frame(&mut self) -> Option<Frame> {
         let frame = without_interrupts(|| FRAME_ALLOCATOR.lock().allocate_frame());
 
         if let Some(frame) = frame {
-            self.allocated_frames
-                .push(Frame::new(frame.start_address().as_u64() as usize));
+            self.allocated_frames.push(frame);
         }
 
         frame
@@ -632,11 +625,7 @@ impl Drop for FrameAllocatorProxy {
 pub static TRACKER: Mutex<MemoryTracker> = Mutex::new(MemoryTracker::new());
 
 pub struct MemoryTracker {
-    spaces: HashMap<
-        (Option<String>, PhysFrame),
-        Vec<(String, PageRangeInclusive)>,
-        rustc_hash::FxBuildHasher,
-    >,
+    spaces: HashMap<(Option<String>, Frame), Vec<(String, PageRange)>, rustc_hash::FxBuildHasher>,
 }
 
 impl MemoryTracker {
@@ -656,11 +645,11 @@ impl MemoryTracker {
                         .iter()
                         .map(|(name, mapping)| {
                             (
-                                mapping.start.start_address().as_u64(),
+                                mapping.start.base_addr(),
                                 format!(
                                     "\n        {:0>16x} {:0>16x}        {name}",
-                                    mapping.start.start_address(),
-                                    mapping.end.start_address() + mapping.end.size(),
+                                    mapping.start.base_addr(),
+                                    mapping.end.base_addr(),
                                 ),
                             )
                         })
@@ -669,7 +658,7 @@ impl MemoryTracker {
 
                     format!(
                         "\n    {:0>16x}{:25}{}{}",
-                        frame.start_address(),
+                        frame.base_addr(),
                         " ",
                         name.as_ref().unwrap_or(&"KERNEL".into()),
                         mappings

@@ -27,11 +27,8 @@ use {
     },
     hashbrown::HashMap,
     log::{debug, error, info, trace},
+    memory_types::{Page, PageRange, PageTableFlags, VirtualAddress},
     spin_mutex::Mutex,
-    x86_64::{
-        VirtAddr,
-        structures::paging::{Page, PageTableFlags},
-    },
 };
 
 const FUNDAMENTAL_SYMBOLS: &[&str] = &[
@@ -73,7 +70,7 @@ pub fn init(fs: impl FileSystem + 'static) {
             "example_dep",
             &AddressSpace::new(Some("load_dep".into()), None),
             // The actual value of this address doesn't matter.
-            Page::containing_address(VirtAddr::new(0x3333_0000_0000)),
+            Page::containing_addr(VirtualAddress::new(0x3333_0000_0000)),
         )
         .unwrap();
 
@@ -82,7 +79,7 @@ pub fn init(fs: impl FileSystem + 'static) {
             "time",
             &AddressSpace::new(Some("load_time".into()), None),
             // The actual value of this address doesn't matter.
-            Page::containing_address(VirtAddr::new(0x3333_0000_0000)),
+            Page::containing_addr(VirtualAddress::new(0x3333_0000_0000)),
         )
         .unwrap();
 
@@ -115,7 +112,7 @@ fn init_fundamental_symbols() {
             "compiler_builtins",
             &dummy_addr_space,
             // The actual value of this address doesn't matter.
-            Page::containing_address(VirtAddr::new(0x2222_0000_0000)),
+            Page::containing_addr(VirtualAddress::new(0x2222_0000_0000)),
         )
         .unwrap();
 
@@ -212,7 +209,7 @@ pub struct LoadedSection {
     /// The size of this section in bytes.
     pub size: usize,
     /// The memory address of this section.
-    pub addr: VirtAddr,
+    pub addr: VirtualAddress,
     /// A reference to the mapping that contains this section's data.
     pub mapping: Arc<Mutex<KernelMapping>>,
     /// The offset into [`self.mapping`](Self::mapping) at which this section's
@@ -288,7 +285,7 @@ impl Loader {
                     let section_count = object.sections.len();
                     format!(
                         "    {name}:{}\n",
-                        if section_count > 200 {
+                        if section_count > 20 {
                             format!("\n        {section_count} sections")
                         } else {
                             object
@@ -297,7 +294,7 @@ impl Loader {
                                 .map(|(index, section)| {
                                     format!(
                                         "\n    {index:>4} | {:#x} | {:>10} | {}",
-                                        section.addr.as_u64(),
+                                        section.addr,
                                         section.kind.name(),
                                         &section.name[..section.name.len().min(50)],
                                     )
@@ -466,7 +463,7 @@ impl Loader {
         object_bytes: &'obj [u8],
         address_space: &AddressSpace,
         start_page: &mut Page,
-        mappings: &mut BTreeSet<VirtAddr>,
+        mappings: &mut BTreeSet<VirtualAddress>,
     ) -> Result<(Arc<Mutex<LoadedObject>>, ElfFile<'obj>), &'static str> {
         let elf_file = ElfFile::new(object_bytes)?;
         if elf_file.header.get_type() != ObjectFileType::Relocatable {
@@ -481,10 +478,7 @@ impl Loader {
 
         // Map loaded sections into the object's address space.
         if let Some(mapping) = &executable_mapping {
-            let pages = Page::range_inclusive(
-                *start_page,
-                *start_page + mapping.pages.count().saturating_sub(1) as u64,
-            );
+            let pages = PageRange::from_start_len(*start_page, mapping.pages.len());
             mappings.insert(mapping.addr);
             mapping
                 .map_into(
@@ -493,13 +487,10 @@ impl Loader {
                     PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
                 )
                 .unwrap();
-            *start_page += mapping.pages.count() as u64;
+            *start_page = pages.end;
         }
         if let Some(mapping) = &read_only_mapping {
-            let pages = Page::range_inclusive(
-                *start_page,
-                *start_page + mapping.pages.count().saturating_sub(1) as u64,
-            );
+            let pages = PageRange::from_start_len(*start_page, mapping.pages.len());
             mappings.insert(mapping.addr);
             mapping
                 .map_into(
@@ -508,13 +499,10 @@ impl Loader {
                     PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
                 )
                 .unwrap();
-            *start_page += mapping.pages.count() as u64;
+            *start_page = pages.end;
         }
         if let Some(mapping) = &read_write_mapping {
-            let pages = Page::range_inclusive(
-                *start_page,
-                *start_page + mapping.pages.count().saturating_sub(1) as u64,
-            );
+            let pages = PageRange::from_start_len(*start_page, mapping.pages.len());
             mappings.insert(mapping.addr);
             mapping
                 .map_into(
@@ -523,7 +511,7 @@ impl Loader {
                     PageTableFlags::PRESENT | PageTableFlags::USER_ACCESSIBLE,
                 )
                 .unwrap();
-            *start_page += mapping.pages.count() as u64;
+            *start_page = pages.end;
         }
 
         let executable_mapping = executable_mapping.map(|mapping| Arc::new(Mutex::new(mapping)));
@@ -661,7 +649,7 @@ impl Loader {
                 // We already copied the content of all `.text` sections above, so here we just
                 // record the metadata into a new `LoadedSection` object.
                 let text_offset = section.offset() as usize;
-                let section_addr = executable_mapping.lock().addr + text_offset as u64;
+                let section_addr = executable_mapping.lock().addr + text_offset;
 
                 loaded_sections.insert(
                     section_index,
@@ -711,7 +699,7 @@ impl Loader {
                     name: rustc_demangle::demangle(name).to_string().into(),
                     kind,
                     size: section_size,
-                    addr: VirtAddr::zero(), // See below.
+                    addr: VirtualAddress::new(0), // See below.
                     global: global_sections.contains(&section_index),
                     mapping: Arc::clone(&read_only_mapping),
                     mapping_offset,
@@ -746,7 +734,7 @@ impl Loader {
                 }
 
                 assert!(data_offset < read_write_map_lock.size());
-                let section_addr = read_write_map_lock.addr + data_offset as u64;
+                let section_addr = read_write_map_lock.addr + data_offset;
 
                 let slice = read_write_map_lock.as_slice_mut(data_offset, section_size);
                 match section.get_data(&elf_file) {
@@ -788,7 +776,7 @@ impl Loader {
                 let name = symbol_name_after_prefix!(section_name, ".rodata.");
 
                 assert!(rodata_offset < read_only_map_lock.size());
-                let section_addr = read_only_map_lock.addr + rodata_offset as u64;
+                let section_addr = read_only_map_lock.addr + rodata_offset;
 
                 let slice = read_only_map_lock.as_slice_mut(rodata_offset, section_size);
                 match section.get_data(&elf_file) {
@@ -828,7 +816,7 @@ impl Loader {
                 }
 
                 assert!(rodata_offset < read_only_map_lock.size());
-                let section_addr = read_only_map_lock.addr + rodata_offset as u64;
+                let section_addr = read_only_map_lock.addr + rodata_offset;
 
                 let slice = read_only_map_lock.as_slice_mut(rodata_offset, section_size);
                 match section.get_data(&elf_file) {
@@ -863,7 +851,7 @@ impl Loader {
                 let mut read_only_map_lock = read_only_mapping.lock();
 
                 assert!(rodata_offset < read_only_map_lock.size());
-                let section_addr = read_only_map_lock.addr + rodata_offset as u64;
+                let section_addr = read_only_map_lock.addr + rodata_offset;
 
                 let slice = read_only_map_lock.as_slice_mut(rodata_offset, section_size);
                 match section.get_data(&elf_file) {
@@ -899,7 +887,7 @@ impl Loader {
                 let mut read_only_map_lock = read_only_mapping.lock();
 
                 assert!(rodata_offset < read_only_map_lock.size());
-                let section_addr = read_only_map_lock.addr + rodata_offset as u64;
+                let section_addr = read_only_map_lock.addr + rodata_offset;
 
                 let slice = read_only_map_lock.as_slice_mut(rodata_offset, section_size);
                 match section.get_data(&elf_file) {
@@ -951,7 +939,7 @@ impl Loader {
         object: &Arc<Mutex<LoadedObject>>,
         address_space: &AddressSpace,
         start_page: &mut Page,
-        mappings: &mut BTreeSet<VirtAddr>,
+        mappings: &mut BTreeSet<VirtualAddress>,
     ) -> Result<(), &'static str> {
         let mut object = object.lock();
         let symbol_table = elf_file.get_symbol_table()?;
@@ -1045,7 +1033,7 @@ impl Loader {
                         rela_entry,
                         target_slice,
                         target_offset,
-                        source_section.addr + source_value as u64,
+                        source_section.addr + source_value,
                     )?;
                 }
             }
@@ -1080,7 +1068,7 @@ fn map_dependency(
     object: &mut LoadedObject,
     section: &Arc<LoadedSection>,
     address_space: &AddressSpace,
-    mappings: &mut BTreeSet<VirtAddr>,
+    mappings: &mut BTreeSet<VirtualAddress>,
 ) {
     object.dependencies.push(section.owner.clone());
 
@@ -1097,7 +1085,7 @@ fn map_dependency_sections(
     object: &mut LoadedObject,
     dependency: &mut LoadedObject,
     address_space: &AddressSpace,
-    mappings: &mut BTreeSet<VirtAddr>,
+    mappings: &mut BTreeSet<VirtualAddress>,
 ) {
     assert_ne!(object.name, dependency.name);
 
@@ -1149,7 +1137,7 @@ fn write_relocation(
     relocation_entry: &Rela,
     target_slice: &mut [u8],
     target_offset: usize,
-    source_addr: VirtAddr,
+    source_addr: VirtualAddress,
 ) -> Result<(), &'static str> {
     // https://docs.rs/goblin/latest/src/goblin/elf/constants_relocation.rs.html
     const R_X86_64_64: u32 = 1;
@@ -1165,7 +1153,7 @@ fn write_relocation(
     //     target_slice.as_ptr(),
     // );
 
-    let source_addr = source_addr.as_u64();
+    let source_addr = source_addr.to_raw() as u64;
     match relocation_entry.get_type() {
         R_X86_64_32 | R_X86_64_32S => {
             let target_range = target_offset..(target_offset + size_of::<u32>());
