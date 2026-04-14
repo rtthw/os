@@ -85,7 +85,7 @@ pub fn init(fs: impl FileSystem + 'static) {
 
     unsafe {
         let mono_period_sym = global_loader()
-            .get_section_with("time", "MONOTONIC_PERIOD")
+            .get_section("time", "MONOTONIC_PERIOD")
             .unwrap();
         let mono_period = mono_period_sym.upgrade().unwrap();
         let mut mono_period_mapping = mono_period.mapping.lock();
@@ -117,7 +117,7 @@ fn init_fundamental_symbols() {
         .unwrap();
 
     for name in FUNDAMENTAL_SYMBOLS {
-        let Some(section) = global_loader().get_section_with("compiler_builtins", name) else {
+        let Some(section) = global_loader().get_section("compiler_builtins", name) else {
             panic!("Couldn't find section for fundamental symbol `{name}`");
         };
         global_loader().add_alias_to_section(name, section);
@@ -328,37 +328,13 @@ impl Loader {
         self.objects.lock().get(name).map(Arc::downgrade)
     }
 
-    /// Get the [section](LoadedSection) with the given name.
-    pub fn get_section(&self, name: &str) -> Option<Weak<LoadedSection>> {
-        self.sections.lock().get(name).cloned()
-    }
-
     /// Get the first [section](LoadedSection) that starts with the given prefix
     /// and ends with the given suffix.
-    pub fn get_section_with(&self, prefix: &str, suffix: &str) -> Option<Weak<LoadedSection>> {
+    pub fn get_section(&self, prefix: &str, suffix: &str) -> Option<Weak<LoadedSection>> {
         self.sections
             .lock()
             .iter()
             .find(|(name, _section)| name.starts_with(prefix) && name.ends_with(suffix))
-            .map(|(_name, section)| section.clone())
-    }
-
-    /// Get the first [section](LoadedSection) that starts with the given
-    /// prefix.
-    pub fn get_section_starting_with(&self, prefix: &str) -> Option<Weak<LoadedSection>> {
-        self.sections
-            .lock()
-            .iter()
-            .find(|(name, _section)| name.starts_with(prefix))
-            .map(|(_name, section)| section.clone())
-    }
-
-    /// Get the first [section](LoadedSection) that ends with the given suffix.
-    pub fn get_section_ending_with(&self, suffix: &str) -> Option<Weak<LoadedSection>> {
-        self.sections
-            .lock()
-            .iter()
-            .find(|(name, _section)| name.ends_with(suffix))
             .map(|(_name, section)| section.clone())
     }
 
