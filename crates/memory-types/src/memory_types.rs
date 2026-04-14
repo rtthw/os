@@ -4,14 +4,15 @@
 
 #![no_std]
 
-mod paging;
+pub mod paging;
+
 mod physical_memory;
 mod virtual_memory;
 
 pub use {
     paging::{
         AddressTranslation, ENTRIES_PER_PAGE_TABLE, Level4PageTable, PAGE_TABLE_INDEX_WIDTH,
-        PAGE_TABLE_OFFSET_WIDTH, PageTable, PageTableEntry, PageTableFlags,
+        PAGE_TABLE_OFFSET_WIDTH, PageRange, PageTable, PageTableEntry, PageTableFlags,
     },
     physical_memory::{Frame, MAX_PHYSICAL_ADDR, PhysicalAddress},
     virtual_memory::{

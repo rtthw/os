@@ -164,6 +164,87 @@ impl fmt::Debug for PageTableEntry {
 
 
 
+/// An **exclusive** range of [`Page`]s.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PageRange {
+    pub start: Page,
+    pub end: Page,
+}
+
+impl PageRange {
+    /// Create a page range that starts at the given start page, and ends
+    /// **before** the given end page.
+    #[inline]
+    pub const fn new(start: Page, end: Page) -> Self {
+        Self { start, end }
+    }
+
+    /// Create a page range that starts at the given page, with the given
+    /// length.
+    #[inline]
+    pub fn from_start_len(start: Page, len: usize) -> Self {
+        Self {
+            start,
+            end: start + len,
+        }
+    }
+
+    /// Create a page range that ends **before** the given end page, with the
+    /// given size.
+    #[inline]
+    pub fn from_end_size(end: Page, size: usize) -> Self {
+        let len = size.div_ceil(PAGE_SIZE);
+        Self {
+            start: end - len,
+            end,
+        }
+    }
+
+    /// Create a page range that starts at the page containing the given base
+    /// address, with the given size.
+    #[inline]
+    pub fn from_base_size(base: VirtualAddress, size: usize) -> Self {
+        let last = Page::containing_addr(base + size);
+        Self {
+            start: Page::containing_addr(base),
+            end: last + 1,
+        }
+    }
+
+    /// Create a page range that starts at the page containing the given base
+    /// address, with the given length.
+    #[inline]
+    pub fn from_base_len(base: VirtualAddress, len: usize) -> Self {
+        Self {
+            start: Page::containing_addr(base),
+            end: Page::containing_addr(base) + len,
+        }
+    }
+
+    /// The number of pages in this range.
+    #[inline]
+    pub const fn len(&self) -> usize {
+        self.end.number() - self.start.number()
+    }
+}
+
+impl Iterator for PageRange {
+    type Item = Page;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start < self.end {
+            let page = self.start;
+            self.start += 1;
+            Some(page)
+        } else {
+            None
+        }
+    }
+}
+
+
+
 pub struct Level4PageTable {
     inner: PageTable,
 }

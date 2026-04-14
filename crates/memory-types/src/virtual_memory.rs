@@ -77,6 +77,38 @@ impl fmt::Display for Page {
     }
 }
 
+impl Add<usize> for Page {
+    type Output = Self;
+
+    #[inline]
+    fn add(self, rhs: usize) -> Self::Output {
+        Self::new(self.number.checked_add(rhs).unwrap())
+    }
+}
+
+impl AddAssign<usize> for Page {
+    #[inline]
+    fn add_assign(&mut self, rhs: usize) {
+        *self = *self + rhs;
+    }
+}
+
+impl Sub<usize> for Page {
+    type Output = Self;
+
+    #[inline]
+    fn sub(self, rhs: usize) -> Self::Output {
+        Self::new(self.number.checked_sub(rhs).unwrap())
+    }
+}
+
+impl SubAssign<usize> for Page {
+    #[inline]
+    fn sub_assign(&mut self, rhs: usize) {
+        *self = *self - rhs;
+    }
+}
+
 
 
 /// An address in virtual memory.
@@ -128,7 +160,8 @@ impl VirtualAddress {
 
     #[inline]
     pub const fn l1_index(self) -> usize {
-        (self.0 >> PAGE_TABLE_OFFSET_WIDTH) % ENTRIES_PER_PAGE_TABLE
+        const L1_INDEX_SHIFT: usize = PAGE_TABLE_OFFSET_WIDTH + PAGE_TABLE_INDEX_WIDTH * 0;
+        (self.0 >> L1_INDEX_SHIFT) % ENTRIES_PER_PAGE_TABLE
     }
 
     #[inline]
