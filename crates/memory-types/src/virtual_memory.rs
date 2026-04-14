@@ -5,7 +5,10 @@ use core::{
     ops::{Add, AddAssign, Deref, Sub, SubAssign},
 };
 
-use crate::{PAGE_SIZE, align_down, align_up};
+use crate::{
+    ENTRIES_PER_PAGE_TABLE, PAGE_SIZE, PAGE_TABLE_INDEX_WIDTH, PAGE_TABLE_OFFSET_WIDTH, align_down,
+    align_up,
+};
 
 pub const MAX_VIRTUAL_ADDR: usize = usize::MAX; // 0xFFFF_FFFF_FFFF_FFFF
 pub const VIRTUAL_MEMORY_SHIFT: usize = 47;
@@ -39,6 +42,26 @@ impl Page {
     #[inline]
     pub const fn base_addr(self) -> VirtualAddress {
         unsafe { VirtualAddress::new_unchecked(self.number * PAGE_SIZE) }
+    }
+
+    #[inline]
+    pub const fn l1_index(self) -> usize {
+        self.base_addr().l1_index()
+    }
+
+    #[inline]
+    pub const fn l2_index(self) -> usize {
+        self.base_addr().l2_index()
+    }
+
+    #[inline]
+    pub const fn l3_index(self) -> usize {
+        self.base_addr().l3_index()
+    }
+
+    #[inline]
+    pub const fn l4_index(self) -> usize {
+        self.base_addr().l4_index()
     }
 }
 
@@ -96,6 +119,34 @@ impl VirtualAddress {
     #[inline]
     pub const fn page(self) -> Page {
         Page::containing_addr(self)
+    }
+
+    #[inline]
+    pub const fn page_offset(self) -> usize {
+        self.0 % (1 << PAGE_TABLE_OFFSET_WIDTH)
+    }
+
+    #[inline]
+    pub const fn l1_index(self) -> usize {
+        (self.0 >> PAGE_TABLE_OFFSET_WIDTH) % ENTRIES_PER_PAGE_TABLE
+    }
+
+    #[inline]
+    pub const fn l2_index(self) -> usize {
+        const L2_INDEX_SHIFT: usize = PAGE_TABLE_OFFSET_WIDTH + PAGE_TABLE_INDEX_WIDTH * 1;
+        (self.0 >> L2_INDEX_SHIFT) % ENTRIES_PER_PAGE_TABLE
+    }
+
+    #[inline]
+    pub const fn l3_index(self) -> usize {
+        const L3_INDEX_SHIFT: usize = PAGE_TABLE_OFFSET_WIDTH + PAGE_TABLE_INDEX_WIDTH * 2;
+        (self.0 >> L3_INDEX_SHIFT) % ENTRIES_PER_PAGE_TABLE
+    }
+
+    #[inline]
+    pub const fn l4_index(self) -> usize {
+        const L4_INDEX_SHIFT: usize = PAGE_TABLE_OFFSET_WIDTH + PAGE_TABLE_INDEX_WIDTH * 3;
+        (self.0 >> L4_INDEX_SHIFT) % ENTRIES_PER_PAGE_TABLE
     }
 }
 

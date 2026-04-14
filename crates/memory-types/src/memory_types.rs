@@ -10,8 +10,8 @@ mod virtual_memory;
 
 pub use {
     paging::{
-        ENTRIES_PER_PAGE_TABLE, PAGE_TABLE_INDEX_WIDTH, PAGE_TABLE_OFFSET_WIDTH, PageTable,
-        PageTableEntry, PageTableFlags,
+        AddressTranslation, ENTRIES_PER_PAGE_TABLE, Level4PageTable, PAGE_TABLE_INDEX_WIDTH,
+        PAGE_TABLE_OFFSET_WIDTH, PageTable, PageTableEntry, PageTableFlags,
     },
     physical_memory::{Frame, MAX_PHYSICAL_ADDR, PhysicalAddress},
     virtual_memory::{
@@ -57,4 +57,10 @@ pub const fn align_down(addr: usize, align: usize) -> usize {
 #[inline]
 pub const fn align_up(addr: usize, align: usize) -> usize {
     (addr + align - 1) & !(align - 1)
+}
+
+
+
+pub trait FrameAllocator {
+    fn allocate_frame(&mut self) -> Option<Frame>;
 }

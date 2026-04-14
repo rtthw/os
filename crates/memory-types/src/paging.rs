@@ -1,7 +1,9 @@
 //! # Paging
 
 use {
-    crate::{Frame, PAGE_SIZE, POINTER_SIZE, PhysicalAddress},
+    crate::{
+        Frame, FrameAllocator, PAGE_SIZE, POINTER_SIZE, Page, PhysicalAddress, VirtualAddress,
+    },
     core::{fmt, ops},
 };
 
@@ -161,6 +163,189 @@ impl fmt::Debug for PageTableEntry {
 }
 
 
+
+pub struct Level4PageTable {
+    inner: PageTable,
+}
+
+impl Level4PageTable {
+    pub fn map_to<A>(
+        &mut self,
+        page: Page,
+        frame: Frame,
+        flags: PageTableFlags,
+        allocator: &mut A,
+    ) -> Result<FlushMapping, MappingError>
+    where
+        A: FrameAllocator + ?Sized,
+    {
+        let parent_table_flags = flags
+            & (PageTableFlags::PRESENT
+                | PageTableFlags::WRITABLE
+                | PageTableFlags::USER_ACCESSIBLE);
+
+        let l4 = &mut self.inner;
+        let l3 = Self::next_table(&mut l4[page.l4_index()], parent_table_flags, allocator)?;
+        let l2 = Self::next_table(&mut l3[page.l3_index()], parent_table_flags, allocator)?;
+        let l1 = Self::next_table(&mut l2[page.l2_index()], parent_table_flags, allocator)?;
+
+        if !l1[page.l1_index()].is_unused() {
+            return Err(MappingError::PageAlreadyMapped { to: frame });
+        }
+        l1[page.l1_index()].set_frame(frame, flags);
+
+        Ok(FlushMapping(page))
+    }
+
+    fn next_table<'a, A>(
+        entry: &'a mut PageTableEntry,
+        flags: PageTableFlags,
+        allocator: &mut A,
+    ) -> Result<&'a mut PageTable, MappingError>
+    where
+        A: FrameAllocator + ?Sized,
+    {
+        let new = entry.is_unused();
+        if new {
+            if let Some(frame) = allocator.allocate_frame() {
+                entry.set_frame(frame, flags);
+            } else {
+                return Err(MappingError::FrameAllocationFailed);
+            }
+        } else {
+            if flags != PageTableFlags::NONE && entry.flags() & flags != flags {
+                entry.set_flags(entry.flags() | flags);
+            }
+        }
+
+        let page_table = match Self::get_table(entry) {
+            Ok(table) => table,
+            Err(EntryFrameError::HugePage) => {
+                return Err(MappingError::MappedToHugePage);
+            }
+            Err(EntryFrameError::NotPresent) => panic!("entry should be mapped at this point"),
+        };
+
+        if new {
+            page_table.clear();
+        }
+
+        Ok(page_table)
+    }
+
+    fn get_table(entry: &PageTableEntry) -> Result<&mut PageTable, EntryFrameError> {
+        let page_table_ptr = entry.frame()?.base_addr().to_raw() as *mut PageTable;
+        Ok(unsafe { &mut *page_table_ptr })
+    }
+
+    pub fn translate_page(&self, page: Page) -> Result<Frame, TranslationError> {
+        let l4 = &self.inner;
+        let l3 = Self::get_table(&l4[page.l4_index()])?;
+        let l2 = Self::get_table(&l3[page.l3_index()])?;
+        let l1 = Self::get_table(&l2[page.l2_index()])?;
+
+        let l1_entry = &l1[page.l1_index()];
+        if l1_entry.is_unused() {
+            return Err(TranslationError::NotMapped);
+        }
+
+        Frame::from_base_addr(l1_entry.addr())
+            .ok_or(TranslationError::InvalidFrameAddress(l1_entry.addr()))
+    }
+
+    pub fn translate(&self, addr: VirtualAddress) -> Result<AddressTranslation, TranslationError> {
+        let l4 = &self.inner;
+        let l3 = Self::get_table(&l4[addr.l4_index()])?;
+        let l2 = Self::get_table(&l3[addr.l3_index()])?;
+        let l1 = Self::get_table(&l2[addr.l2_index()])?;
+
+        let l1_entry = &l1[addr.l1_index()];
+        if l1_entry.is_unused() {
+            return Err(TranslationError::NotMapped);
+        }
+
+        Ok(AddressTranslation {
+            frame: Frame::from_base_addr(l1_entry.addr())
+                .ok_or(TranslationError::InvalidFrameAddress(l1_entry.addr()))?,
+            offset: addr.page_offset(),
+            flags: l1_entry.flags(),
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct AddressTranslation {
+    pub frame: Frame,
+    pub offset: usize,
+    pub flags: PageTableFlags,
+}
+
+
+
+#[derive(Debug)]
+#[must_use = "changes to page tables must be flushed or ignored"]
+pub struct FlushMapping(Page);
+
+impl FlushMapping {
+    /// Flush the page from the TLB to ensure that the newest mapping is used.
+    #[inline]
+    pub fn flush(self) {
+        unsafe {
+            core::arch::asm!(
+                "invlpg [{}]",
+                in(reg) self.0.base_addr().to_raw(),
+                options(nostack, preserves_flags),
+            );
+        }
+    }
+
+    /// Don't flush the TLB and silence the “must be used” warning.
+    #[inline]
+    pub fn ignore(self) {}
+
+    /// The page to be flushed.
+    #[inline]
+    pub fn page(&self) -> Page {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum MappingError {
+    PageAlreadyMapped { to: Frame },
+    FrameAllocationFailed,
+    MappedToHugePage,
+}
+
+impl fmt::Display for MappingError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PageAlreadyMapped { to } => {
+                f.write_fmt(format_args!("page already mapped to {to}"))
+            }
+            Self::FrameAllocationFailed => f.write_str("failed to allocate frame for page"),
+            Self::MappedToHugePage => f.write_str("got huge page where standard page was expected"),
+        }
+    }
+}
+
+impl core::error::Error for MappingError {}
+
+#[derive(Debug)]
+pub enum TranslationError {
+    NotMapped,
+    HugePage,
+    InvalidFrameAddress(PhysicalAddress),
+}
+
+impl From<EntryFrameError> for TranslationError {
+    fn from(value: EntryFrameError) -> Self {
+        match value {
+            EntryFrameError::NotPresent => Self::NotMapped,
+            EntryFrameError::HugePage => Self::HugePage,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum EntryFrameError {
