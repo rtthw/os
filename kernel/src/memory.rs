@@ -570,6 +570,15 @@ impl AddressSpace {
     }
 }
 
+impl Drop for AddressSpace {
+    fn drop(&mut self) {
+        TRACKER
+            .lock()
+            .spaces
+            .remove(&(self.name.clone(), self.frame));
+    }
+}
+
 /// A proxy to the global [`FrameAllocator`]. Keeps track of allocated frames
 /// and deallocates them on drop.
 #[derive(Debug)]
