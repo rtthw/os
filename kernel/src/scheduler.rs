@@ -134,7 +134,8 @@ impl Scheduler {
                     gdt::selectors().kernel_code,
                 ),
             }),
-        })
+            allow_io: true,
+        });
     }
 
     fn add_to_queue(&mut self, process: Process) {
@@ -157,6 +158,7 @@ impl Scheduler {
         if self.current.is_none() {
             let process = self.next_ready();
             process.address_space.enter();
+            crate::gdt::set_user_io_allowed(process.allow_io);
             self.current = Some(process);
         }
 
@@ -241,6 +243,7 @@ impl Scheduler {
             priority: Priority::Normal,
             address_space,
             context: Some(context),
+            allow_io: true,
         };
 
         info!("Running {process}");
@@ -253,11 +256,16 @@ impl Scheduler {
     /// ## Arguments
     ///
     /// - `name`, the name of the process to be run.
-    /// - `entry_point`, a pointer to the entry point of the process. The
-    ///   function must be diverging.
     /// - `stack_size`, a size for the new process's stack. If `None` is
     ///   provided, the [`DEFAULT_USER_STACK_SIZE`] will be used.
-    pub fn run_user_process(&mut self, name: impl Into<String>, stack_size: Option<usize>) {
+    /// - `allow_io`, whether the new process will be allowed to perform I/O
+    ///   instructions.
+    pub fn run_user_process(
+        &mut self,
+        name: impl Into<String>,
+        stack_size: Option<usize>,
+        allow_io: bool,
+    ) {
         let id = PROCESS_ID.fetch_add(1, Ordering::SeqCst);
         let name = name.into();
 
@@ -303,6 +311,7 @@ impl Scheduler {
             priority: Priority::Normal,
             address_space,
             context: Some(context),
+            allow_io,
         };
 
         info!("Running {process}");
@@ -406,6 +415,8 @@ struct Process {
     /// The [`ExecutionContext`] of the process. If this is `None`, the process
     /// is currently running.
     context: Option<ExecutionContext>,
+    /// Whether the process is allowed to perform I/O instructions.
+    allow_io: bool,
 }
 
 impl fmt::Display for Process {

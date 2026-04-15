@@ -18,10 +18,11 @@ use {
 
 
 static mut GDT: GlobalDescriptorTable = GlobalDescriptorTable::new();
-static mut TSS: TaskStateSegment = TaskStateSegment::new();
+static mut TSS: Tss = Tss::new();
 static mut SELECTORS: Selectors = Selectors::NULL;
 
 const INTERRUPT_STACK_SIZE: usize = PAGE_SIZE * 8;
+const IOMAP_WIDTH: usize = ((u16::MAX as usize + 1) / 8) + 1;
 
 pub const DOUBLE_FAULT_IST: u16 = 0;
 pub const PAGE_FAULT_IST: u16 = 1;
@@ -33,28 +34,29 @@ pub fn init() {
     info!("Initializing GDT...");
 
     unsafe {
-        TSS.interrupt_stack_table[DOUBLE_FAULT_IST as usize] = {
+        TSS.inner.interrupt_stack_table[DOUBLE_FAULT_IST as usize] = {
             static mut STACK: [u8; INTERRUPT_STACK_SIZE] = [0; INTERRUPT_STACK_SIZE];
             VirtAddr::from_ptr(addr_of!(STACK)) + INTERRUPT_STACK_SIZE as u64
         };
-        TSS.interrupt_stack_table[PAGE_FAULT_IST as usize] = {
+        TSS.inner.interrupt_stack_table[PAGE_FAULT_IST as usize] = {
             static mut STACK: [u8; INTERRUPT_STACK_SIZE] = [0; INTERRUPT_STACK_SIZE];
             VirtAddr::from_ptr(addr_of!(STACK)) + INTERRUPT_STACK_SIZE as u64
         };
-        TSS.interrupt_stack_table[GENERAL_PROTECTION_FAULT_IST as usize] = {
+        TSS.inner.interrupt_stack_table[GENERAL_PROTECTION_FAULT_IST as usize] = {
             static mut STACK: [u8; INTERRUPT_STACK_SIZE] = [0; INTERRUPT_STACK_SIZE];
             VirtAddr::from_ptr(addr_of!(STACK)) + INTERRUPT_STACK_SIZE as u64
         };
-        TSS.interrupt_stack_table[LOCAL_APIC_TIMER_IST as usize] = {
+        TSS.inner.interrupt_stack_table[LOCAL_APIC_TIMER_IST as usize] = {
             static mut STACK: [u8; INTERRUPT_STACK_SIZE] = [0; INTERRUPT_STACK_SIZE];
             VirtAddr::from_ptr(addr_of!(STACK)) + INTERRUPT_STACK_SIZE as u64
         };
-        TSS.interrupt_stack_table[USER_IST as usize] = {
+        TSS.inner.interrupt_stack_table[USER_IST as usize] = {
             static mut STACK: [u8; INTERRUPT_STACK_SIZE] = [0; INTERRUPT_STACK_SIZE];
             VirtAddr::from_ptr(addr_of!(STACK)) + INTERRUPT_STACK_SIZE as u64
         };
 
-        let kernel_tss = GDT.append(Descriptor::tss_segment(&TSS));
+        let kernel_tss =
+            GDT.append(Descriptor::tss_segment_with_iomap(&TSS.inner, &TSS.iomap).unwrap());
         let kernel_code = GDT.append(Descriptor::kernel_code_segment());
         let kernel_data = GDT.append(Descriptor::kernel_data_segment());
         let user_code = GDT.append(Descriptor::user_code_segment());
@@ -107,4 +109,37 @@ impl Selectors {
         user_code: SegmentSelector::NULL,
         user_data: SegmentSelector::NULL,
     };
+}
+
+/// Set whether ring 3 processes are allowed to perform I/O.
+///
+/// This has no effect on ring 0 processes.
+pub fn set_user_io_allowed(allow_user_io: bool) {
+    let offset = if allow_user_io {
+        size_of::<TaskStateSegment>() as u16
+    } else {
+        0xFFFF
+    };
+
+    unsafe {
+        TSS.inner.iomap_base = offset;
+    }
+}
+
+#[repr(C)]
+struct Tss {
+    inner: TaskStateSegment,
+    iomap: [u8; IOMAP_WIDTH],
+}
+
+impl Tss {
+    const fn new() -> Self {
+        let mut iomap = [0; IOMAP_WIDTH];
+        iomap[IOMAP_WIDTH - 1] = 0xFF;
+
+        Self {
+            inner: TaskStateSegment::new(),
+            iomap,
+        }
+    }
 }

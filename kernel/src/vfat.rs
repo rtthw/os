@@ -39,7 +39,7 @@ pub fn init(drive: &mut Drive, lba_start: u32, lba_sector_count: u32) {
     loader::init(fs);
 
     with_scheduler(|scheduler| {
-        scheduler.run_user_process("example", None);
+        scheduler.run_user_process("example", None, true);
     });
 }
 

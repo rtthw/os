@@ -5,8 +5,6 @@
 extern crate example_dep;
 extern crate time;
 
-use core::time::Duration;
-
 use example_dep::exit;
 
 pub extern "C" fn main() -> ! {
@@ -14,9 +12,8 @@ pub extern "C" fn main() -> ! {
         panic!("CLOCK NOT READY");
     }
 
-    let start = time::now();
-    while time::now().duration_since(start) < Duration::from_secs(10) {
-        core::hint::spin_loop();
+    for _ in 0..500 {
+        pit::sleep(10_000);
     }
 
     exit()
