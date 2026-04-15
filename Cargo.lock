@@ -1864,6 +1864,7 @@ dependencies = [
  "log 0.1.0",
  "memory-types",
  "pci",
+ "pit",
  "rustc-demangle",
  "rustc-hash 2.1.2",
  "spin-mutex",
@@ -2613,6 +2614,13 @@ dependencies = [
  "atomic-waker",
  "fastrand",
  "futures-io",
+]
+
+[[package]]
+name = "pit"
+version = "0.1.0"
+dependencies = [
+ "x86-port",
 ]
 
 [[package]]

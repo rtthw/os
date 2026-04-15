@@ -1,0 +1,10 @@
+[package]
+name = "pit"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/pit.rs"
+
+[dependencies]
+x86-port = { path = "../x86-port" }

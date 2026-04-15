@@ -16,7 +16,6 @@ mod idt;
 mod input;
 mod loader;
 mod memory;
-mod pit;
 mod rtc;
 mod scheduler;
 mod serial;

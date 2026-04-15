@@ -1,5 +1,6 @@
 //! # Programmable Interval Timer (PIT)
 
+#![no_std]
 
 const PIT_CHANNEL_2_PORT: u16 = 0x42;
 const PIT_COMMAND_REGISTER_PORT: u16 = 0x43;

@@ -1,7 +1,6 @@
 //! # Timestamp Counter (TSC)
 
 use {
-    crate::pit,
     log::info,
     time::{ClockMonotonic, FEMTOS_PER_MICRO},
 };
