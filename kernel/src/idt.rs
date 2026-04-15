@@ -71,5 +71,15 @@ extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
-    panic!("GENERAL_PROTECTION_FAULT({error_code}) : {stack_frame:#?}");
+    let ins_ptr = stack_frame.instruction_pointer.as_ptr::<u8>();
+    let opcode = unsafe { ins_ptr.read() };
+
+    panic!(
+        "#GP @ `{opcode:x}`{}: {stack_frame:#?}",
+        if error_code != 0 {
+            format!(" SEGMENT {error_code}")
+        } else {
+            format!("")
+        },
+    );
 }
