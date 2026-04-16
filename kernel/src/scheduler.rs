@@ -326,8 +326,8 @@ where
     F: FnOnce(&mut Scheduler) -> R,
 {
     without_interrupts(|| {
-        let mut universe = SCHEDULER.lock();
-        op(&mut *universe)
+        let mut scheduler = SCHEDULER.lock();
+        op(&mut *scheduler)
     })
 }
 
