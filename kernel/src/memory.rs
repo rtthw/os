@@ -496,10 +496,17 @@ impl AddressSpace {
         }
     }
 
+    /// Get the name of this address space.
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    /// Whether this address space is currently active.
     pub fn is_current(&self) -> bool {
         Cr3::read_raw().0.start_address().as_u64() as usize == self.frame.base_addr().to_raw()
     }
 
+    /// Make this address space the active one.
     pub fn enter(&self) {
         unsafe {
             Cr3::write(

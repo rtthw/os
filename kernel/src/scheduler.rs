@@ -138,6 +138,11 @@ impl Scheduler {
         });
     }
 
+    /// Get the [`AddressSpace`] of the currently running process.
+    pub fn current_address_space(&self) -> Option<&AddressSpace> {
+        self.current.as_ref().map(|proc| &proc.address_space)
+    }
+
     fn add_to_queue(&mut self, process: Process) {
         self.queue
             .entry(process.priority)

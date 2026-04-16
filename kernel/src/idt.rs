@@ -1,8 +1,14 @@
 //! # Interrupt Descriptor Table (IDT)
 
 use {
-    crate::{apic, gdt, memory::kernel_address_space, scheduler},
+    crate::{
+        apic, gdt,
+        loader::global_loader,
+        memory::kernel_address_space,
+        scheduler::{self, with_scheduler},
+    },
     log::{error, info},
+    memory_types::VirtualAddress,
     x86_64::{
         registers::control::{Cr2, Cr3},
         set_general_handler,
@@ -66,14 +72,35 @@ extern "x86-interrupt" fn page_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
-    let addr = Cr2::read_raw();
+    let addr = Cr2::read_raw() as usize;
     let addr_space_frame = Cr3::read_raw().0;
 
     if error_code.contains(PageFaultErrorCode::USER_MODE) {
-        error!("#PF({error_code:?}) at {addr:#x} in {addr_space_frame:?} : {stack_frame:#?}");
-        scheduler::exit();
+        if let Some(section) = global_loader()
+            .get_section_for_addr(VirtualAddress::new(addr))
+            .and_then(|weak| weak.upgrade())
+        {
+            with_scheduler(|scheduler| {
+                let address_space = scheduler
+                    .current_address_space()
+                    .expect("should have an address space during user page fault");
+
+                info!(
+                    "Adding `{}` to `{}` at {:x}",
+                    section.name,
+                    address_space.name().expect("address space should be named"),
+                    section.addr,
+                );
+
+                let mapping = section.mapping.lock();
+                _ = mapping.map_into(&address_space, mapping.pages, mapping.flags);
+            });
+        } else {
+            error!("#PF({error_code:?}) at {addr:#x} in {addr_space_frame:?}");
+            scheduler::exit();
+        }
     } else {
-        panic!("#PF({error_code:?}) at {addr:#x} in {addr_space_frame:?} : {stack_frame:#?}");
+        panic!("#PF({error_code:?}) at {addr:#x} in {addr_space_frame:?} : {stack_frame:#?}",);
     }
 }
 

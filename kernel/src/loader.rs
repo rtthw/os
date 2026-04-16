@@ -11,7 +11,7 @@ use {
     },
     alloc::{
         boxed::Box,
-        collections::btree_set::BTreeSet,
+        collections::{btree_map::BTreeMap, btree_set::BTreeSet},
         string::{String, ToString as _},
         sync::{Arc, Weak},
         vec::Vec,
@@ -30,6 +30,8 @@ use {
     memory_types::{Page, PageRange, PageTableFlags, VirtualAddress},
     spin_mutex::Mutex,
 };
+
+const AUTO_MAP_DEPENDENCIES: bool = false;
 
 const FUNDAMENTAL_SYMBOLS: &[&str] = &[
     "memcmp",
@@ -171,6 +173,7 @@ impl<'a> ObjectProvider for &'a GlobalObjectProvider {
 pub struct Loader {
     objects: Mutex<HashMap<Arc<str>, Arc<Mutex<LoadedObject>>, rustc_hash::FxBuildHasher>>,
     sections: Mutex<HashMap<Arc<str>, Weak<LoadedSection>, rustc_hash::FxBuildHasher>>,
+    sections_by_addr: Mutex<BTreeMap<(VirtualAddress, usize), Weak<LoadedSection>>>,
 }
 
 /// An object that has been loaded into memory.
@@ -268,6 +271,7 @@ impl Loader {
         Self {
             objects: Mutex::new(HashMap::with_hasher(rustc_hash::FxBuildHasher)),
             sections: Mutex::new(HashMap::with_hasher(rustc_hash::FxBuildHasher)),
+            sections_by_addr: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -336,6 +340,17 @@ impl Loader {
             .iter()
             .find(|(name, _section)| name.starts_with(prefix) && name.ends_with(suffix))
             .map(|(_name, section)| section.clone())
+    }
+
+    /// Get the first [section](LoadedSection) that contains the given address.
+    pub fn get_section_for_addr(&self, addr: VirtualAddress) -> Option<Weak<LoadedSection>> {
+        self.sections_by_addr
+            .lock()
+            .iter()
+            .find(|((section_addr, section_size), _section)| {
+                &addr >= section_addr && addr < *section_addr + *section_size
+            })
+            .map(|(_range, section)| section.clone())
     }
 
     fn get_or_load_section(
@@ -996,7 +1011,9 @@ impl Loader {
 
                             // At this point, we know `section` is some external dependency (i.e.
                             // `section.owner` != `object`).
-                            map_dependency(&mut object, &section, address_space, mappings);
+                            if AUTO_MAP_DEPENDENCIES {
+                                map_dependency(&mut object, &section, address_space, mappings);
+                            }
 
                             section
                         }
@@ -1023,6 +1040,7 @@ impl Loader {
         I: IntoIterator<Item = &'a Arc<LoadedSection>>,
     {
         let mut map = self.sections.lock();
+        let mut range_map = self.sections_by_addr.lock();
         let mut added_count = 0;
         for section in sections.into_iter() {
             if section.global {
@@ -1030,6 +1048,7 @@ impl Loader {
                     .insert(section.name.clone(), Arc::downgrade(section))
                     .is_none();
                 if added {
+                    range_map.insert((section.addr, section.size), Arc::downgrade(section));
                     added_count += 1;
                 }
             }
