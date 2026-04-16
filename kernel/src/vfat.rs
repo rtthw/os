@@ -1,7 +1,7 @@
 //! # Virtual File Allocation Table (VFAT)
 
 use {
-    crate::{DirectoryEntry, FileSystem, ata::Drive, loader, scheduler::with_scheduler},
+    crate::{DirectoryEntry, FileSystem, ata::Drive, loader},
     alloc::{
         collections::vec_deque::VecDeque,
         string::{String, ToString as _},
@@ -37,10 +37,6 @@ pub fn init(drive: &mut Drive, lba_start: u32, lba_sector_count: u32) {
     let fs = VfatFileSystem::new(drive.clone(), boot_sector, lba_start).unwrap();
 
     loader::init(fs);
-
-    with_scheduler(|scheduler| {
-        scheduler.run_user_process("example", None, true);
-    });
 }
 
 // https://wiki.osdev.org/FAT#FAT_32_and_exFAT

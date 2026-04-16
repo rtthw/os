@@ -113,17 +113,18 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
 
     ata::init();
 
-    // info!("PCI Devices:");
-    // for pci_device in pci::enumerate_devices() {
-    //     debug!("{pci_device:#?}");
-    // }
-
     unsafe {
         BOOT_INFO = Some(boot_info);
     }
 
     info!("STARTUP SUCCESSFUL");
 
+    // Run the example program.
+    scheduler::with_scheduler(|scheduler| {
+        scheduler.run_user_process("example", None, false);
+    });
+
+    // Run the core kernel processes.
     scheduler::with_scheduler(|scheduler| {
         scheduler.run_kernel_process(
             "init",
