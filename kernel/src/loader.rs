@@ -978,7 +978,7 @@ impl Loader {
                                     if &*object.name == "core" {
                                         let start = time::now();
                                         while time::now().duration_since(start)
-                                            < Duration::from_millis(50)
+                                            < Duration::from_millis(1)
                                         {
                                             core::hint::spin_loop();
                                         }
