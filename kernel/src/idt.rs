@@ -1,8 +1,8 @@
 //! # Interrupt Descriptor Table (IDT)
 
 use {
-    crate::{apic, gdt, scheduler},
-    log::info,
+    crate::{apic, gdt, memory::kernel_address_space, scheduler},
+    log::{error, info},
     x86_64::{
         registers::control::{Cr2, Cr3},
         set_general_handler,
@@ -55,7 +55,11 @@ extern "x86-interrupt" fn double_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) -> ! {
-    panic!("DOUBLE_FAULT({error_code}) : {stack_frame:#?}");
+    let addr_space_frame = Cr3::read_raw().0;
+    let ins_ptr = stack_frame.instruction_pointer.as_ptr::<u8>();
+    let opcode = unsafe { ins_ptr.read() };
+
+    panic!("#DF({error_code}) at `{opcode:x}` in {addr_space_frame:?} : {stack_frame:#?}");
 }
 
 extern "x86-interrupt" fn page_fault_handler(
@@ -64,22 +68,43 @@ extern "x86-interrupt" fn page_fault_handler(
 ) {
     let addr = Cr2::read_raw();
     let addr_space_frame = Cr3::read_raw().0;
-    panic!("PAGE_FAULT({error_code:?}) at {addr:#x} in {addr_space_frame:?} : {stack_frame:#?}");
+
+    if error_code.contains(PageFaultErrorCode::USER_MODE) {
+        error!("#PF({error_code:?}) at {addr:#x} in {addr_space_frame:?} : {stack_frame:#?}");
+        scheduler::exit();
+    } else {
+        panic!("#PF({error_code:?}) at {addr:#x} in {addr_space_frame:?} : {stack_frame:#?}");
+    }
 }
 
 extern "x86-interrupt" fn general_protection_fault_handler(
     stack_frame: InterruptStackFrame,
     error_code: u64,
 ) {
+    let addr_space_frame = Cr3::read_raw().0;
     let ins_ptr = stack_frame.instruction_pointer.as_ptr::<u8>();
     let opcode = unsafe { ins_ptr.read() };
 
-    panic!(
-        "#GP @ `{opcode:x}`{}: {stack_frame:#?}",
-        if error_code != 0 {
-            format!(" SEGMENT {error_code}")
-        } else {
-            format!("")
-        },
-    );
+    if IO_PORT_OPCODES.contains(&opcode) {
+        assert!(
+            !kernel_address_space().is_current(),
+            "Somehow, kernel failed an I/O operation! This shouldn't be possible!",
+        );
+        error!(
+            "Attempted to use an I/O port without permission at `{opcode:x}` in \
+            {addr_space_frame:?}",
+        );
+        scheduler::exit();
+    } else {
+        panic!(
+            "#GP at `{opcode:x}` in {addr_space_frame:?}{} : {stack_frame:#?}",
+            if error_code != 0 {
+                format!(" for SEGMENT {error_code}")
+            } else {
+                format!("")
+            },
+        );
+    }
 }
+
+const IO_PORT_OPCODES: &[u8] = &[0xE4, 0xE5, 0xE6, 0xE7, 0xEC, 0xED, 0xEE, 0xEF];
