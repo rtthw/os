@@ -34,6 +34,8 @@ static FRAME_ALLOCATOR: Mutex<FrameAllocator> = Mutex::new(FrameAllocator::new()
 pub fn init(boot_info: &BootInfo) {
     info!("Initializing memory management...");
 
+    TRACKER.lock().init(boot_info);
+
     init_kernel_address_space();
     let addr_space = kernel_address_space();
 
@@ -627,18 +629,41 @@ pub static TRACKER: Mutex<MemoryTracker> = Mutex::new(MemoryTracker::new());
 
 pub struct MemoryTracker {
     spaces: HashMap<(Option<String>, Frame), Vec<(String, PageRange)>, rustc_hash::FxBuildHasher>,
+    kernel_pages: PageRange,
+    framebuffer_pages: PageRange,
 }
 
 impl MemoryTracker {
     const fn new() -> Self {
         Self {
             spaces: HashMap::with_hasher(rustc_hash::FxBuildHasher),
+            kernel_pages: PageRange::new(Page::new(0), Page::new(0)),
+            framebuffer_pages: PageRange::new(Page::new(0), Page::new(0)),
         }
+    }
+
+    pub fn init(&mut self, boot_info: &BootInfo) {
+        self.kernel_pages = PageRange::from_base_size(
+            VirtualAddress::new(boot_info.kernel_start),
+            boot_info.kernel_end - boot_info.kernel_start,
+        );
+        self.framebuffer_pages = PageRange::from_base_size(
+            VirtualAddress::new(boot_info.display_info.framebuffer_addr as usize),
+            boot_info.display_info.framebuffer_size,
+        );
     }
 
     pub fn dump_info(&self) {
         debug!(
-            "\n--- MEMORY ---{}\n--------------",
+            "\n--- MEMORY AREAS ---\n    \
+            {:0>16x} {:0>16x}    kernel\n    \
+            {:0>16x} {:0>16x}    framebuffer\
+            \n--- ADDRESS SPACES ---\
+            {}",
+            self.kernel_pages.start.base_addr(),
+            self.kernel_pages.end.base_addr(),
+            self.framebuffer_pages.start.base_addr(),
+            self.framebuffer_pages.end.base_addr(),
             self.spaces
                 .iter()
                 .map(|((name, frame), mappings)| {
