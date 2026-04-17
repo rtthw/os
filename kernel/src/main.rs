@@ -9,7 +9,6 @@ extern crate alloc;
 mod acpi;
 mod apic;
 mod ata;
-mod executor;
 mod gdt;
 mod hpet;
 mod idt;
@@ -127,13 +126,6 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
     // Run the core kernel processes.
     scheduler::with_scheduler(|scheduler| {
         scheduler.run_kernel_process(
-            "init",
-            init_process as *const fn() -> !,
-            Some(PAGE_SIZE * 32),
-        )
-    });
-    scheduler::with_scheduler(|scheduler| {
-        scheduler.run_kernel_process(
             "clock_update_dispatcher",
             dispatch_clock_updates as *const fn() -> !,
             None,
@@ -155,14 +147,6 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
 }
 
 static mut BOOT_INFO: Option<&'static BootInfo> = None;
-
-fn init_process() -> ! {
-    let mut executor = executor::Executor::new();
-    loop {
-        executor.tick();
-        scheduler::defer();
-    }
-}
 
 fn dispatch_clock_updates() -> ! {
     loop {
