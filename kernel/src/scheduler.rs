@@ -45,7 +45,7 @@ pub fn run() -> ! {
 /// the time of interruption.
 #[macro_export]
 macro_rules! define_interrupt_handler_with_context {
-    ($name:ident { $($body:tt)* }) => {
+    ($name:ident $body:block) => {
         #[unsafe(naked)]
         pub extern "x86-interrupt" fn $name(
             frame: ::x86_64::structures::idt::InterruptStackFrame,
@@ -53,6 +53,7 @@ macro_rules! define_interrupt_handler_with_context {
             use $crate::scheduler::{schedule, with_scheduler, ExecutionContext};
 
             ::core::arch::naked_asm!(
+                // Assemble an `ExecutionContext` into `rdi` (first function argument).
                 "mov    [rsp - 120], r15",
                 "mov    [rsp - 112], r14",
                 "mov    [rsp - 104], r13",
@@ -78,15 +79,17 @@ macro_rules! define_interrupt_handler_with_context {
             );
 
             extern "C" fn __handler(context: ExecutionContext) -> ! {
+                // Interrupts should not be enabled at this point, but it can't hurt to make sure.
                 assert!(!::x86_64::instructions::interrupts::are_enabled());
 
+                // Make sure the current context is the one that was executing before this
+                // interrupt started.
                 with_scheduler(|scheduler| scheduler.set_current_context(context));
 
-                {
-                    $($body)*
-                }
+                // Run whatever the `body` needs to run.
+                $body
 
-                // Finally, we schedule the next process to run. This function never returns.
+                // Schedule the next process to run.
                 schedule()
             }
         }
