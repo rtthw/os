@@ -35,8 +35,10 @@ The [/drivers](../drivers) directory contains device drivers used by the kernel.
   - [/spin-mutex](../crates/spin-mutex) ✔️
   - [/time](../crates/time) ✔️
 - [/drivers](../drivers)
-  - [/pci](../crates/pci) ✔️
-  - [/virtio](../crates/virtio) ✔️
+  - [/pci](../drivers/pci) ✔️
+  - [/pit](../drivers/pit) ✔️
+  - [/virtio](../drivers/virtio) ✔️
+  - [/x86-port](../drivers/x86-port) ✔️
 - [/example](../example) ✔️
 - [/kernel](../kernel) ✔️
 - [/linux](../linux) ❌
