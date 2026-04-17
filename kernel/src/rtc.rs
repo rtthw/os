@@ -93,8 +93,9 @@ impl Time {
         }
 
         let after_noon = hour & HOUR_PM_FLAG == HOUR_PM_FLAG;
+        let format_24_hour = hour & FORMAT_24_HOUR_FLAG == FORMAT_24_HOUR_FLAG;
 
-        if format & FORMAT_24_HOUR_FLAG > 0 || after_noon {
+        if format_24_hour && after_noon {
             hour = ((hour & 0x7F) + 12) % 24;
         }
 

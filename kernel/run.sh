@@ -118,7 +118,7 @@ qemu-system-x86_64 \
     -accel kvm \
     -m 256M \
     -smp 4 \
-    -rtc base=utc \
+    -rtc base=localtime \
     -display gtk,show-tabs=on \
     -drive if=pflash,format=raw,readonly=on,file=firmware/uefi/OVMF_CODE.fd \
     -drive if=pflash,format=raw,readonly=on,file=firmware/uefi/OVMF_VARS.fd \
