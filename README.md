@@ -8,7 +8,7 @@
 <summary>Table of Contents</summary>
 
 - [Unnamed Operating System](#unnamed-operating-system)
-  - [Running](#running)
+  - [Quick Start](#quick-start)
   - [Learn More](#learn-more)
   - [License](#license)
 
@@ -18,14 +18,11 @@
 
 # Unnamed Operating System
 
-*TODO: Write introduction.*
+An operating system where executables act as libraries.
 
-## Running
+## Quick Start
 
-The OS can be run in one of two ways:
-
-1. On bare metal hardware (work in progress). Go to [the `kernel` directory](./kernel) of this repository for more information.
-2. On the Linux kernel, as a Linux distribution. Go to [the `linux` directory](./linux) of this repository for more information.
+Execute the [run script](./kernel/run.sh) to build and run the OS through QEMU. At the moment, the script only works on Debian-based systems.
 
 ## Learn More
 
