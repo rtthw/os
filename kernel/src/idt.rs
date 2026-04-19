@@ -8,7 +8,7 @@ use {
         scheduler::{self, with_scheduler},
     },
     log::{error, info},
-    memory_types::VirtualAddress,
+    memory_types::{PageTableFlags, VirtualAddress},
     x86_64::{
         registers::control::{Cr2, Cr3},
         set_general_handler,
@@ -80,21 +80,41 @@ extern "x86-interrupt" fn page_fault_handler(
             .get_section_for_addr(VirtualAddress::new(addr))
             .and_then(|weak| weak.upgrade())
         {
-            with_scheduler(|scheduler| {
+            let should_exit = with_scheduler(|scheduler| {
                 let address_space = scheduler
                     .current_address_space()
                     .expect("should have an address space during user page fault");
 
-                info!(
-                    "Adding `{}` to `{}` at {:x}",
-                    section.name,
-                    address_space.name().expect("address space should be named"),
-                    section.addr,
-                );
+                if error_code.contains(PageFaultErrorCode::CAUSED_BY_WRITE) {
+                    error!(
+                        "`{}` attempted to write to `{}` at {:x} without permission",
+                        address_space.name().expect("address space should be named"),
+                        section.name,
+                        section.addr,
+                    );
 
-                let mapping = section.mapping.lock();
-                _ = mapping.map_into(&address_space, mapping.pages, mapping.flags);
+                    true
+                } else {
+                    info!(
+                        "Adding `{}` to `{}` at {:x}",
+                        section.name,
+                        address_space.name().expect("address space should be named"),
+                        section.addr,
+                    );
+                    let mapping = section.mapping.lock();
+
+                    // HACK: At the moment, we map dependencies as read-only. More design work is
+                    //       needed to determine how dependency permissions are calculated.
+                    let flags = mapping.flags & !PageTableFlags::WRITABLE;
+
+                    _ = mapping.map_into(&address_space, mapping.pages, flags);
+
+                    false
+                }
             });
+            if should_exit {
+                scheduler::exit();
+            }
         } else {
             error!("#PF({error_code:?}) at {addr:#x} in {addr_space_frame:?}");
             scheduler::exit();
