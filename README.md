@@ -20,6 +20,8 @@
 
 An operating system where executables act as libraries.
 
+See the [design document](./docs/DESIGN.md) for an overview of the system.
+
 ## Quick Start
 
 Execute the [run script](./kernel/run.sh) to build and run the OS through QEMU. At the moment, the script only works on Debian-based systems.
