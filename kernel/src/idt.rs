@@ -75,52 +75,62 @@ extern "x86-interrupt" fn page_fault_handler(
     let addr = Cr2::read_raw() as usize;
     let addr_space_frame = Cr3::read_raw().0;
 
-    if error_code.contains(PageFaultErrorCode::USER_MODE) {
-        if let Some(section) = global_loader()
-            .get_section_for_addr(VirtualAddress::new(addr))
-            .and_then(|weak| weak.upgrade())
-        {
-            let should_exit = with_scheduler(|scheduler| {
-                let address_space = scheduler
-                    .current_address_space()
-                    .expect("should have an address space during user page fault");
+    let user_mode = error_code.contains(PageFaultErrorCode::USER_MODE);
+    let caused_by_write = error_code.contains(PageFaultErrorCode::CAUSED_BY_WRITE);
 
-                if error_code.contains(PageFaultErrorCode::CAUSED_BY_WRITE) {
-                    error!(
-                        "`{}` attempted to write to `{}` at {:x} without permission",
-                        address_space.name().expect("address space should be named"),
-                        section.name,
-                        section.addr,
-                    );
+    if !user_mode {
+        panic!("#PF({error_code:?}) at {addr:#x} in {addr_space_frame:?} : {stack_frame:#?}");
+    }
 
-                    true
-                } else {
-                    info!(
-                        "Adding `{}` to `{}` at {:x}",
-                        section.name,
-                        address_space.name().expect("address space should be named"),
-                        section.addr,
-                    );
-                    let mapping = section.mapping.lock();
+    let Some(section) = global_loader()
+        .get_section_for_addr(VirtualAddress::new(addr))
+        .and_then(|weak| weak.upgrade())
+    else {
+        with_scheduler(|scheduler| {
+            let address_space = scheduler
+                .current_address_space()
+                .expect("should have an address space during user page fault");
 
-                    // HACK: At the moment, we map dependencies as read-only. More design work is
-                    //       needed to determine how dependency permissions are calculated.
-                    let flags = mapping.flags & !PageTableFlags::WRITABLE;
+            error!(
+                "Userspace process `{}` tried to access a nonexistent section at {addr:x}",
+                address_space.name().expect("address space should be named"),
+            )
+        });
 
-                    _ = mapping.map_into(&address_space, mapping.pages, flags);
+        return;
+    };
 
-                    false
-                }
-            });
-            if should_exit {
-                scheduler::exit();
-            }
+    with_scheduler(|scheduler| {
+        let address_space = scheduler
+            .current_address_space()
+            .expect("should have an address space during user page fault");
+
+        if caused_by_write {
+            error!(
+                "`{}` attempted to write to `{}` at {:x} without permission",
+                address_space.name().expect("address space should be named"),
+                section.name,
+                section.addr,
+            );
         } else {
-            error!("#PF({error_code:?}) at {addr:#x} in {addr_space_frame:?}");
-            scheduler::exit();
+            info!(
+                "Adding `{}` to `{}` at {:x}",
+                section.name,
+                address_space.name().expect("address space should be named"),
+                section.addr,
+            );
+            let mapping = section.mapping.lock();
+
+            // HACK: At the moment, we map dependencies as read-only. More design work is
+            //       needed to determine how dependency permissions are calculated.
+            let flags = mapping.flags & !PageTableFlags::WRITABLE;
+
+            _ = mapping.map_into(&address_space, mapping.pages, flags);
         }
-    } else {
-        panic!("#PF({error_code:?}) at {addr:#x} in {addr_space_frame:?} : {stack_frame:#?}",);
+    });
+
+    if caused_by_write {
+        scheduler::exit();
     }
 }
 
