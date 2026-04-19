@@ -54,6 +54,14 @@ macro_rules! bit_flags {
             }
         }
 
+        impl ::core::ops::Not for $ident {
+            type Output = Self;
+
+            fn not(self) -> Self::Output {
+                Self(!self.0)
+            }
+        }
+
         impl ::core::ops::BitOr for $ident {
             type Output = Self;
 
