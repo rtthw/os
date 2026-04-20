@@ -100,36 +100,44 @@ extern "x86-interrupt" fn page_fault_handler(
         return;
     };
 
+    let mut exit_process = false;
     with_scheduler(|scheduler| {
         let address_space = scheduler
             .current_address_space()
             .expect("should have an address space during user page fault");
+        let address_space_name = address_space
+            .name()
+            .expect("user address space should be named");
 
+        let mapping = section.mapping.lock();
         if caused_by_write {
             error!(
-                "`{}` attempted to write to `{}` at {:x} without permission",
-                address_space.name().expect("address space should be named"),
-                section.name,
-                section.addr,
+                "`{}` attempted to write to `{}` for `{}` at {:x} without permission",
+                address_space_name, mapping.name, section.name, section.addr,
             );
-        } else {
-            info!(
-                "Adding `{}` to `{}` at {:x}",
-                section.name,
-                address_space.name().expect("address space should be named"),
-                section.addr,
-            );
-            let mapping = section.mapping.lock();
 
+            exit_process = true;
+        } else {
             // HACK: At the moment, we map dependencies as read-only. More design work is
             //       needed to determine how dependency permissions are calculated.
             let flags = mapping.flags & !PageTableFlags::WRITABLE;
+            if let Err(error) = mapping.map_into(address_space, mapping.pages, flags) {
+                error!(
+                    "Failed to map `{}` into `{}` for `{}` at {:x}: {error}",
+                    mapping.name, address_space_name, section.name, section.addr,
+                );
 
-            _ = mapping.map_into(&address_space, mapping.pages, flags);
+                exit_process = true;
+            } else {
+                info!(
+                    "Added `{}` to `{}` for `{}` at {:x}",
+                    mapping.name, address_space_name, section.name, section.addr,
+                );
+            }
         }
     });
 
-    if caused_by_write {
+    if exit_process {
         scheduler::exit();
     }
 }

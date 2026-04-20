@@ -8,7 +8,7 @@ extern crate time;
 use example_dep::exit;
 
 const TEST_PAGE_FAULT: bool = false;
-const TEST_WRITE_TIME: bool = true;
+const TEST_WRITE_TIME: bool = false;
 
 pub extern "C" fn main() -> ! {
     if TEST_PAGE_FAULT {
