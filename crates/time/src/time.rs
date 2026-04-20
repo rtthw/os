@@ -48,16 +48,9 @@ pub const FEMTOS_PER_PICO: u64 = 1_000;
 const INVALID_MONOTONIC_PERIOD: u64 = 1;
 pub static MONOTONIC_PERIOD: AtomicU64 = AtomicU64::new(INVALID_MONOTONIC_PERIOD);
 
-pub trait ClockMonotonic {
-    /// The current clock value.
-    fn now() -> u64;
-    /// The period of this clock in femtoseconds.
-    fn period() -> u64;
-}
-
-/// Set the global monotonic clock.
-pub unsafe fn set_monotonic_clock<C: ClockMonotonic>() {
-    MONOTONIC_PERIOD.store(C::period(), Ordering::SeqCst);
+/// Set the period (in femotoseconds) of the global monotonic clock.
+pub unsafe fn set_monotonic_clock_period(period_femtos: u64) {
+    MONOTONIC_PERIOD.store(period_femtos, Ordering::SeqCst);
 }
 
 /// Returns `true` if the global monotonic clock has been set.

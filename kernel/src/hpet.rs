@@ -12,8 +12,8 @@ use {
 const GENERAL_CAPABILITIES_OFFSET: u64 = 0x000;
 /// Offset of the *General Gonfiguration* register.
 const GENERAL_CONFIG_OFFSET: u64 = 0x010;
-/// Offset of the *Main Counter Value* register.
-const MAIN_COUNTER_OFFSET: u64 = 0x0F0;
+// /// Offset of the *Main Counter Value* register.
+// const MAIN_COUNTER_OFFSET: u64 = 0x0F0;
 
 const CONFIG_ENABLE_BIT: u64 = 0b_0001;
 
@@ -57,24 +57,6 @@ pub fn init(hpet: &HpetTable) {
             config |= CONFIG_ENABLE_BIT;
             write_reg(GENERAL_CONFIG_OFFSET, config);
         }
-    }
-}
-
-pub fn available() -> bool {
-    unsafe { HPET_ADDR != 0 }
-}
-
-pub struct HpetClock;
-
-impl time::ClockMonotonic for HpetClock {
-    #[inline(always)]
-    fn now() -> u64 {
-        unsafe { read_reg(MAIN_COUNTER_OFFSET) }
-    }
-
-    #[inline(always)]
-    fn period() -> u64 {
-        unsafe { read_reg(GENERAL_CAPABILITIES_OFFSET) >> 32 }
     }
 }
 

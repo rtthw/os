@@ -1,9 +1,6 @@
 //! # Timestamp Counter (TSC)
 
-use {
-    log::info,
-    time::{ClockMonotonic, FEMTOS_PER_MICRO},
-};
+use {log::info, time::FEMTOS_PER_MICRO};
 
 pub static mut TSC_PERIOD: u64 = 0;
 
@@ -21,23 +18,14 @@ pub fn init() {
 
     unsafe {
         TSC_PERIOD = period;
+        time::set_monotonic_clock_period(period);
     }
+
+    let tsc_interval = time::now().elapsed();
+    info!("Using TSC as monotonic clock, interval is {tsc_interval:?}");
 }
 
 #[inline(always)]
 pub fn read() -> u64 {
     unsafe { core::arch::x86_64::_rdtsc() }
-}
-
-pub struct TscClock;
-
-impl ClockMonotonic for TscClock {
-    #[inline(always)]
-    fn now() -> u64 {
-        read()
-    }
-
-    fn period() -> u64 {
-        unsafe { TSC_PERIOD }
-    }
 }

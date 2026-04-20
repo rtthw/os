@@ -8,7 +8,7 @@ extern crate time;
 use example_dep::exit;
 
 const TEST_PAGE_FAULT: bool = false;
-const TEST_WRITE_TIME: bool = false;
+const TEST_WRITE_TIME: bool = true;
 
 pub extern "C" fn main() -> ! {
     if TEST_PAGE_FAULT {
@@ -19,7 +19,7 @@ pub extern "C" fn main() -> ! {
     }
     if TEST_WRITE_TIME {
         unsafe {
-            time::set_monotonic_clock::<MaliciousClock>();
+            time::set_monotonic_clock_period(1);
         }
     }
 
@@ -32,16 +32,4 @@ pub extern "C" fn main() -> ! {
     }
 
     exit()
-}
-
-struct MaliciousClock;
-
-impl time::ClockMonotonic for MaliciousClock {
-    fn now() -> u64 {
-        1
-    }
-
-    fn period() -> u64 {
-        1
-    }
 }
