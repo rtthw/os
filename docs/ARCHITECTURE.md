@@ -3,7 +3,7 @@
 
 # Architecture
 
-The project consists of 3 major components:
+Rhubarb consists of 3 major components:
 
 - Bare metal operating system kernel (in [/kernel](../kernel), with a simple example program in [/example](../example)).
 - UEFI Bootloader (in [/bootloader](../bootloader)).

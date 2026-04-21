@@ -24,7 +24,7 @@ Upwards of 95% of all code within modern operating systems is garbage that needs
 
 ## Background
 
-*This section outlines both the historical reasoning behind many design choices made for the system.*
+*This section outlines both the historical reasoning behind many design choices made for Rhubarb.*
 
 ### Object-oriented programming is a failure.
 
@@ -41,7 +41,7 @@ During his [keynote speech at OOPSLA 1997](https://www.youtube.com/watch?v=oKg1h
 
 ## Concepts
 
-*This section outlines the core concepts of the operating system.*
+*This section outlines the core concepts of Rhubarb.*
 
 ### Executables are libraries.
 
