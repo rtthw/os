@@ -60,6 +60,11 @@ pub fn init(boot_info: &BootInfo) {
             PhysicalAddress::new(boot_info.kernel_start),
             boot_info.kernel_end - boot_info.kernel_start,
         );
+        frame_allocator.reserve_range(
+            PhysicalAddress::new(boot_info.display_info.framebuffer_addr as usize),
+            boot_info.display_info.framebuffer_addr as usize
+                + boot_info.display_info.framebuffer_size,
+        );
 
         let free_frames = frame_allocator.free_frames;
         let total_frames = frame_allocator.total_frames;
@@ -67,8 +72,8 @@ pub fn init(boot_info: &BootInfo) {
         let total_memory = (total_frames * PAGE_SIZE) / MEBIBYTE;
         info!(
             "Physical memory allocator initialized\n\
-        \tFree frames: {free_frames} / {total_frames}\n\
-        \tFree memory: {free_memory} MiB / {total_memory} MiB",
+            \tFree frames: {free_frames} / {total_frames}\n\
+            \tFree memory: {free_memory} MiB / {total_memory} MiB",
         );
 
         match frame_allocator.allocate() {
