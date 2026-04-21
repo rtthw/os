@@ -28,7 +28,7 @@ Upwards of 95% of all code within modern operating systems is garbage that needs
 
 ### Object-oriented programming is a failure.
 
-The current consensus surrounding object-orient programming (OOP) is that it was a failure. It's far too slow for serious applications. In a sense, this is true. The modern understanding of OOP is a failure, but what we see today is not what OOP could/should have been.
+The current consensus surrounding object-oriented programming (OOP) is that it was a failure. It's far too slow for serious applications. In a sense, this is true. The modern understanding of OOP is a failure, but what we see today is not what OOP could/should have been.
 
 > OOP to me means only messaging, local retention and protection and hiding of state-process, and extreme late-binding of all things.
 > - Alan Kay, 2003
