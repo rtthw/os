@@ -33,7 +33,7 @@ Execute the [run script](./kernel/run.sh) to build and run Rhubarb through QEMU.
 
 ## License
 
-*TODO*
+[MIT](./LICENSE)
 
 
 
