@@ -93,7 +93,13 @@ pub fn init(boot_info: &BootInfo) {
         free_frames
     };
 
-    let heap_size = (free_frames * PAGE_SIZE) / 2;
+    let physical_mem_size = free_frames * PAGE_SIZE;
+    assert!(
+        physical_mem_size > 64 * MEBIBYTE,
+        "Not enough physical memory",
+    );
+
+    let heap_size = 32 * MEBIBYTE;
     let heap_start = VirtualAddress::new(HEAP_BASE);
     let heap_pages = PageRange::from_base_size(heap_start, heap_size);
 
