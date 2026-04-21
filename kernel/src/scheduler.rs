@@ -124,6 +124,7 @@ impl Scheduler {
             id: IDLE_PROCESS_ID,
             name: "idle".into(),
             address_space: AddressSpace::new(Some("idle".into()), None),
+            access_policy: AccessPolicy::All,
             priority: Priority::Idle,
             context: Some(ExecutionContext {
                 registers: CpuRegisters::EMPTY,
@@ -144,6 +145,11 @@ impl Scheduler {
     /// Get the [`AddressSpace`] of the currently running process.
     pub fn current_address_space(&self) -> Option<&AddressSpace> {
         self.current.as_ref().map(|proc| &proc.address_space)
+    }
+
+    /// Get the [`AccessPolicy`] of the currently running process.
+    pub fn current_access_policy(&self) -> Option<AccessPolicy> {
+        self.current.as_ref().map(|proc| proc.access_policy)
     }
 
     fn add_to_queue(&mut self, process: Process) {
@@ -248,6 +254,7 @@ impl Scheduler {
         let process = Process {
             id,
             name,
+            access_policy: AccessPolicy::All,
             priority: Priority::Normal,
             address_space,
             context: Some(context),
@@ -273,6 +280,7 @@ impl Scheduler {
         name: impl Into<String>,
         stack_size: Option<usize>,
         allow_io: bool,
+        access_policy: AccessPolicy,
     ) {
         let id = PROCESS_ID.fetch_add(1, Ordering::SeqCst);
         let name = name.into();
@@ -316,6 +324,7 @@ impl Scheduler {
         let process = Process {
             id,
             name,
+            access_policy,
             priority: Priority::Normal,
             address_space,
             context: Some(context),
@@ -415,6 +424,8 @@ struct Process {
     /// The name of the process. For user processes, this is the basename of the
     /// process's object file (e.g. "example" for "/example.o").
     name: String,
+    /// The [`AccessPolicy`] of the process.
+    access_policy: AccessPolicy,
     /// The run [`Priority`] of the process.
     priority: Priority,
     /// The [`AddressSpace`] of the process. That is, everything the process can
@@ -431,6 +442,26 @@ impl fmt::Display for Process {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("Process #{} '{}'", self.id, self.name))
     }
+}
+
+/// The policy used to determine how resources are granted to a process.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AccessPolicy {
+    /// The process has access to all resources.
+    ///
+    /// No checks are performed when it requests access to a resource. The
+    /// resource is granted without blocking the process.
+    All,
+    /// The process has normal access to resources.
+    ///
+    /// When it requests access to some resource, it will be blocked until
+    /// access is granted (or stopped if it is denied).
+    #[default]
+    Normal,
+    // /// The process has no access to resources.
+    // ///
+    // /// If it requests access to a resource, the process will be stopped.
+    // None,
 }
 
 /// The execution priority of a [`Process`].
