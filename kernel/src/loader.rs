@@ -70,7 +70,7 @@ pub fn init(fs: impl FileSystem + 'static) {
     global_loader()
         .load_object(
             "example_dep",
-            &AddressSpace::new(Some("load_dep".into()), None),
+            &AddressSpace::new("load_dep", None),
             // The actual value of this address doesn't matter.
             Page::containing_addr(VirtualAddress::new(0x3333_0000_0000)),
         )
@@ -79,7 +79,7 @@ pub fn init(fs: impl FileSystem + 'static) {
     global_loader()
         .load_object(
             "time",
-            &AddressSpace::new(Some("load_time".into()), None),
+            &AddressSpace::new("load_time", None),
             // The actual value of this address doesn't matter.
             Page::containing_addr(VirtualAddress::new(0x3333_0000_0000)),
         )
@@ -107,7 +107,7 @@ pub fn init(fs: impl FileSystem + 'static) {
 }
 
 fn init_fundamental_symbols() {
-    let dummy_addr_space = AddressSpace::new(Some("load_fundamental".into()), None);
+    let dummy_addr_space = AddressSpace::new("load_fundamental", None);
 
     global_loader()
         .load_object(

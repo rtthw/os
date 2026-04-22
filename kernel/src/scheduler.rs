@@ -123,7 +123,7 @@ impl Scheduler {
         self.add_to_queue(Process {
             id: IDLE_PROCESS_ID,
             name: "idle".into(),
-            address_space: AddressSpace::new(Some("idle".into()), None),
+            address_space: AddressSpace::new("idle", None),
             access_policy: AccessPolicy::All,
             priority: Priority::Idle,
             context: Some(ExecutionContext {

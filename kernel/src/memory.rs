@@ -426,7 +426,7 @@ fn init_kernel_address_space() {
         let page_table = Level4PageTable::new(&mut *l4_ptr);
 
         KERNEL_ADDRESS_SPACE = Some(AddressSpace {
-            name: None,
+            name: String::new(),
             frame: Frame::from_base_addr(PhysicalAddress::new(
                 l4_frame.start_address().as_u64() as usize
             ))
@@ -450,7 +450,7 @@ pub fn kernel_address_space<'a>() -> &'a AddressSpace {
 static mut KERNEL_ADDRESS_SPACE: Option<AddressSpace> = None;
 
 pub struct AddressSpace {
-    name: Option<String>,
+    name: String,
     frame: Frame,
     frame_allocator: Mutex<FrameAllocatorProxy>,
     page_table: Mutex<Level4PageTable>,
@@ -463,7 +463,7 @@ impl fmt::Debug for AddressSpace {
 }
 
 impl AddressSpace {
-    pub fn new(name: impl Into<Option<String>>, inherit: Option<&AddressSpace>) -> Self {
+    pub fn new(name: impl Into<String>, inherit: Option<&AddressSpace>) -> Self {
         assert!(kernel_address_space().is_current());
 
         let name = name.into();
@@ -510,8 +510,8 @@ impl AddressSpace {
     }
 
     /// Get the name of this address space.
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Whether this address space is currently active.
@@ -639,7 +639,7 @@ impl Drop for FrameAllocatorProxy {
 pub static TRACKER: Mutex<MemoryTracker> = Mutex::new(MemoryTracker::new());
 
 pub struct MemoryTracker {
-    spaces: HashMap<(Option<String>, Frame), Vec<(String, PageRange)>, rustc_hash::FxBuildHasher>,
+    spaces: HashMap<(String, Frame), Vec<(String, PageRange)>, rustc_hash::FxBuildHasher>,
     kernel_pages: PageRange,
     framebuffer_pages: PageRange,
 }
@@ -694,10 +694,9 @@ impl MemoryTracker {
                     mappings.sort_by_key(|(key, _string)| *key);
 
                     format!(
-                        "\n    {:0>16x}{:25}{}{}",
+                        "\n    {:0>16x}{:25}{name}{}",
                         frame.base_addr(),
                         " ",
-                        name.as_ref().unwrap_or(&"KERNEL".into()),
                         mappings
                             .into_iter()
                             .map(|(_key, string)| string)

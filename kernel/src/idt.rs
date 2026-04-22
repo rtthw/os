@@ -93,7 +93,7 @@ extern "x86-interrupt" fn page_fault_handler(
 
             error!(
                 "Userspace process `{}` tried to access a nonexistent section at {addr:x}",
-                address_space.name().expect("address space should be named"),
+                address_space.name(),
             )
         });
 
@@ -108,9 +108,7 @@ extern "x86-interrupt" fn page_fault_handler(
         let address_space = scheduler
             .current_address_space()
             .expect("should have an address space during user page fault");
-        let address_space_name = address_space
-            .name()
-            .expect("user address space should be named");
+        let address_space_name = address_space.name();
 
         let mapping = section.mapping.lock();
         match access_policy {
