@@ -36,6 +36,11 @@ macro_rules! bit_flags {
             pub const fn bits(&self) -> $ty {
                 self.0
             }
+
+            #[inline]
+            pub const fn get(&self, other: Self) -> bool {
+                self.0 & other.0 == other.0
+            }
         }
 
         impl ::core::fmt::Debug for $ident {

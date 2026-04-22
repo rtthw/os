@@ -102,6 +102,21 @@ impl PageTableEntry {
         self.value == 0
     }
 
+    #[inline]
+    pub const fn is_present(&self) -> bool {
+        self.flags().get(PageTableFlags::PRESENT)
+    }
+
+    #[inline]
+    pub const fn is_writable(&self) -> bool {
+        self.flags().get(PageTableFlags::WRITABLE)
+    }
+
+    #[inline]
+    pub const fn is_huge_page(&self) -> bool {
+        self.flags().get(PageTableFlags::HUGE_PAGE)
+    }
+
     /// The [`PhysicalAddress`] mapped by this entry, might be zero.
     #[inline]
     pub fn addr(&self) -> PhysicalAddress {
@@ -111,16 +126,16 @@ impl PageTableEntry {
     /// The [`Frame`] mapped by this entry.
     #[inline]
     pub fn frame(&self) -> Result<Frame, EntryFrameError> {
-        if self.flags() & PageTableFlags::PRESENT != PageTableFlags::PRESENT {
+        if !self.is_present() {
             Err(EntryFrameError::NotPresent)
-        } else if self.flags() & PageTableFlags::HUGE_PAGE == PageTableFlags::HUGE_PAGE {
+        } else if self.is_huge_page() {
             Err(EntryFrameError::HugePage)
         } else {
             Ok(Frame::containing_addr(self.addr()))
         }
     }
 
-    /// The [`PageTableFlags] of this entry.
+    /// The [`PageTableFlags`] of this entry.
     #[inline]
     pub const fn flags(&self) -> PageTableFlags {
         PageTableFlags(self.value & !Self::ADDRESS_MASK)
@@ -132,21 +147,21 @@ impl PageTableEntry {
         self.value = 0;
     }
 
-    /// Set this entry's [`PhysicalAddress`] with the given [`PageTableFlags].
+    /// Set this entry's [`PhysicalAddress`] with the given [`PageTableFlags`].
     #[inline]
     pub fn set_addr(&mut self, addr: PhysicalAddress, flags: PageTableFlags) {
         assert!(addr.is_page_aligned());
         self.value = (addr.to_raw()) | flags.bits();
     }
 
-    /// Set this entry's [`Frame`] with the given [`PageTableFlags].
+    /// Set this entry's [`Frame`] with the given [`PageTableFlags`].
     #[inline]
     pub fn set_frame(&mut self, frame: Frame, flags: PageTableFlags) {
         assert!(flags & PageTableFlags::HUGE_PAGE != PageTableFlags::HUGE_PAGE);
         self.set_addr(frame.base_addr(), flags)
     }
 
-    /// Set this entry's [`PageTableFlags].
+    /// Set this entry's [`PageTableFlags`].
     #[inline]
     pub fn set_flags(&mut self, flags: PageTableFlags) {
         self.value = self.addr().to_raw() | flags.bits();
