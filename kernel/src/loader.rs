@@ -2,8 +2,6 @@
 //!
 //! Types and functions used to dynamically load (and link) programs.
 
-#[cfg(target_arch = "x86_64")]
-use elf::Rela;
 use {
     crate::{
         FileSystem,
@@ -1129,7 +1127,7 @@ fn map_dependency_sections(
 
 #[cfg(target_arch = "x86_64")]
 fn write_relocation(
-    relocation_entry: &Rela,
+    relocation_entry: &elf::Rela,
     target_slice: &mut [u8],
     target_offset: usize,
     source_addr: VirtualAddress,
