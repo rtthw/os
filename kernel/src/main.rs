@@ -107,7 +107,7 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
     let dur = pit_start.elapsed();
     debug!("`pit::sleep(1ms)`\t\t: {dur:?}");
 
-    ata::init();
+    ata::init(boot_info);
 
     unsafe {
         BOOT_INFO = Some(boot_info);

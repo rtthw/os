@@ -4,6 +4,7 @@ use {
     crate::vfat,
     alloc::{string::String, vec::Vec},
     bit_utils::bit_field,
+    boot_info::BootInfo,
     core::{fmt, time::Duration},
     log::{debug, info, trace, warn},
     spin_mutex::Mutex,
@@ -35,7 +36,7 @@ pub static BUSES: Mutex<[Bus; 2]> =
 
 
 
-pub fn init() {
+pub fn init(boot_info: &BootInfo) {
     for mut drive in enumerate_drives() {
         let partitions = get_drive_partitions(&mut drive).unwrap();
         info!(
@@ -53,7 +54,7 @@ pub fn init() {
 
             match fs_type {
                 FSTYPE_VFAT => {
-                    vfat::init(&mut drive, lba_start, lba_sector_count);
+                    vfat::init(boot_info, &mut drive, lba_start, lba_sector_count);
                 }
                 other => {
                     warn!("Encountered unsupported filesystem type: {other}");

@@ -14,9 +14,10 @@ use {
         sync::{Arc, Weak},
         vec::Vec,
     },
+    boot_info::BootInfo,
     core::{
         ops::Range,
-        sync::atomic::{AtomicU64, Ordering},
+        sync::atomic::{AtomicU64, AtomicUsize, Ordering},
         time::Duration,
     },
     elf::{
@@ -52,7 +53,7 @@ static LOADER: Loader = Loader::new();
 static mut PROVIDER: Option<GlobalObjectProvider> = None;
 
 /// Initialize the [global loader](global_loader).
-pub fn init(fs: impl FileSystem + 'static) {
+pub fn init(boot_info: &BootInfo, fs: impl FileSystem + 'static) {
     unsafe {
         PROVIDER = Some(GlobalObjectProvider {
             fs: Mutex::new(Box::new(fs)),
@@ -82,26 +83,74 @@ pub fn init(fs: impl FileSystem + 'static) {
             Page::containing_addr(VirtualAddress::new(0x3333_0000_0000)),
         )
         .unwrap();
+    global_loader()
+        .load_object(
+            "framebuffer",
+            &AddressSpace::new("load_framebuffer", None),
+            // The actual value of this address doesn't matter.
+            Page::containing_addr(VirtualAddress::new(0x3333_0000_0000)),
+        )
+        .unwrap();
 
-    unsafe {
-        let mono_period_sym = global_loader()
-            .get_section("time", "MONOTONIC_PERIOD")
-            .unwrap();
-        let mono_period = mono_period_sym.upgrade().unwrap();
-        let mut mono_period_mapping = mono_period.mapping.lock();
-        let mono_period_ref = mono_period_mapping.as_mut::<AtomicU64>(mono_period.mapping_offset);
-
-        assert_eq!(mono_period_ref.load(Ordering::SeqCst), 1);
-
-        mono_period_ref.store(crate::tsc::TSC_PERIOD, Ordering::SeqCst);
-
-        assert_eq!(
-            mono_period_ref.load(Ordering::SeqCst),
-            crate::tsc::TSC_PERIOD
-        );
-    }
+    with_sym(
+        "time",
+        "MONOTONIC_PERIOD",
+        |mono_period: &mut AtomicU64| unsafe {
+            assert_eq!(mono_period.load(Ordering::SeqCst), 1);
+            mono_period.store(crate::tsc::TSC_PERIOD, Ordering::SeqCst);
+            assert_eq!(mono_period.load(Ordering::SeqCst), crate::tsc::TSC_PERIOD);
+        },
+    );
+    with_sym(
+        "framebuffer",
+        "FRAMEBUFFER_ADDR",
+        |fb_addr: &mut AtomicUsize| {
+            assert_eq!(fb_addr.load(Ordering::SeqCst), 0);
+            fb_addr.store(
+                boot_info.display_info.framebuffer_addr as usize,
+                Ordering::SeqCst,
+            );
+        },
+    );
+    with_sym(
+        "framebuffer",
+        "FRAMEBUFFER_SIZE",
+        |fb_size: &mut AtomicUsize| {
+            assert_eq!(fb_size.load(Ordering::SeqCst), 0);
+            fb_size.store(boot_info.display_info.framebuffer_size, Ordering::SeqCst);
+        },
+    );
+    with_sym(
+        "framebuffer",
+        "FRAMEBUFFER_WIDTH",
+        |fb_width: &mut AtomicUsize| {
+            assert_eq!(fb_width.load(Ordering::SeqCst), 0);
+            fb_width.store(boot_info.display_info.stride as usize, Ordering::SeqCst);
+        },
+    );
+    with_sym(
+        "framebuffer",
+        "FRAMEBUFFER_HEIGHT",
+        |fb_height: &mut AtomicUsize| {
+            assert_eq!(fb_height.load(Ordering::SeqCst), 0);
+            fb_height.store(boot_info.display_info.height as usize, Ordering::SeqCst);
+        },
+    );
 
     // global_loader().dump_info();
+}
+
+fn with_sym<T, F>(section_prefix: &str, section_suffix: &str, op: F)
+where
+    T: Sized,
+    F: FnOnce(&mut T),
+{
+    let sym = global_loader()
+        .get_section(section_prefix, section_suffix)
+        .unwrap();
+    let value = sym.upgrade().unwrap();
+    let mut mapping = value.mapping.lock();
+    op(unsafe { mapping.as_mut::<T>(value.mapping_offset) });
 }
 
 fn init_fundamental_symbols() {

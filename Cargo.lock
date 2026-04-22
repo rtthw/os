@@ -420,6 +420,7 @@ name = "example"
 version = "0.1.0"
 dependencies = [
  "example-dep",
+ "framebuffer",
  "pit",
  "time",
 ]

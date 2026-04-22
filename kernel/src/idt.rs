@@ -4,7 +4,7 @@ use {
     crate::{
         apic, gdt,
         loader::global_loader,
-        memory::kernel_address_space,
+        memory::{FRAMEBUFFER_MAPPING, kernel_address_space},
         scheduler::{self, AccessPolicy, with_scheduler},
     },
     log::{error, info},
@@ -86,16 +86,43 @@ extern "x86-interrupt" fn page_fault_handler(
         .get_section_for_addr(VirtualAddress::new(addr))
         .and_then(|weak| weak.upgrade())
     else {
-        with_scheduler(|scheduler| {
+        let mut exit_process = false;
+        with_scheduler(|scheduler| unsafe {
             let address_space = scheduler
-                .current_address_space()
+                .current_address_space_mut()
                 .expect("should have an address space during user page fault");
+            let fb_mapping = FRAMEBUFFER_MAPPING.as_mut().unwrap();
 
-            error!(
-                "Userspace process `{}` tried to access a nonexistent section at {addr:x}",
-                address_space.name(),
-            )
+            if fb_mapping.addr.to_raw() == addr {
+                // The framebuffer is already mapped into the address space, but it is not
+                // accessible from userspace. Granting access just requires setting the flags of
+                // the framebuffer's pages.
+                if let Err(error) = address_space.set_flags(
+                    fb_mapping.pages,
+                    fb_mapping.flags | PageTableFlags::USER_ACCESSIBLE,
+                ) {
+                    error!(
+                        "Failed to map framebuffer into `{}`: {error}",
+                        address_space.name(),
+                    );
+
+                    exit_process = true;
+                } else {
+                    info!("Added framebuffer access to `{}`", address_space.name());
+                }
+            } else {
+                error!(
+                    "Userspace process `{}` tried to access a nonexistent section at {addr:x}",
+                    address_space.name(),
+                );
+
+                exit_process = true;
+            }
         });
+
+        if exit_process {
+            scheduler::exit();
+        }
 
         return;
     };

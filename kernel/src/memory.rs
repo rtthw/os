@@ -30,6 +30,7 @@ const KERNEL_MAPPING_BASE: usize = (510 << (12 + (9 * 3))) | 0xFFFF_0000_0000_00
 static mut ALLOCATOR: LockedHeap = LockedHeap::empty();
 static FRAME_ALLOCATOR: Mutex<FrameAllocator> = Mutex::new(FrameAllocator::new());
 
+pub static mut FRAMEBUFFER_MAPPING: Option<KernelMapping> = None;
 
 pub fn init(boot_info: &BootInfo) {
     info!("Initializing memory management...");
@@ -140,6 +141,22 @@ pub fn init(boot_info: &BootInfo) {
     initial_heap_test();
 
     info!("Heap initialized successfully");
+
+    let framebuffer_addr = VirtualAddress::new(boot_info.display_info.framebuffer_addr as usize);
+    let framebuffer_size = boot_info.display_info.framebuffer_size;
+    let framebuffer_pages = PageRange::from_base_size(framebuffer_addr, framebuffer_size);
+
+    unsafe {
+        // The framebuffer should already be mapped into the kernel address space, so we
+        // just manually create it here.
+        FRAMEBUFFER_MAPPING = Some(KernelMapping {
+            name: "framebuffer".into(),
+            addr: framebuffer_addr,
+            size: framebuffer_size,
+            pages: framebuffer_pages,
+            flags: PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+        });
+    }
 }
 
 fn initial_heap_test() {

@@ -27,7 +27,15 @@ pub extern "C" fn main() -> ! {
         panic!("CLOCK NOT READY");
     }
 
-    for _ in 0..500 {
+    let mut fb = framebuffer::Framebuffer::global().unwrap();
+
+    for value in 0..255 {
+        fb.clear_screen(framebuffer::Color::new(
+            value.min(0x2b),
+            value.min(0x2b),
+            value.min(0x33),
+            255,
+        ));
         pit::sleep(10_000);
     }
 

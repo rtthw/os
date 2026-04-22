@@ -7,6 +7,7 @@ use {
         string::{String, ToString as _},
         vec::Vec,
     },
+    boot_info::BootInfo,
     core::fmt,
     hashbrown::HashMap,
     log::{debug, error},
@@ -19,7 +20,7 @@ const BAD_CLUSTER_INDEX: u32 = 0xFFF7;
 
 
 
-pub fn init(drive: &mut Drive, lba_start: u32, lba_sector_count: u32) {
+pub fn init(boot_info: &BootInfo, drive: &mut Drive, lba_start: u32, lba_sector_count: u32) {
     let mut buf = [0; SECTOR_SIZE];
     drive
         .read(lba_start, &mut buf)
@@ -36,7 +37,7 @@ pub fn init(drive: &mut Drive, lba_start: u32, lba_sector_count: u32) {
 
     let fs = VfatFileSystem::new(drive.clone(), boot_sector, lba_start).unwrap();
 
-    loader::init(fs);
+    loader::init(boot_info, fs);
 }
 
 // https://wiki.osdev.org/FAT#FAT_32_and_exFAT

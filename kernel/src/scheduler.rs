@@ -147,6 +147,12 @@ impl Scheduler {
         self.current.as_ref().map(|proc| &proc.address_space)
     }
 
+    /// Get a mutable reference the [`AddressSpace`] of the currently running
+    /// process.
+    pub fn current_address_space_mut(&mut self) -> Option<&mut AddressSpace> {
+        self.current.as_mut().map(|proc| &mut proc.address_space)
+    }
+
     /// Get the [`AccessPolicy`] of the currently running process.
     pub fn current_access_policy(&self) -> Option<AccessPolicy> {
         self.current.as_ref().map(|proc| proc.access_policy)

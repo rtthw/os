@@ -44,6 +44,28 @@ cd ..
         -Z share-generics=no
     cargo rustc \
         --release \
+        --manifest-path=crates/boot-info/Cargo.toml \
+        --target=kernel/x86_64-app.json \
+        -Z build-std=core,alloc \
+        -Z build-std-features=compiler-builtins-mem \
+        -- \
+        --crate-type=lib \
+        --emit=obj="kernel/esp/boot_info.o" \
+        -C link-dead-code=yes \
+        -Z share-generics=no
+    cargo rustc \
+        --release \
+        --manifest-path=crates/framebuffer/Cargo.toml \
+        --target=kernel/x86_64-app.json \
+        -Z build-std=core,alloc \
+        -Z build-std-features=compiler-builtins-mem \
+        -- \
+        --crate-type=lib \
+        --emit=obj="kernel/esp/framebuffer.o" \
+        -C link-dead-code=yes \
+        -Z share-generics=no
+    cargo rustc \
+        --release \
         --manifest-path=drivers/pit/Cargo.toml \
         --target=kernel/x86_64-app.json \
         -Z build-std=core,alloc \

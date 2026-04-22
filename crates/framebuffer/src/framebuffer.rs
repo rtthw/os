@@ -4,10 +4,17 @@
 
 pub mod font;
 
-use boot_info::{DisplayInfo, PixelFormat};
+use {
+    crate::font::{CHAR_HEIGHT, CHAR_WIDTH},
+    boot_info::{DisplayInfo, PixelFormat},
+    core::sync::atomic::{AtomicUsize, Ordering},
+};
 
-use crate::font::{CHAR_HEIGHT, CHAR_WIDTH};
 
+pub static FRAMEBUFFER_ADDR: AtomicUsize = AtomicUsize::new(0);
+pub static FRAMEBUFFER_SIZE: AtomicUsize = AtomicUsize::new(0);
+pub static FRAMEBUFFER_WIDTH: AtomicUsize = AtomicUsize::new(0);
+pub static FRAMEBUFFER_HEIGHT: AtomicUsize = AtomicUsize::new(0);
 
 
 pub struct Framebuffer {
@@ -18,6 +25,26 @@ pub struct Framebuffer {
 }
 
 impl Framebuffer {
+    pub fn global() -> Option<Self> {
+        let addr = FRAMEBUFFER_ADDR.load(Ordering::Relaxed);
+        if addr == 0 {
+            return None;
+        }
+
+        let size = FRAMEBUFFER_SIZE.load(Ordering::Relaxed);
+        let width = FRAMEBUFFER_WIDTH.load(Ordering::Relaxed);
+        let height = FRAMEBUFFER_HEIGHT.load(Ordering::Relaxed);
+
+        assert_eq!(size / 4, width * height);
+
+        Some(Self {
+            ptr: addr as *mut u32,
+            width,
+            height,
+            format: PixelFormat::Bgr,
+        })
+    }
+
     pub fn from_display_info(display_info: &DisplayInfo) -> Self {
         assert_eq!(
             display_info.framebuffer_size / 4,
