@@ -1,20 +1,27 @@
 //! # Paging
 
 use {
-    crate::{
-        Frame, FrameAllocator, PAGE_SIZE, POINTER_SIZE, Page, PhysicalAddress, VirtualAddress,
-    },
+    crate::{Frame, FrameAllocator, PAGE_SIZE, Page, PhysicalAddress, VirtualAddress},
     core::{fmt, ops},
 };
 
 
 /// The number of entries in a [`PageTable`].
-pub const ENTRIES_PER_PAGE_TABLE: usize = PAGE_SIZE / POINTER_SIZE;
+pub const ENTRIES_PER_PAGE_TABLE: usize = PAGE_SIZE / size_of::<PageTableEntry>();
 /// The bit width of each page table index (9 bits).
 pub const PAGE_TABLE_INDEX_WIDTH: usize = ENTRIES_PER_PAGE_TABLE.trailing_zeros() as usize;
 /// The bit width of each page table offset (12 bits).
 pub const PAGE_TABLE_OFFSET_WIDTH: usize = PAGE_SIZE.trailing_zeros() as usize;
 
+pub const L3_HUGE_PAGE_SIZE: usize = ENTRIES_PER_PAGE_TABLE
+    * ENTRIES_PER_PAGE_TABLE
+    * ENTRIES_PER_PAGE_TABLE
+    * size_of::<PageTableEntry>();
+pub const L2_HUGE_PAGE_SIZE: usize =
+    ENTRIES_PER_PAGE_TABLE * ENTRIES_PER_PAGE_TABLE * size_of::<PageTableEntry>();
+
+pub const PAGES_PER_L3_HUGE_PAGE: usize = L3_HUGE_PAGE_SIZE / PAGE_SIZE;
+pub const PAGES_PER_L2_HUGE_PAGE: usize = L2_HUGE_PAGE_SIZE / PAGE_SIZE;
 
 #[repr(align(4096))]
 #[repr(C)]
@@ -267,6 +274,62 @@ pub struct Level4PageTable {
 impl Level4PageTable {
     pub unsafe fn new(table: &'static mut PageTable) -> Self {
         Self { inner: table }
+    }
+
+    pub fn set_flags<A>(
+        &mut self,
+        pages: PageRange,
+        flags: PageTableFlags,
+        allocator: &mut A,
+    ) -> Result<(), MappingError>
+    where
+        A: FrameAllocator + ?Sized,
+    {
+        let parent_table_flags = flags
+            & (PageTableFlags::PRESENT
+                | PageTableFlags::WRITABLE
+                | PageTableFlags::USER_ACCESSIBLE);
+
+        let l4 = &mut self.inner;
+
+        let mut page_iter = pages.into_iter();
+        while let Some(page) = page_iter.next() {
+            let l3 = Self::next_table(&mut l4[page.l4_index()], parent_table_flags, allocator)?;
+            if l3[page.l3_index()].is_huge_page() {
+                l3[page.l3_index()].set_flags(flags | PageTableFlags::HUGE_PAGE);
+                FlushMapping(page).flush();
+
+                for _ in 0..PAGES_PER_L3_HUGE_PAGE {
+                    if page_iter.next().is_none() {
+                        break;
+                    }
+                }
+
+                continue;
+            }
+
+            let l2 = Self::next_table(&mut l3[page.l3_index()], parent_table_flags, allocator)?;
+            if l2[page.l2_index()].is_huge_page() {
+                l2[page.l2_index()].set_flags(flags | PageTableFlags::HUGE_PAGE);
+                FlushMapping(page).flush();
+
+                for _ in 0..PAGES_PER_L2_HUGE_PAGE {
+                    if page_iter.next().is_none() {
+                        break;
+                    }
+                }
+
+                continue;
+            }
+
+            let l1 = Self::next_table(&mut l2[page.l2_index()], parent_table_flags, allocator)?;
+            if !l1[page.l1_index()].is_unused() {
+                l1[page.l1_index()].set_flags(flags);
+                FlushMapping(page).flush();
+            }
+        }
+
+        Ok(())
     }
 
     pub fn map_to<A>(

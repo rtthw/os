@@ -553,6 +553,19 @@ impl AddressSpace {
             .push((name.into(), pages));
     }
 
+    pub fn set_flags(
+        &mut self,
+        pages: PageRange,
+        flags: PageTableFlags,
+    ) -> Result<(), MappingError> {
+        let mut frame_allocator = self.frame_allocator.lock();
+        let mut page_table = self.page_table.lock();
+
+        page_table.set_flags(pages, flags, &mut *frame_allocator)?;
+
+        Ok(())
+    }
+
     fn map_kernel_pages_to(
         &self,
         kernel_pages: PageRange,
