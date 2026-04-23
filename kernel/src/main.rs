@@ -15,7 +15,6 @@ mod idt;
 mod input;
 mod loader;
 mod memory;
-mod rtc;
 mod scheduler;
 mod serial;
 mod tsc;

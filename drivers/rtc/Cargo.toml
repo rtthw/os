@@ -1,0 +1,10 @@
+[package]
+name = "rtc"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/rtc.rs"
+
+[dependencies]
+x86-port = { path = "../x86-port" }

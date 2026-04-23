@@ -1,4 +1,6 @@
-//! # Real Time Clock (RTC)
+//! # Real-Time Clock (RTC)
+
+#![no_std]
 
 use core::{fmt, ops::Add};
 

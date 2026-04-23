@@ -2,7 +2,7 @@
 
 use {
     crate::{
-        BOOT_INFO, input, rtc,
+        BOOT_INFO, input,
         scheduler::{self, with_scheduler},
     },
     boot_info::BootInfo,
