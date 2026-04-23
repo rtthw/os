@@ -1090,13 +1090,21 @@ impl Loader {
         let mut map = self.sections.lock();
         let mut range_map = self.sections_by_addr.lock();
         let mut added_count = 0;
-        for section in sections.into_iter() {
-            if section.global {
-                let added = map
-                    .insert(section.name.clone(), Arc::downgrade(section))
-                    .is_none();
-                if added {
-                    range_map.insert((section.addr, section.size), Arc::downgrade(section));
+        for new_section in sections.into_iter() {
+            range_map.insert(
+                (new_section.addr, new_section.size),
+                Arc::downgrade(new_section),
+            );
+            if new_section.global {
+                if let Some(old_section) =
+                    map.insert(new_section.name.clone(), Arc::downgrade(new_section))
+                {
+                    let old_section = old_section.upgrade().unwrap();
+                    debug!(
+                        "Moved `{}` from {:x} to {:x}",
+                        old_section.name, old_section.addr, new_section.addr,
+                    );
+                } else {
                     added_count += 1;
                 }
             }
