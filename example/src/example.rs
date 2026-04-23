@@ -3,7 +3,9 @@
 #![no_std]
 
 use {
+    core::sync::atomic::Ordering,
     example_dep::exit,
+    framebuffer::Color,
     input::{GLOBAL_INPUT_QUEUE, InputEvent},
 };
 
@@ -27,24 +29,50 @@ pub extern "C" fn main() -> ! {
         panic!("CLOCK NOT READY");
     }
 
-    let mut fb = framebuffer::Framebuffer::global().unwrap();
+    let mut framebuffer = framebuffer::Framebuffer::global().unwrap();
+    let display_width = framebuffer::FRAMEBUFFER_WIDTH.load(Ordering::Relaxed);
+    let display_height = framebuffer::FRAMEBUFFER_HEIGHT.load(Ordering::Relaxed);
+    let mut input_state = InputState {
+        mouse_x: display_width as u32 / 2,
+        mouse_y: display_height as u32 / 2,
+    };
 
-    let mut seen_events = 0;
-    while seen_events < 255 {
+    'main_loop: loop {
         for event in GLOBAL_INPUT_QUEUE.lock().drain() {
             match event {
                 InputEvent::KeyPress { code } => {
-                    let value = code as u8;
-                    fb.clear_screen(framebuffer::Color::new(
-                        value.min(0x2b),
-                        value.min(0x2b),
-                        value.min(0x33),
-                        value,
-                    ));
+                    if code == 16 {
+                        break 'main_loop;
+                    }
+                }
+                InputEvent::MouseMove { delta_x, delta_y } => {
+                    framebuffer.fill_rect(
+                        input_state.mouse_x as i32,
+                        input_state.mouse_y as i32,
+                        framebuffer::font::CHAR_WIDTH as i32,
+                        framebuffer::font::CHAR_HEIGHT as i32,
+                        Color::rgb(0x2B, 0x2B, 0x33),
+                    );
+
+                    input_state.mouse_x = 0
+                        .max((display_width as i32 - 1).min(input_state.mouse_x as i32 + delta_x))
+                        as u32;
+                    input_state.mouse_y = 0
+                        .max((display_height as i32 - 1).min(input_state.mouse_y as i32 + delta_y))
+                        as u32;
+
+                    framebuffer.draw_ascii_char(
+                        '^',
+                        Color::rgb(0xaa, 0xaa, 0xad),
+                        Color::rgb(0x2B, 0x2B, 0x33),
+                        input_state.mouse_x as i32,
+                        input_state.mouse_y as i32,
+                        0,
+                        0,
+                    );
                 }
                 _ => {}
             }
-            seen_events += 1;
         }
 
         // Defer execution.
@@ -54,4 +82,9 @@ pub extern "C" fn main() -> ! {
     }
 
     exit()
+}
+
+struct InputState {
+    mouse_x: u32,
+    mouse_y: u32,
 }

@@ -92,6 +92,14 @@ pub fn init(boot_info: &BootInfo, fs: impl FileSystem + 'static) {
             Page::containing_addr(VirtualAddress::new(0x3333_0000_0000)),
         )
         .unwrap();
+    global_loader()
+        .load_object(
+            "input",
+            &AddressSpace::new("load_input", None),
+            // The actual value of this address doesn't matter.
+            Page::containing_addr(VirtualAddress::new(0x3333_0000_0000)),
+        )
+        .unwrap();
 
     with_sym(
         "time",

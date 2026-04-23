@@ -1,22 +1,14 @@
 //! # User Input
 
 use {
-    crate::{memory::kernel_address_space, scheduler, window_manager},
+    crate::{loader::global_loader, memory::kernel_address_space, scheduler},
     alloc::vec::Vec,
+    input::{InputEvent, InputQueue},
     log::warn,
     memory_types::VirtualAddress,
+    spin_mutex::Mutex,
     virtio::virtio_input,
 };
-
-
-
-#[derive(Debug)]
-pub enum InputEvent {
-    KeyPress { code: u16 },
-    MouseMove { delta_x: i32, delta_y: i32 },
-    MouseWheel { delta: i32 },
-}
-
 
 
 pub fn dispatch_input_events() -> ! {
@@ -42,6 +34,12 @@ pub fn dispatch_input_events() -> ! {
             .collect::<Vec<_>>()
     };
 
+    let queue_section = global_loader()
+        .get_section("input", "GLOBAL_INPUT_QUEUE")
+        .unwrap()
+        .upgrade()
+        .unwrap();
+
     loop {
         for input_device in virtio_inputs.iter_mut() {
             for input_event in input_device.poll() {
@@ -54,7 +52,14 @@ pub fn dispatch_input_events() -> ! {
                         },
                     );
 
-                    window_manager::send_event(window_manager::Event::UserInput(event));
+                    let mut mapping = queue_section.mapping.lock();
+                    unsafe {
+                        let queue =
+                            mapping.as_mut::<Mutex<InputQueue>>(queue_section.mapping_offset);
+                        queue.lock().push(event);
+                    }
+
+                    // window_manager::send_event(window_manager::Event::UserInput(event));
 
                     if exit {
                         scheduler::exit();
