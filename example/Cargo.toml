@@ -9,5 +9,6 @@ path = "src/example.rs"
 [dependencies]
 example-dep = { path = "./example-dep" }
 framebuffer = { path = "../crates/framebuffer" }
+input = { path = "../crates/input" }
 pit = { path = "../drivers/pit" }
 time = { path = "../crates/time" }

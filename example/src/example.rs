@@ -2,10 +2,10 @@
 
 #![no_std]
 
-extern crate example_dep;
-extern crate time;
-
-use example_dep::exit;
+use {
+    example_dep::exit,
+    input::{GLOBAL_INPUT_QUEUE, InputEvent},
+};
 
 const TEST_PAGE_FAULT: bool = false;
 const TEST_WRITE_TIME: bool = false;
@@ -29,14 +29,28 @@ pub extern "C" fn main() -> ! {
 
     let mut fb = framebuffer::Framebuffer::global().unwrap();
 
-    for value in 0..255 {
-        fb.clear_screen(framebuffer::Color::new(
-            value.min(0x2b),
-            value.min(0x2b),
-            value.min(0x33),
-            255,
-        ));
-        pit::sleep(10_000);
+    let mut seen_events = 0;
+    while seen_events < 255 {
+        for event in GLOBAL_INPUT_QUEUE.lock().drain() {
+            match event {
+                InputEvent::KeyPress { code } => {
+                    let value = code as u8;
+                    fb.clear_screen(framebuffer::Color::new(
+                        value.min(0x2b),
+                        value.min(0x2b),
+                        value.min(0x33),
+                        value,
+                    ));
+                }
+                _ => {}
+            }
+            seen_events += 1;
+        }
+
+        // Defer execution.
+        unsafe {
+            core::arch::asm!("int 0x40");
+        }
     }
 
     exit()

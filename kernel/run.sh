@@ -66,6 +66,17 @@ cd ..
         -Z share-generics=no
     cargo rustc \
         --release \
+        --manifest-path=crates/input/Cargo.toml \
+        --target=kernel/x86_64-app.json \
+        -Z build-std=core,alloc \
+        -Z build-std-features=compiler-builtins-mem \
+        -- \
+        --crate-type=lib \
+        --emit=obj="kernel/esp/input.o" \
+        -C link-dead-code=yes \
+        -Z share-generics=no
+    cargo rustc \
+        --release \
         --manifest-path=drivers/pit/Cargo.toml \
         --target=kernel/x86_64-app.json \
         -Z build-std=core,alloc \
@@ -94,6 +105,16 @@ cd ..
         -Z build-std-features=compiler-builtins-mem \
         -- \
         --emit=obj="kernel/esp/example.o" \
+        -C link-dead-code=yes \
+        -Z share-generics=no
+    cargo rustc \
+        --release \
+        --manifest-path=example-driver/Cargo.toml \
+        --target=kernel/x86_64-app.json \
+        -Z build-std=core,alloc \
+        -Z build-std-features=compiler-builtins-mem \
+        -- \
+        --emit=obj="kernel/esp/example_driver.o" \
         -C link-dead-code=yes \
         -Z share-generics=no
 

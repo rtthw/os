@@ -117,7 +117,10 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
 
     // Run the example program.
     scheduler::with_scheduler(|scheduler| {
-        scheduler.run_user_process("example", None, true, scheduler::AccessPolicy::Normal);
+        scheduler.run_user_process("example", None, true, scheduler::AccessPolicy::All);
+    });
+    scheduler::with_scheduler(|scheduler| {
+        scheduler.run_user_process("example_driver", None, true, scheduler::AccessPolicy::All);
     });
 
     // Run the core kernel processes.

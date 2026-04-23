@@ -421,6 +421,7 @@ version = "0.1.0"
 dependencies = [
  "example-dep",
  "framebuffer",
+ "input",
  "pit",
  "time",
 ]
@@ -428,6 +429,14 @@ dependencies = [
 [[package]]
 name = "example-dep"
 version = "0.1.0"
+
+[[package]]
+name = "example-driver"
+version = "0.1.0"
+dependencies = [
+ "input",
+ "time",
+]
 
 [[package]]
 name = "find-msvc-tools"
