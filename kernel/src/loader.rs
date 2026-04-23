@@ -35,6 +35,7 @@ const AUTO_MAP_DEPENDENCIES: bool = false;
 const FUNDAMENTAL_SYMBOLS: &[&str] = &[
     "memcmp",
     "memcpy",
+    "memmove",
     "memset",
     "__muldf3",
     "__mulsf3",
