@@ -1,0 +1,10 @@
+[package]
+name = "input"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/input.rs"
+
+[dependencies]
+spin-mutex = { path = "../spin-mutex" }
