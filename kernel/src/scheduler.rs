@@ -302,7 +302,7 @@ impl Scheduler {
         global_loader().dump_info();
 
         let entry_point_section = global_loader()
-            .get_section(&name, "main")
+            .get_text_section(&format!("{name}["), "main")
             .unwrap()
             .upgrade()
             .unwrap();

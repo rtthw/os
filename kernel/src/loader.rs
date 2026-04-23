@@ -390,6 +390,22 @@ impl Loader {
             .map(|(_name, section)| section.clone())
     }
 
+    /// Get the first text [section](LoadedSection) that starts with the given
+    /// prefix and ends with the given suffix.
+    pub fn get_text_section(&self, prefix: &str, suffix: &str) -> Option<Weak<LoadedSection>> {
+        self.sections
+            .lock()
+            .iter()
+            .find(|(name, section)| {
+                section
+                    .upgrade()
+                    .is_some_and(|section| matches!(section.kind, SectionKind::Text))
+                    && name.starts_with(prefix)
+                    && name.ends_with(suffix)
+            })
+            .map(|(_name, section)| section.clone())
+    }
+
     /// Get the first [section](LoadedSection) that contains the given address.
     pub fn get_section_for_addr(&self, addr: VirtualAddress) -> Option<Weak<LoadedSection>> {
         self.sections_by_addr
