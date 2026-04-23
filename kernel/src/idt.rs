@@ -92,8 +92,10 @@ extern "x86-interrupt" fn page_fault_handler(
                 .current_address_space_mut()
                 .expect("should have an address space during user page fault");
             let fb_mapping = FRAMEBUFFER_MAPPING.as_mut().unwrap();
+            let fb_addr = fb_mapping.addr.to_raw();
+            let fb_mapping_end = fb_addr + fb_mapping.size;
 
-            if fb_mapping.addr.to_raw() == addr {
+            if addr >= fb_addr && addr < fb_mapping_end {
                 // The framebuffer is already mapped into the address space, but it is not
                 // accessible from userspace. Granting access just requires setting the flags of
                 // the framebuffer's pages.
