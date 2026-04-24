@@ -4,7 +4,7 @@ use {
     anyhow::{Result, bail},
     std::{
         env::{current_dir, set_current_dir},
-        fs::create_dir_all,
+        fs::{create_dir_all, read_dir},
         path::{Path, PathBuf},
         process::{Command, ExitStatus, Stdio},
     },
@@ -19,6 +19,7 @@ const OBJECT_SOURCES: &[(&str, &str)] = &[
     ("", "example"),
     ("example", "example-dep"),
 ];
+const LANG_DEPS: &[&str] = &["core", "alloc", "compiler_builtins"];
 
 fn main() -> Result<()> {
     let workspace_dir = find_workspace_dir()?;
@@ -29,6 +30,10 @@ fn main() -> Result<()> {
     let kernel_dir = workspace_dir.join("kernel");
     if !kernel_dir.exists() {
         bail!("`./kernel` not found");
+    }
+    let extraction_dir = kernel_dir.join("tmp/extracted");
+    if !extraction_dir.exists() {
+        create_dir_all(&extraction_dir)?;
     }
     let boot_dir = kernel_dir.join("esp/efi/boot");
     if !boot_dir.exists() {
@@ -81,6 +86,48 @@ fn main() -> Result<()> {
         }
     }
 
+    // Create object files for the core language dependencies.
+    for name in LANG_DEPS {
+        let extraction_path = extraction_dir.join(name);
+        if extraction_path.exists() {
+            continue;
+        }
+        create_dir_all(&extraction_path)?;
+        let rlib_path = find_rlib(&workspace_dir.join("target/x86_64-app/release/deps"), name)?;
+
+        println!(
+            "Extracting `{}` to `{}`...",
+            rlib_path.display(),
+            extraction_path.display(),
+        );
+
+        if !Command::new("ar")
+            .arg("-xo")
+            .arg("--output")
+            .arg(&extraction_path)
+            .arg(&rlib_path)
+            .status()?
+            .success()
+        {
+            bail!("Failed to extract `{}`", rlib_path.display());
+        }
+
+        let mut ld_command = Command::new("ld");
+        ld_command
+            .arg("-r")
+            .arg("--output")
+            .arg(&format!("kernel/esp/{name}.o"));
+        for entry in read_dir(&extraction_path)? {
+            let entry = entry?;
+            if entry.file_name().to_string_lossy().ends_with(".o") {
+                ld_command.arg(entry.path());
+            }
+        }
+        if !ld_command.status()?.success() {
+            bail!("Failed to extract `{}`", rlib_path.display());
+        }
+    }
+
     println!("Building kernel...");
 
     let cargo_exit_status = Command::new("cargo")
@@ -124,6 +171,19 @@ fn find_workspace_dir() -> Result<PathBuf> {
     }
 
     bail!("failed to find the workspace directory")
+}
+
+fn find_rlib(dir: &Path, name: &str) -> Result<PathBuf> {
+    for entry in read_dir(dir)? {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        let name_str = file_name.to_string_lossy();
+        if name_str.starts_with(&format!("lib{name}-")) && name_str.ends_with(".rlib") {
+            return Ok(entry.path());
+        }
+    }
+
+    bail!("no rlib found for `{name}`")
 }
 
 fn build_crate_object(workspace_dir: &Path, dir: &str, name: &str) -> Result<ExitStatus> {
