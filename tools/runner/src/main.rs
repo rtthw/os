@@ -40,17 +40,7 @@ fn main() -> Result<()> {
         create_dir_all(&boot_dir)?;
     }
     let uefi_dir = kernel_dir.join("firmware/uefi");
-    if !uefi_dir.exists() {
-        create_dir_all(&uefi_dir)?;
-        std::fs::copy(
-            "/usr/share/OVMF/OVMF_CODE.fd",
-            workspace_dir.join("kernel/firmware/uefi/OVMF_CODE.fd"),
-        )?;
-        std::fs::copy(
-            "/usr/share/OVMF/OVMF_VARS.fd",
-            workspace_dir.join("kernel/firmware/uefi/OVMF_VARS.fd"),
-        )?;
-    }
+    get_ovmf(&uefi_dir)?;
 
     if !is_program_installed("rustc")? {
         bail!("Rust is not installed");
@@ -254,4 +244,40 @@ fn run_qemu() -> Result<ExitStatus> {
             "if=pflash,format=raw,readonly=on,file=kernel/firmware/uefi/OVMF_VARS.fd",
         ])
         .status()?)
+}
+
+// TODO: Get OVMF from systems that may not have it installed at the standard
+//       location.
+fn get_ovmf(uefi_dir: &Path) -> Result<()> {
+    if !uefi_dir.exists() {
+        create_dir_all(&uefi_dir)?;
+    }
+    let code_output_path = uefi_dir.join("OVMF_CODE.fd");
+    let vars_output_path = uefi_dir.join("OVMF_VARS.fd");
+
+    #[cfg(target_os = "linux")]
+    {
+        let debian_based_code_path = PathBuf::from("/usr/share/OVMF/OVMF_CODE.fd");
+        let debian_based_vars_path = PathBuf::from("/usr/share/OVMF/OVMF_VARS.fd");
+
+        if !debian_based_code_path.exists() || !debian_based_vars_path.exists() {
+            panic!(
+                "Support for systems that aren't Debian-based is not yet ready. If this is a \
+                Debian-based system, make sure you have that OVMF package installed",
+            );
+        }
+
+        if !code_output_path.exists() {
+            std::fs::copy(debian_based_code_path, code_output_path)?;
+        }
+        if !vars_output_path.exists() {
+            std::fs::copy(debian_based_vars_path, vars_output_path)?;
+        }
+
+        return Ok(());
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        bail!("runner support for non-Linux systems is not yet available")
+    }
 }
