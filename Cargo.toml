@@ -9,6 +9,7 @@ members = [
     "linux/init",
     "linux/shell",
     "linux/uapi",
+    "tools/runner",
 ]
 
 [workspace.package]
