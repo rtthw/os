@@ -274,6 +274,7 @@ impl VfatFileSystem {
         let mut cache = HashMap::new();
 
         let cluster_offset = boot_sector.root_sector_offset();
+        let mut current_lfn_buf = VecDeque::new();
         'read_sectors: for sector_offset in 0..boot_sector.root_sector_count() {
             let mut sector_bytes = [0; SECTOR_SIZE];
             drive
@@ -286,7 +287,6 @@ impl VfatFileSystem {
             let sector_entries: [VfatDirectoryEntry; ENTRIES_PER_SECTOR] =
                 unsafe { core::mem::transmute(sector_bytes) };
 
-            let mut current_lfn_buf = VecDeque::new();
             for entry in sector_entries {
                 if entry.kind() == EntryKind::Null && entry.attr().is_none() {
                     break 'read_sectors; // No more entries to read.
