@@ -431,14 +431,6 @@ name = "example-dep"
 version = "0.1.0"
 
 [[package]]
-name = "example-driver"
-version = "0.1.0"
-dependencies = [
- "input",
- "time",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
