@@ -694,16 +694,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "loader"
-version = "0.1.0"
-dependencies = [
- "abi",
- "hashbrown",
- "rustc-demangle",
- "spin-mutex",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
