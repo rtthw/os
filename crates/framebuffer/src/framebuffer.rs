@@ -181,6 +181,7 @@ pub struct Color {
 }
 
 impl Color {
+    pub const NONE: Self = Self::rgba(0, 0, 0, 0);
     pub const WHITE: Self = Self::rgb(255, 255, 255);
     pub const BLACK: Self = Self::rgb(0, 0, 0);
     pub const RED: Self = Self::rgb(255, 0, 0);
@@ -195,6 +196,11 @@ impl Color {
     #[inline]
     pub const fn rgb(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b, a: 255 }
+    }
+
+    #[inline]
+    pub const fn rgba(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self { r, g, b, a }
     }
 
     pub const fn to_u32(self, format: PixelFormat) -> u32 {
