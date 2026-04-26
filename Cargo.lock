@@ -419,16 +419,12 @@ dependencies = [
 name = "example"
 version = "0.1.0"
 dependencies = [
- "example-dep",
  "framebuffer",
  "input",
  "pit",
+ "process",
  "time",
 ]
-
-[[package]]
-name = "example-dep"
-version = "0.1.0"
 
 [[package]]
 name = "find-msvc-tools"
@@ -888,6 +884,10 @@ checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "process"
+version = "0.1.0"
 
 [[package]]
 name = "profiling"

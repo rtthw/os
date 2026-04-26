@@ -1,9 +1,0 @@
-[package]
-name = "example-dep"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-path = "src/example_dep.rs"
-
-[dependencies]

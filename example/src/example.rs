@@ -4,7 +4,6 @@
 
 use {
     core::sync::atomic::Ordering,
-    example_dep::exit,
     framebuffer::Color,
     input::{GLOBAL_INPUT_QUEUE, InputEvent},
 };
@@ -93,13 +92,16 @@ pub extern "C" fn main() -> ! {
             }
         }
 
-        // Defer execution.
-        unsafe {
-            core::arch::asm!("int 0x40");
-        }
+        process::defer();
     }
 
-    exit()
+    process::exit();
+}
+
+#[cfg(not(test))]
+#[panic_handler]
+pub fn panic_handler(_info: &core::panic::PanicInfo<'_>) -> ! {
+    process::exit()
 }
 
 struct InputState {

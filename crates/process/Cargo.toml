@@ -1,0 +1,9 @@
+[package]
+name = "process"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/process.rs"
+
+[dependencies]

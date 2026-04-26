@@ -14,10 +14,10 @@ const OBJECT_SOURCES: &[(&str, &str)] = &[
     ("crates", "boot-info"),
     ("crates", "framebuffer"),
     ("crates", "input"),
+    ("crates", "process"),
     ("crates", "time"),
     ("drivers", "pit"),
     ("", "example"),
-    ("example", "example-dep"),
 ];
 const LANG_DEPS: &[&str] = &["core", "alloc", "compiler_builtins"];
 
