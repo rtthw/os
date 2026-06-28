@@ -244,7 +244,9 @@ impl KernelMapping {
 
         assert_eq!(pages.len(), size_in_bytes.div_ceil(PAGE_SIZE));
 
-        kernel_address_space().map_pages(&name, pages, flags);
+        kernel_address_space()
+            .map_pages(&name, pages, flags)
+            .unwrap();
 
         Self {
             name,
@@ -624,17 +626,31 @@ impl AddressSpace {
         }
     }
 
-    pub fn map_pages(&self, name: impl Into<String>, pages: PageRange, flags: PageTableFlags) {
+    pub fn map_pages(
+        &self,
+        name: impl Into<String>,
+        pages: PageRange,
+        flags: PageTableFlags,
+    ) -> Result<(), MappingError> {
         let mut frame_allocator = self.frame_allocator.lock();
         let mut page_table = self.page_table.lock();
 
         for page in pages {
             let frame = frame_allocator.allocate_frame().unwrap();
-            // trace!("MAPPING {page:?} TO {frame:?}");
-            page_table
-                .map_to(page, frame, flags, &mut *frame_allocator)
-                .unwrap()
-                .flush();
+            // trace!("MAPPING {page:?} TO {frame:?} IN {:?}", self.frame);
+            match page_table.map_to(page, frame, flags, &mut *frame_allocator) {
+                Ok(flush) => flush.flush(),
+                Err(MappingError::PageAlreadyMapped { to }) if to == frame => {
+                    warn!(
+                        "Double-mapped {page:?} to {frame:?} in {:x}",
+                        self.frame.base_addr(),
+                    );
+                    continue;
+                }
+                Err(error) => {
+                    return Err(error);
+                }
+            }
         }
 
         TRACKER
@@ -643,6 +659,8 @@ impl AddressSpace {
             .entry((self.name.clone(), self.frame))
             .or_insert(Vec::new())
             .push((name.into(), pages));
+
+        Ok(())
     }
 
     pub fn map_pages_untracked(

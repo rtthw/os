@@ -296,14 +296,16 @@ impl Scheduler {
 
         let stack_size = stack_size.unwrap_or(DEFAULT_USER_STACK_SIZE);
         let stack_top_addr = AddressDomain::UserCode.base_addr();
-        address_space.map_pages(
-            format!("user_stack.{id}"),
-            PageRange::from_end_size(stack_top_addr.page(), stack_size),
-            PageTableFlags::PRESENT
-                | PageTableFlags::WRITABLE
-                | PageTableFlags::USER_ACCESSIBLE
-                | PageTableFlags::NO_EXECUTE,
-        );
+        address_space
+            .map_pages(
+                format!("user_stack.{id}"),
+                PageRange::from_end_size(stack_top_addr.page(), stack_size),
+                PageTableFlags::PRESENT
+                    | PageTableFlags::WRITABLE
+                    | PageTableFlags::USER_ACCESSIBLE
+                    | PageTableFlags::NO_EXECUTE,
+            )
+            .unwrap();
 
         let context = ExecutionContext {
             registers: CpuRegisters::EMPTY,
