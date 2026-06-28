@@ -8,6 +8,7 @@ use {
     heap::{Allocator, alloc::alloc::alloc_zeroed, string::ToString as _},
     input::{GLOBAL_INPUT_QUEUE, InputEvent},
     math::{Area, Point, Size},
+    process::{ShellRequest, ShellResponse},
     spin_mutex::Mutex,
 };
 
@@ -40,6 +41,8 @@ static POINTER_IMAGE: [[Color; POINTER_HEIGHT]; POINTER_WIDTH] = {
 static ALLOCATOR: Allocator = Allocator::new();
 
 static SERIAL2: Mutex<uart_16550::Device> = Mutex::new(uart_16550::Device::COM2);
+
+pub static INPUT: process::ShellInput = process::ShellInput::new();
 
 pub extern "C" fn main() -> ! {
     unsafe {
@@ -151,12 +154,9 @@ pub extern "C" fn main() -> ! {
         &mut framebuffer,
     );
 
-    // let mut seen_events = hashbrown::HashSet::with_hasher(rustc_hash::FxBuildHasher);
+    // FIXME: Too many deadlocks here.
     'main_loop: loop {
         for event in GLOBAL_INPUT_QUEUE.lock().drain() {
-            // if seen_events.insert(event) {
-            //     log::info!("New input event: {event:?}");
-            // }
             let damage = match event {
                 InputEvent::KeyPress { code } => {
                     if code == 16 {
@@ -203,6 +203,24 @@ pub extern "C" fn main() -> ! {
         }
 
         process::defer();
+
+        while let Some(request) = INPUT.requests.lock().pop() {
+            // log::info!("Servicing request {request:x?}");
+            match request {
+                ShellRequest::AccessModule {
+                    addr,
+                    process_id,
+                    process_name: _,
+                    module_name: _,
+                    section_name: _,
+                } => {
+                    INPUT
+                        .responses
+                        .lock()
+                        .push(ShellResponse::AllowModuleAccess { addr, process_id });
+                }
+            }
+        }
     }
 
     process::exit(0);

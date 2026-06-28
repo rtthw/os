@@ -318,6 +318,9 @@ dependencies = [
 [[package]]
 name = "process"
 version = "0.1.0"
+dependencies = [
+ "spin-mutex",
+]
 
 [[package]]
 name = "ptr_meta"

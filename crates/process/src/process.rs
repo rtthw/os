@@ -2,6 +2,8 @@
 
 #![no_std]
 
+use spin_mutex::Mutex;
+
 
 
 /// Defer execution to the next process in the scheduler's run queue.
@@ -94,4 +96,108 @@ pub enum Priority {
     None = 0,
     Normal = 32,
     Idle = 255,
+}
+
+#[repr(C, align(4096))]
+pub struct ShellInput {
+    pub requests: Mutex<SizedQueue<ShellRequest, 8>>,
+    pub responses: Mutex<SizedQueue<ShellResponse, 8>>,
+}
+
+impl ShellInput {
+    pub const fn new() -> Self {
+        Self {
+            requests: Mutex::new(SizedQueue::new()),
+            responses: Mutex::new(SizedQueue::new()),
+        }
+    }
+}
+
+unsafe impl Sync for ShellInput {}
+unsafe impl Send for ShellInput {}
+
+/// A message sent from the kernel to the shell.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub enum ShellRequest {
+    /// A process wants to access some module section.
+    AccessModule {
+        addr: usize,
+        // pages: PageRange,
+        // flags: PageTableFlags,
+        process_id: u64,
+        process_name: SizedString<32>,
+        module_name: SizedString<32>,
+        section_name: SizedString<32>,
+    },
+}
+
+/// A message sent from the shell to the kernel.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+pub enum ShellResponse {
+    ExitProcess { code: u64 },
+    AllowModuleAccess { addr: usize, process_id: u64 },
+}
+
+pub struct SizedQueue<T: Sized, const SIZE: usize> {
+    inner: [Option<T>; SIZE],
+    push_cursor: usize,
+    pop_cursor: usize,
+}
+
+impl<T: Sized, const SIZE: usize> SizedQueue<T, SIZE> {
+    const fn new() -> Self {
+        Self {
+            inner: [const { None }; SIZE],
+            push_cursor: 0,
+            pop_cursor: 0,
+        }
+    }
+
+    pub fn push(&mut self, element: T) {
+        self.inner[self.push_cursor] = Some(element);
+        self.push_cursor += 1;
+        if self.push_cursor >= SIZE {
+            self.push_cursor = 0;
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        let element = self.inner[self.pop_cursor].take();
+        if element.is_some() {
+            self.pop_cursor += 1;
+            if self.pop_cursor >= SIZE {
+                self.pop_cursor = 0;
+            }
+        }
+
+        element
+    }
+}
+
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct SizedString<const SIZE: usize> {
+    bytes: [u8; SIZE],
+}
+
+impl<const SIZE: usize> SizedString<SIZE> {
+    pub fn new_truncate(string: &str) -> Self {
+        let mut bytes = [0; SIZE];
+        let len = string.len().min(SIZE);
+        bytes[..len].clone_from_slice(&string.as_bytes()[..len]);
+
+        Self { bytes }
+    }
+
+    pub fn as_str(&self) -> &str {
+        unsafe { core::str::from_utf8_unchecked(&self.bytes) }.trim_matches('\0')
+    }
+}
+
+impl<const SIZE: usize> core::fmt::Debug for SizedString<SIZE> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.as_str())
+    }
 }

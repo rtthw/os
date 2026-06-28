@@ -7,3 +7,4 @@ edition.workspace = true
 path = "src/process.rs"
 
 [dependencies]
+spin-mutex = { path = "../spin-mutex" }

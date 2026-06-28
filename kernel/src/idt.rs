@@ -151,10 +151,6 @@ extern "C" fn __page_fault_handler(context: PageFaultContext) -> ! {
     let addr_space_frame = Cr3::read_raw().0;
 
     let user_mode = context.error_code.contains(PageFaultErrorCode::USER_MODE);
-    let caused_by_write = context
-        .error_code
-        .contains(PageFaultErrorCode::CAUSED_BY_WRITE);
-
     if !user_mode {
         panic!(
             "#PF({:?}) at {addr:#x} in {addr_space_frame:?}",
@@ -284,36 +280,28 @@ extern "C" fn __page_fault_handler(context: PageFaultContext) -> ! {
             } else if let Some((bar_slot, bar_pages)) =
                 crate::memory::TRACKER.lock().get_pci_bar(addr)
             {
-                if process.access_policy == AccessPolicy::All {
-                    // The BAR pages are already mapped into the address space, but they are not
-                    // accessible from userspace. Granting access just requires setting the flags.
-                    if let Err(error) = address_space.set_flags(
-                        bar_pages,
-                        PageTableFlags::PRESENT
-                            | PageTableFlags::WRITABLE
-                            | PageTableFlags::USER_ACCESSIBLE,
-                    ) {
-                        error!(
-                            "Failed to map PCI BAR {bar_slot} into `{}`: {error}",
-                            address_space.name(),
-                        );
-
-                        exit_process = true;
-                    } else {
-                        info!("Granted PCI BAR {bar_slot} to `{}`", address_space.name());
-                    }
-                } else {
+                // The BAR pages are already mapped into the address space, but they are not
+                // accessible from userspace. Granting access just requires setting the flags.
+                if let Err(error) = address_space.set_flags(
+                    bar_pages,
+                    PageTableFlags::PRESENT
+                        | PageTableFlags::WRITABLE
+                        | PageTableFlags::USER_ACCESSIBLE,
+                ) {
                     error!(
-                        "Userspace process `{}` tried to access PCI BAR {bar_slot} at {addr:x}",
+                        "Failed to map PCI BAR {bar_slot} into `{}`: {error}",
                         address_space.name(),
                     );
 
                     exit_process = true;
+                } else {
+                    info!("Granted PCI BAR {bar_slot} to `{}`", address_space.name());
                 }
             } else {
                 // HACK: This should check if `addr` is a physical address pointing to the
                 //       current process's heap.
-                if domain == AddressDomain::Physical && process.access_policy == AccessPolicy::All {
+                if domain == AddressDomain::Physical {
+                    // && process.access_policy == AccessPolicy::All {
                     let page = addr.page();
                     if let Err(error) = address_space.set_flags(
                         PageRange::from_start_len(page, 1),
@@ -364,9 +352,9 @@ extern "C" fn __page_fault_handler(context: PageFaultContext) -> ! {
         let address_space = &process.address_space;
         let address_space_name = address_space.name();
 
-        let mapping = section.mapping.lock();
         match process.access_policy {
             AccessPolicy::All => {
+                let mapping = section.mapping.lock();
                 if let Err(error) = mapping.map_into(address_space, mapping.pages, mapping.flags) {
                     error!(
                         "Failed to map `{}` into `{}` for `{}` at {:x}: {error}",
@@ -377,31 +365,20 @@ extern "C" fn __page_fault_handler(context: PageFaultContext) -> ! {
                 }
             }
             AccessPolicy::Normal => {
-                if caused_by_write {
-                    error!(
-                        "`{}` attempted to write to `{}` for `{}` at {:x} without permission",
-                        address_space_name, mapping.name, section.name, section.addr,
-                    );
+                let process_id = process.id;
+                let process_name = process::SizedString::new_truncate(&process.name);
 
-                    exit_process = true;
-                } else {
-                    // HACK: At the moment, we map dependencies as read-only. More design work is
-                    //       needed to determine how dependency permissions are calculated.
-                    let flags = mapping.flags & !PageTableFlags::WRITABLE;
-                    if let Err(error) = mapping.map_into(address_space, mapping.pages, flags) {
-                        error!(
-                            "Failed to map `{}` into `{}` for `{}` at {:x}: {error}",
-                            mapping.name, address_space_name, section.name, section.addr,
-                        );
-
-                        exit_process = true;
-                    } else {
-                        info!(
-                            "Added `{}` to `{}` for `{}` at {:x}",
-                            mapping.name, address_space_name, section.name, section.addr,
-                        );
-                    }
-                }
+                scheduler.block_current(process::ShellRequest::AccessModule {
+                    addr: addr.to_raw(),
+                    // pages: mapping.pages,
+                    // flags: mapping.flags,
+                    process_id,
+                    process_name,
+                    module_name: process::SizedString::new_truncate(
+                        &section.owner.upgrade().unwrap().lock().name,
+                    ),
+                    section_name: process::SizedString::new_truncate(&section.name),
+                });
             }
         }
     });
