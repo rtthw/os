@@ -1,0 +1,9 @@
+[package]
+name = "abi"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+path = "src/abi.rs"
+
+[dependencies]
