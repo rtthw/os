@@ -60,6 +60,8 @@ impl<'a> Disassembler<'a> {
                     src: modrm.rm64_rm_operand(rex),
                 })
             }
+            // 0F xx
+            0x0F => self.parse_0f_instruction(rex),
             // SBB AL, imm8
             0x1C => {
                 let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
@@ -154,6 +156,22 @@ impl<'a> Disassembler<'a> {
                     offset: ImmediateValue::I8(i8::from_le_bytes([self.advance()?])),
                 })
             }
+            // Group 1
+            0x83 => {
+                let modrm = ModRm::new(self.advance()?);
+                match modrm.reg {
+                    // ADC r/m64, imm8
+                    0x2 => {
+                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
+                        Ok(Instruction::ADC {
+                            dst: modrm.rm64_rm_operand(rex),
+                            src: Operand::ImmediateValue(imm),
+                        })
+                    }
+
+                    _ => Err(DisassemblyError::InvalidByte),
+                }
+            }
             // TEST r/m64, r64
             0x85 => {
                 let modrm = ModRm::new(self.advance()?);
@@ -212,6 +230,70 @@ impl<'a> Disassembler<'a> {
                 });
 
                 Ok(Instruction::MOV { src, dst })
+            }
+            // Group 2
+            0xC0 => {
+                let modrm = ModRm::new(self.advance()?);
+                match modrm.reg {
+                    // SHL r/m8, imm8
+                    0x4 => {
+                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
+                        Ok(Instruction::SHL {
+                            dst: modrm.rm64_rm_operand(rex),
+                            src: Operand::ImmediateValue(imm),
+                        })
+                    }
+                    // SHR r/m8, imm8
+                    0x5 => {
+                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
+                        Ok(Instruction::SHR {
+                            dst: modrm.rm64_rm_operand(rex),
+                            src: Operand::ImmediateValue(imm),
+                        })
+                    }
+                    // SAR r/m8, imm8
+                    0x7 => {
+                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
+                        Ok(Instruction::SAR {
+                            dst: modrm.rm64_rm_operand(rex),
+                            src: Operand::ImmediateValue(imm),
+                        })
+                    }
+
+                    _ => Err(DisassemblyError::InvalidByte),
+                }
+            }
+            // Group 2
+            0xC1 => {
+                let modrm = ModRm::new(self.advance()?);
+                match modrm.reg {
+                    // SHL r/m64, imm8
+                    0x4 => {
+                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
+                        Ok(Instruction::SHL {
+                            dst: modrm.rm64_rm_operand(rex),
+                            src: Operand::ImmediateValue(imm),
+                        })
+                    }
+                    // SHR r/m64, imm8
+                    0x5 => {
+                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
+                        Ok(Instruction::SHR {
+                            dst: modrm.rm64_rm_operand(rex),
+                            src: Operand::ImmediateValue(imm),
+                        })
+                    }
+                    // SAR r/m64, imm8
+                    0x7 => {
+                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
+                        Ok(Instruction::SAR {
+                            dst: modrm.rm64_rm_operand(rex),
+                            src: Operand::ImmediateValue(imm),
+                        })
+                    }
+
+                    _ => Err(DisassemblyError::InvalidByte),
+                }
             }
             // RET
             0xC2 | 0xCA => {
@@ -279,8 +361,9 @@ impl<'a> Disassembler<'a> {
             0xF1 => Ok(Instruction::INT1),
             // HLT
             0xF4 => Ok(Instruction::HLT),
-
+            // CMC
             0xF5 => Ok(Instruction::CMC),
+            // Group 3
             0xF6 => {
                 let modrm = ModRm::new(self.advance()?);
                 match modrm.reg {
@@ -296,6 +379,7 @@ impl<'a> Disassembler<'a> {
                     _ => Err(DisassemblyError::InvalidByte),
                 }
             }
+            // Group 3
             0xF7 => {
                 let modrm = ModRm::new(self.advance()?);
                 match modrm.reg {
@@ -311,9 +395,23 @@ impl<'a> Disassembler<'a> {
                     _ => Err(DisassemblyError::InvalidByte),
                 }
             }
+            // CLC
             0xF8 => Ok(Instruction::CLC),
+            // STC
+            0xF9 => Ok(Instruction::STC),
+            // CLI
             0xFA => Ok(Instruction::CLI),
+            // STI
+            0xFB => Ok(Instruction::STI),
+            // CLD
             0xFC => Ok(Instruction::CLD),
+            // STD
+            0xFD => Ok(Instruction::STD),
+            // Group 4
+            0xFE => {
+                todo!("INC/DEC")
+            }
+            // Group 5
             // FIXME: This should differentiate between JMP near and JMP far (FF /4 and FF /5).
             0xFF => {
                 let modrm = ModRm::new(self.advance()?);
@@ -353,6 +451,66 @@ impl<'a> Disassembler<'a> {
 
         Ok(byte)
     }
+
+    fn parse_0f_instruction(&mut self, rex: Option<Rex>) -> Result<Instruction, DisassemblyError> {
+        let opcode = self.advance()?;
+        match opcode {
+            0x01 => {
+                let next_byte = self.advance()?;
+                match next_byte {
+                    0xEE => Ok(Instruction::RDPKRU),
+                    0xF8 => Ok(Instruction::SWAPGS),
+                    0xF9 => Ok(Instruction::RDTSCP),
+
+                    other => {
+                        let modrm = ModRm::new(other);
+                        if modrm.is_memory() {
+                            todo!()
+                        } else {
+                            Err(DisassemblyError::InvalidByte)
+                        }
+                    }
+                }
+            }
+            // SYSCALL
+            0x05 => Ok(Instruction::SYSCALL),
+            // SYSRET
+            0x07 => Ok(Instruction::SYSRET),
+            // RDTSC
+            0x31 => Ok(Instruction::RDTSC),
+            // RDMSR
+            0x32 => Ok(Instruction::RDMSR),
+            // RDPMC
+            0x33 => Ok(Instruction::RDPMC),
+            // SYSENTER
+            0x34 => Ok(Instruction::SYSENTER),
+            // SYSENTER
+            0x35 => Ok(Instruction::SYSEXIT),
+            // CMOVcc r64, r/m64
+            0x40..=0x4F => {
+                let cc = ConditionCode::new(opcode & 0x0F).ok_or(DisassemblyError::InvalidByte)?;
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::CMOVCC {
+                    cc,
+                    dst: modrm.r64_reg_operand(rex),
+                    src: modrm.rm64_rm_operand(rex),
+                })
+            }
+            // SETcc r/m8
+            0x90..=0x9F => {
+                let cc = ConditionCode::new(opcode & 0x0F).ok_or(DisassemblyError::InvalidByte)?;
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::SETCC {
+                    cc,
+                    byte: modrm.rm64_rm_operand(rex),
+                })
+            }
+            // CPUID
+            0xA2 => Ok(Instruction::CPUID),
+
+            other => Err(DisassemblyError::UnsupportedOpcode { opcode: other }),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -364,6 +522,10 @@ pub enum DisassemblyError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Instruction {
+    ADC {
+        dst: Operand,
+        src: Operand,
+    },
     ADD {
         dst: Operand,
         src: Operand,
@@ -379,10 +541,16 @@ pub enum Instruction {
     CLD,
     CLI,
     CMC,
+    CMOVCC {
+        cc: ConditionCode,
+        dst: Operand,
+        src: Operand,
+    },
     CMP {
         src_1: Operand,
         src_2: Operand,
     },
+    CPUID,
     HLT,
     IN {
         dst: Register,
@@ -393,6 +561,9 @@ pub enum Instruction {
     },
     INT {
         vector: ImmediateValue,
+    },
+    INVLPG {
+        src: Operand,
     },
     INT1,
     INT3,
@@ -429,15 +600,44 @@ pub enum Instruction {
     POP {
         operand: Operand,
     },
+    RDMSR,
+    RDPKRU,
+    RDPMC,
+    RDTSC,
+    RDTSCP,
     RET,
+    SAR {
+        dst: Operand,
+        src: Operand,
+    },
     SBB {
         dst: Operand,
         src: Operand,
     },
+    SETCC {
+        cc: ConditionCode,
+        byte: Operand,
+    },
+    SHL {
+        dst: Operand,
+        src: Operand,
+    },
+    SHR {
+        dst: Operand,
+        src: Operand,
+    },
+    STC,
+    STD,
+    STI,
     SUB {
         dst: Operand,
         src: Operand,
     },
+    SWAPGS,
+    SYSCALL,
+    SYSENTER,
+    SYSEXIT,
+    SYSRET,
     TEST {
         src_1: Operand,
         src_2: Operand,
@@ -736,7 +936,7 @@ mod tests {
             0x48, 0x39, 0xd6,
             0x77, 0x12,
             0x48, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0xff, 0xd0,
+            0x41, 0xff, 0xd0,
         ];
 
         let mut disassembler = Disassembler::new(&instructions);
