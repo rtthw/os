@@ -16,11 +16,23 @@ impl<'a> Disassembler<'a> {
         }
 
         let opcode: u8;
+        let mut lock_prefix = false;
+        let mut f2_prefix = false;
+        let mut f3_prefix = false;
         let mut rex: Option<Rex> = None;
 
         loop {
             let byte = self.advance()?;
             match byte {
+                0xF0 => {
+                    lock_prefix = true;
+                }
+                0xF2 => {
+                    f2_prefix = true;
+                }
+                0xF3 => {
+                    f3_prefix = true;
+                }
                 byte if is_rex_prefix(byte) => {
                     rex = Some(Rex(byte));
                     let next_byte = self.advance()?;
@@ -33,6 +45,10 @@ impl<'a> Disassembler<'a> {
                     break;
                 }
             }
+        }
+
+        if lock_prefix {
+            todo!("Handle LOCK prefix");
         }
 
         match opcode {
@@ -61,7 +77,7 @@ impl<'a> Disassembler<'a> {
                 })
             }
             // 0F xx
-            0x0F => self.parse_0f_instruction(rex),
+            0x0F => self.parse_0f_instruction(rex, f2_prefix, f3_prefix),
             // SBB AL, imm8
             0x1C => {
                 let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
@@ -172,6 +188,14 @@ impl<'a> Disassembler<'a> {
                     _ => Err(DisassemblyError::InvalidByte),
                 }
             }
+            // TEST r/m8, r8
+            0x84 => {
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::TEST {
+                    src_1: modrm.rm64_rm_operand(rex),
+                    src_2: modrm.r64_reg_operand(rex),
+                })
+            }
             // TEST r/m64, r64
             0x85 => {
                 let modrm = ModRm::new(self.advance()?);
@@ -180,12 +204,44 @@ impl<'a> Disassembler<'a> {
                     src_2: modrm.r64_reg_operand(rex),
                 })
             }
+            // XCHG r/m8, r8
+            0x86 => {
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::XCHG {
+                    dst: modrm.rm64_rm_operand(rex),
+                    src: modrm.r64_reg_operand(rex),
+                })
+            }
+            // XCHG r/m64, r64
+            0x87 => {
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::XCHG {
+                    dst: modrm.rm64_rm_operand(rex),
+                    src: modrm.r64_reg_operand(rex),
+                })
+            }
+            // MOV r/m8, r8
+            0x88 => {
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::MOV {
+                    dst: modrm.rm64_rm_operand(rex),
+                    src: modrm.r64_reg_operand(rex),
+                })
+            }
             // MOV r/m64, r64
             0x89 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::MOV {
                     dst: modrm.rm64_rm_operand(rex),
                     src: modrm.r64_reg_operand(rex),
+                })
+            }
+            // MOV r8, r/m8
+            0x8A => {
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::MOV {
+                    dst: modrm.r64_reg_operand(rex),
+                    src: modrm.rm64_rm_operand(rex),
                 })
             }
             // MOV r64, r/m64
@@ -200,6 +256,17 @@ impl<'a> Disassembler<'a> {
             0x8D => {
                 todo!()
             }
+            // PAUSE
+            0x90 if f3_prefix => Ok(Instruction::PAUSE),
+            // NOP (alias for `XCHG rax, rax`)
+            0x90 => Ok(Instruction::NOP),
+            // XCHG rax, r64
+            0x91..=0x97 => Ok(Instruction::XCHG {
+                dst: Operand::Register(Register::RAX),
+                src: Operand::Register(
+                    parse_register(opcode & 7, rex.is_some_and(|rex| rex.r())).unwrap(),
+                ),
+            }),
             // CBW/CWDE/CDQE
             0x98 => {
                 todo!("CBW/CWDE/CDQE")
@@ -452,12 +519,20 @@ impl<'a> Disassembler<'a> {
         Ok(byte)
     }
 
-    fn parse_0f_instruction(&mut self, rex: Option<Rex>) -> Result<Instruction, DisassemblyError> {
+    fn parse_0f_instruction(
+        &mut self,
+        rex: Option<Rex>,
+        f2_prefix: bool,
+        f3_prefix: bool,
+    ) -> Result<Instruction, DisassemblyError> {
         let opcode = self.advance()?;
         match opcode {
             0x01 => {
                 let next_byte = self.advance()?;
                 match next_byte {
+                    0xC6 if f2_prefix => Ok(Instruction::RDMSRLIST),
+                    0xC8 => Ok(Instruction::MONITOR),
+                    0xC9 => Ok(Instruction::MWAIT),
                     0xEE => Ok(Instruction::RDPKRU),
                     0xF8 => Ok(Instruction::SWAPGS),
                     0xF9 => Ok(Instruction::RDTSCP),
@@ -507,6 +582,58 @@ impl<'a> Disassembler<'a> {
             }
             // CPUID
             0xA2 => Ok(Instruction::CPUID),
+            // TZCNT r64, r/m64
+            0xBC if f3_prefix => {
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::TZCNT {
+                    dst: modrm.r64_reg_operand(rex),
+                    src: modrm.rm64_rm_operand(rex),
+                })
+            }
+            // BSF r64, r/m64
+            0xBC => {
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::BSF {
+                    dst: modrm.r64_reg_operand(rex),
+                    src: modrm.rm64_rm_operand(rex),
+                })
+            }
+            // LZCNT r64, r/m64
+            0xBD if f3_prefix => {
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::LZCNT {
+                    dst: modrm.r64_reg_operand(rex),
+                    src: modrm.rm64_rm_operand(rex),
+                })
+            }
+            // BSR r64, r/m64
+            0xBD => {
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::BSR {
+                    dst: modrm.r64_reg_operand(rex),
+                    src: modrm.rm64_rm_operand(rex),
+                })
+            }
+
+            0xC7 => {
+                let modrm = ModRm::new(self.advance()?);
+                match modrm.reg {
+                    // RDRAND r64
+                    0x6 => Ok(Instruction::RDRAND {
+                        dst: modrm.rm_register(rex.is_some_and(|rex| rex.b())),
+                    }),
+                    // RDPID r64
+                    0x7 if f3_prefix => Ok(Instruction::RDPID {
+                        dst: modrm.rm_register(false),
+                    }),
+                    // RDSEED r64
+                    0x7 => Ok(Instruction::RDSEED {
+                        dst: modrm.rm_register(rex.is_some_and(|rex| rex.b())),
+                    }),
+
+                    _ => Err(DisassemblyError::InvalidByte),
+                }
+            }
 
             other => Err(DisassemblyError::UnsupportedOpcode { opcode: other }),
         }
@@ -531,6 +658,14 @@ pub enum Instruction {
         src: Operand,
     },
     AND {
+        dst: Operand,
+        src: Operand,
+    },
+    BSF {
+        dst: Operand,
+        src: Operand,
+    },
+    BSR {
         dst: Operand,
         src: Operand,
     },
@@ -579,6 +714,11 @@ pub enum Instruction {
         dst: Operand,
         src: Operand,
     },
+    LZCNT {
+        dst: Operand,
+        src: Operand,
+    },
+    MONITOR,
     MOV {
         dst: Operand,
         src: Operand,
@@ -586,6 +726,8 @@ pub enum Instruction {
     MUL {
         operand: Operand,
     },
+    MWAIT,
+    NOP,
     OR {
         dst: Operand,
         src: Operand,
@@ -594,6 +736,7 @@ pub enum Instruction {
         src: Register,
         port: Operand,
     },
+    PAUSE,
     PUSH {
         operand: Operand,
     },
@@ -601,10 +744,20 @@ pub enum Instruction {
         operand: Operand,
     },
     RDMSR,
+    RDMSRLIST,
+    RDPID {
+        dst: Register,
+    },
     RDPKRU,
     RDPMC,
     RDTSC,
     RDTSCP,
+    RDRAND {
+        dst: Register,
+    },
+    RDSEED {
+        dst: Register,
+    },
     RET,
     SAR {
         dst: Operand,
@@ -641,6 +794,14 @@ pub enum Instruction {
     TEST {
         src_1: Operand,
         src_2: Operand,
+    },
+    TZCNT {
+        dst: Operand,
+        src: Operand,
+    },
+    XCHG {
+        dst: Operand,
+        src: Operand,
     },
     XOR {
         dst: Operand,
@@ -748,6 +909,10 @@ impl ModRm {
         self.md == 0 && self.rm == 5
     }
 
+    pub const fn rm_register(&self, rex: bool) -> Register {
+        parse_register(self.rm, rex).expect("ModR/M:rm should be less than 8")
+    }
+
     /// Parse the `reg` field as an `r64` operand.
     pub const fn r64_reg_operand(&self, rex: Option<Rex>) -> Operand {
         let rex_b = match rex {
@@ -777,9 +942,7 @@ impl ModRm {
                 disp: 0,
             }
         } else {
-            Operand::Register(
-                parse_register(self.rm, rex_b).expect("ModR/M:rm should be less than 8"),
-            )
+            Operand::Register(self.rm_register(rex_b))
         }
     }
 }
