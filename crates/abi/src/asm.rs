@@ -172,19 +172,45 @@ impl<'a> Disassembler<'a> {
                     offset: ImmediateValue::I8(i8::from_le_bytes([self.advance()?])),
                 })
             }
-            // Group 1
-            0x83 => {
+            // Immediate Group 1
+            0x80..=0x83 => {
+                if opcode == 0x82 {
+                    // Not encodable in 64-bit mode.
+                    return Err(DisassemblyError::InvalidByte);
+                }
                 let modrm = ModRm::new(self.advance()?);
+                let dst = modrm.rm64_rm_operand(rex, true);
+                let src = Operand::ImmediateValue(match opcode {
+                    0x80 | 0x83 => ImmediateValue::I8(i8::from_le_bytes([self.advance()?])),
+                    _ => ImmediateValue::I32(i32::from_le_bytes([
+                        self.advance()?,
+                        self.advance()?,
+                        self.advance()?,
+                        self.advance()?,
+                    ])),
+                });
                 match modrm.reg {
-                    // ADC r/m64, imm8
-                    0x2 => {
-                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
-                        Ok(Instruction::ADC {
-                            dst: modrm.rm64_rm_operand(rex, true),
-                            src: Operand::ImmediateValue(imm),
-                        })
-                    }
+                    // ADD
+                    0x0 => Ok(Instruction::ADD { dst, src }),
+                    // OR
+                    0x1 => Ok(Instruction::OR { dst, src }),
+                    // ADC
+                    0x2 => Ok(Instruction::ADC { dst, src }),
+                    // SBB
+                    0x3 => Ok(Instruction::SBB { dst, src }),
+                    // AND
+                    0x4 => Ok(Instruction::AND { dst, src }),
+                    // SUB
+                    0x5 => Ok(Instruction::SUB { dst, src }),
+                    // XOR
+                    0x6 => Ok(Instruction::XOR { dst, src }),
+                    // CMP
+                    0x7 => Ok(Instruction::CMP {
+                        src_1: dst,
+                        src_2: src,
+                    }),
 
+                    // This shouldn't be reachable.
                     _ => Err(DisassemblyError::InvalidByte),
                 }
             }
