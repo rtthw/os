@@ -80,7 +80,7 @@ impl<'a> Disassembler<'a> {
             0x0F => self.parse_0f_instruction(rex, f2_prefix, f3_prefix),
             // SBB AL, imm8
             0x1C => {
-                let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
+                let imm = ImmediateValue::I8(self.advance_i8()?);
                 Ok(Instruction::SBB {
                     dst: Operand::Register(Register::RAX),
                     src: Operand::ImmediateValue(imm),
@@ -145,31 +145,19 @@ impl<'a> Disassembler<'a> {
             // POPA/POPAD
             0x61 => Err(DisassemblyError::InvalidByte),
             // PUSH imm32
-            0x68 => {
-                let imm = ImmediateValue::I32(i32::from_le_bytes([
-                    self.advance()?,
-                    self.advance()?,
-                    self.advance()?,
-                    self.advance()?,
-                ]));
-
-                Ok(Instruction::PUSH {
-                    operand: Operand::ImmediateValue(imm),
-                })
-            }
+            0x68 => Ok(Instruction::PUSH {
+                operand: Operand::ImmediateValue(ImmediateValue::I32(self.advance_i32()?)),
+            }),
             // PUSH imm8
-            0x6A => {
-                let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
-                Ok(Instruction::PUSH {
-                    operand: Operand::ImmediateValue(imm),
-                })
-            }
+            0x6A => Ok(Instruction::PUSH {
+                operand: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
+            }),
             // Jcc rel8
             0x70..=0x7F => {
                 let cc = ConditionCode::new(opcode & 0x0F).ok_or(DisassemblyError::InvalidByte)?;
                 Ok(Instruction::JCC {
                     cc,
-                    offset: ImmediateValue::I8(i8::from_le_bytes([self.advance()?])),
+                    offset: ImmediateValue::I8(self.advance_i8()?),
                 })
             }
             // Immediate Group 1
@@ -181,13 +169,8 @@ impl<'a> Disassembler<'a> {
                 let modrm = ModRm::new(self.advance()?);
                 let dst = self.parse_rm64_operand(modrm, rex, true)?;
                 let src = Operand::ImmediateValue(match opcode {
-                    0x80 | 0x83 => ImmediateValue::I8(i8::from_le_bytes([self.advance()?])),
-                    _ => ImmediateValue::I32(i32::from_le_bytes([
-                        self.advance()?,
-                        self.advance()?,
-                        self.advance()?,
-                        self.advance()?,
-                    ])),
+                    0x80 | 0x83 => ImmediateValue::I8(self.advance_i8()?),
+                    _ => ImmediateValue::I32(self.advance_i32()?),
                 });
                 match modrm.reg {
                     // ADD
@@ -303,23 +286,9 @@ impl<'a> Disassembler<'a> {
                     parse_register(opcode & 7, rex.is_some_and(|rex| rex.b())).unwrap(),
                 );
                 let src = Operand::ImmediateValue(if rex.is_some() {
-                    ImmediateValue::I64(i64::from_le_bytes([
-                        self.advance()?,
-                        self.advance()?,
-                        self.advance()?,
-                        self.advance()?,
-                        self.advance()?,
-                        self.advance()?,
-                        self.advance()?,
-                        self.advance()?,
-                    ]))
+                    ImmediateValue::I64(self.advance_i64()?)
                 } else {
-                    ImmediateValue::I32(i32::from_le_bytes([
-                        self.advance()?,
-                        self.advance()?,
-                        self.advance()?,
-                        self.advance()?,
-                    ]))
+                    ImmediateValue::I32(self.advance_i32()?)
                 });
 
                 Ok(Instruction::MOV { src, dst })
@@ -329,29 +298,20 @@ impl<'a> Disassembler<'a> {
                 let modrm = ModRm::new(self.advance()?);
                 match modrm.reg {
                     // SHL r/m8, imm8
-                    0x4 => {
-                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
-                        Ok(Instruction::SHL {
-                            dst: self.parse_rm64_operand(modrm, rex, true)?,
-                            src: Operand::ImmediateValue(imm),
-                        })
-                    }
+                    0x4 => Ok(Instruction::SHL {
+                        dst: self.parse_rm64_operand(modrm, rex, true)?,
+                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
+                    }),
                     // SHR r/m8, imm8
-                    0x5 => {
-                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
-                        Ok(Instruction::SHR {
-                            dst: self.parse_rm64_operand(modrm, rex, true)?,
-                            src: Operand::ImmediateValue(imm),
-                        })
-                    }
+                    0x5 => Ok(Instruction::SHR {
+                        dst: self.parse_rm64_operand(modrm, rex, true)?,
+                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
+                    }),
                     // SAR r/m8, imm8
-                    0x7 => {
-                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
-                        Ok(Instruction::SAR {
-                            dst: self.parse_rm64_operand(modrm, rex, true)?,
-                            src: Operand::ImmediateValue(imm),
-                        })
-                    }
+                    0x7 => Ok(Instruction::SAR {
+                        dst: self.parse_rm64_operand(modrm, rex, true)?,
+                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
+                    }),
 
                     _ => Err(DisassemblyError::InvalidByte),
                 }
@@ -361,29 +321,20 @@ impl<'a> Disassembler<'a> {
                 let modrm = ModRm::new(self.advance()?);
                 match modrm.reg {
                     // SHL r/m64, imm8
-                    0x4 => {
-                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
-                        Ok(Instruction::SHL {
-                            dst: self.parse_rm64_operand(modrm, rex, true)?,
-                            src: Operand::ImmediateValue(imm),
-                        })
-                    }
+                    0x4 => Ok(Instruction::SHL {
+                        dst: self.parse_rm64_operand(modrm, rex, true)?,
+                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
+                    }),
                     // SHR r/m64, imm8
-                    0x5 => {
-                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
-                        Ok(Instruction::SHR {
-                            dst: self.parse_rm64_operand(modrm, rex, true)?,
-                            src: Operand::ImmediateValue(imm),
-                        })
-                    }
+                    0x5 => Ok(Instruction::SHR {
+                        dst: self.parse_rm64_operand(modrm, rex, true)?,
+                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
+                    }),
                     // SAR r/m64, imm8
-                    0x7 => {
-                        let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
-                        Ok(Instruction::SAR {
-                            dst: self.parse_rm64_operand(modrm, rex, true)?,
-                            src: Operand::ImmediateValue(imm),
-                        })
-                    }
+                    0x7 => Ok(Instruction::SAR {
+                        dst: self.parse_rm64_operand(modrm, rex, true)?,
+                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
+                    }),
 
                     _ => Err(DisassemblyError::InvalidByte),
                 }
@@ -400,26 +351,20 @@ impl<'a> Disassembler<'a> {
             0xCC => Ok(Instruction::INT3),
             // INT imm8
             0xCD => Ok(Instruction::INT {
-                vector: ImmediateValue::I8(i8::from_le_bytes([self.advance()?])),
+                vector: ImmediateValue::I8(self.advance_i8()?),
             }),
             // INTO (Invalid in 64-bit mode)
             0xCE => Err(DisassemblyError::InvalidByte),
             // IN AL/AX/EAX, imm8
-            0xE4..=0xE5 => {
-                let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
-                Ok(Instruction::IN {
-                    dst: Register::RAX,
-                    port: Operand::ImmediateValue(imm),
-                })
-            }
+            0xE4..=0xE5 => Ok(Instruction::IN {
+                dst: Register::RAX,
+                port: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
+            }),
             // OUT imm8, AL/AX/EAX
-            0xE6..=0xE7 => {
-                let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
-                Ok(Instruction::IN {
-                    dst: Register::RAX,
-                    port: Operand::ImmediateValue(imm),
-                })
-            }
+            0xE6..=0xE7 => Ok(Instruction::IN {
+                dst: Register::RAX,
+                port: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
+            }),
             // JMP rel32
             0xE9 => {
                 let imm = ImmediateValue::I32(i32::from_le_bytes([
@@ -434,12 +379,9 @@ impl<'a> Disassembler<'a> {
             }
             0xEA => Err(DisassemblyError::InvalidByte),
             // JMP rel8
-            0xEB => {
-                let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
-                Ok(Instruction::JMP {
-                    operand: Operand::ImmediateValue(imm),
-                })
-            }
+            0xEB => Ok(Instruction::JMP {
+                operand: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
+            }),
             // IN AL/AX/EAX, DX
             0xEC..=0xED => Ok(Instruction::IN {
                 dst: Register::RAX,
@@ -551,6 +493,19 @@ impl<'a> Disassembler<'a> {
 
     fn advance_i32(&mut self) -> Result<i32, DisassemblyError> {
         Ok(i32::from_le_bytes([
+            self.advance()?,
+            self.advance()?,
+            self.advance()?,
+            self.advance()?,
+        ]))
+    }
+
+    fn advance_i64(&mut self) -> Result<i64, DisassemblyError> {
+        Ok(i64::from_le_bytes([
+            self.advance()?,
+            self.advance()?,
+            self.advance()?,
+            self.advance()?,
             self.advance()?,
             self.advance()?,
             self.advance()?,
