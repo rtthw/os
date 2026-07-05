@@ -56,24 +56,24 @@ impl<'a> Disassembler<'a> {
             0x01 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::ADD {
-                    dst: modrm.rm64_rm_operand(rex),
-                    src: modrm.r64_reg_operand(rex),
+                    dst: modrm.rm64_rm_operand(rex, true),
+                    src: modrm.r64_reg_operand(rex, true),
                 })
             }
             // OR r/m64, r64
             0x09 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::OR {
-                    dst: modrm.rm64_rm_operand(rex),
-                    src: modrm.r64_reg_operand(rex),
+                    dst: modrm.rm64_rm_operand(rex, true),
+                    src: modrm.r64_reg_operand(rex, true),
                 })
             }
             // OR r64, r/m64
             0x0B => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::OR {
-                    dst: modrm.r64_reg_operand(rex),
-                    src: modrm.rm64_rm_operand(rex),
+                    dst: modrm.r64_reg_operand(rex, true),
+                    src: modrm.rm64_rm_operand(rex, true),
                 })
             }
             // 0F xx
@@ -90,40 +90,40 @@ impl<'a> Disassembler<'a> {
             0x21 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::AND {
-                    dst: modrm.rm64_rm_operand(rex),
-                    src: modrm.r64_reg_operand(rex),
+                    dst: modrm.rm64_rm_operand(rex, true),
+                    src: modrm.r64_reg_operand(rex, true),
                 })
             }
             // AND r64, r/m64
             0x23 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::AND {
-                    dst: modrm.r64_reg_operand(rex),
-                    src: modrm.rm64_rm_operand(rex),
+                    dst: modrm.r64_reg_operand(rex, true),
+                    src: modrm.rm64_rm_operand(rex, true),
                 })
             }
             // SUB r/m64, r64
             0x29 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::SUB {
-                    dst: modrm.rm64_rm_operand(rex),
-                    src: modrm.r64_reg_operand(rex),
+                    dst: modrm.rm64_rm_operand(rex, true),
+                    src: modrm.r64_reg_operand(rex, true),
                 })
             }
             // XOR r/m64, r64
             0x31 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::XOR {
-                    dst: modrm.rm64_rm_operand(rex),
-                    src: modrm.r64_reg_operand(rex),
+                    dst: modrm.rm64_rm_operand(rex, true),
+                    src: modrm.r64_reg_operand(rex, true),
                 })
             }
             // CMP r/m64, r64
             0x39 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::CMP {
-                    src_1: modrm.rm64_rm_operand(rex),
-                    src_2: modrm.r64_reg_operand(rex),
+                    src_1: modrm.rm64_rm_operand(rex, true),
+                    src_2: modrm.r64_reg_operand(rex, true),
                 })
             }
             // 4X opcodes are not encodable in 64-bit mode.
@@ -131,13 +131,13 @@ impl<'a> Disassembler<'a> {
             // PUSH r64
             0x50..=0x57 => Ok(Instruction::PUSH {
                 operand: Operand::Register(
-                    parse_register(opcode & 7, rex.is_some_and(|rex| rex.b())).unwrap(),
+                    parse_register(opcode & 7, rex.is_some_and(|rex| rex.r())).unwrap(),
                 ),
             }),
             // POP r64
             0x58..=0x5F => Ok(Instruction::POP {
                 operand: Operand::Register(
-                    parse_register(opcode & 7, rex.is_some_and(|rex| rex.b())).unwrap(),
+                    parse_register(opcode & 7, rex.is_some_and(|rex| rex.r())).unwrap(),
                 ),
             }),
             // PUSHA/PUSHAD
@@ -180,7 +180,7 @@ impl<'a> Disassembler<'a> {
                     0x2 => {
                         let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
                         Ok(Instruction::ADC {
-                            dst: modrm.rm64_rm_operand(rex),
+                            dst: modrm.rm64_rm_operand(rex, true),
                             src: Operand::ImmediateValue(imm),
                         })
                     }
@@ -192,64 +192,64 @@ impl<'a> Disassembler<'a> {
             0x84 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::TEST {
-                    src_1: modrm.rm64_rm_operand(rex),
-                    src_2: modrm.r64_reg_operand(rex),
+                    src_1: modrm.rm64_rm_operand(rex, true),
+                    src_2: modrm.r64_reg_operand(rex, true),
                 })
             }
             // TEST r/m64, r64
             0x85 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::TEST {
-                    src_1: modrm.rm64_rm_operand(rex),
-                    src_2: modrm.r64_reg_operand(rex),
+                    src_1: modrm.rm64_rm_operand(rex, true),
+                    src_2: modrm.r64_reg_operand(rex, true),
                 })
             }
             // XCHG r/m8, r8
             0x86 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::XCHG {
-                    dst: modrm.rm64_rm_operand(rex),
-                    src: modrm.r64_reg_operand(rex),
+                    dst: modrm.rm64_rm_operand(rex, true),
+                    src: modrm.r64_reg_operand(rex, true),
                 })
             }
             // XCHG r/m64, r64
             0x87 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::XCHG {
-                    dst: modrm.rm64_rm_operand(rex),
-                    src: modrm.r64_reg_operand(rex),
+                    dst: modrm.rm64_rm_operand(rex, true),
+                    src: modrm.r64_reg_operand(rex, true),
                 })
             }
             // MOV r/m8, r8
             0x88 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::MOV {
-                    dst: modrm.rm64_rm_operand(rex),
-                    src: modrm.r64_reg_operand(rex),
+                    dst: modrm.rm64_rm_operand(rex, true),
+                    src: modrm.r64_reg_operand(rex, true),
                 })
             }
             // MOV r/m64, r64
             0x89 => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::MOV {
-                    dst: modrm.rm64_rm_operand(rex),
-                    src: modrm.r64_reg_operand(rex),
+                    dst: modrm.rm64_rm_operand(rex, true),
+                    src: modrm.r64_reg_operand(rex, true),
                 })
             }
             // MOV r8, r/m8
             0x8A => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::MOV {
-                    dst: modrm.r64_reg_operand(rex),
-                    src: modrm.rm64_rm_operand(rex),
+                    dst: modrm.r64_reg_operand(rex, false),
+                    src: modrm.rm64_rm_operand(rex, true),
                 })
             }
             // MOV r64, r/m64
             0x8B => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::MOV {
-                    dst: modrm.r64_reg_operand(rex),
-                    src: modrm.rm64_rm_operand(rex),
+                    dst: modrm.r64_reg_operand(rex, false),
+                    src: modrm.rm64_rm_operand(rex, true),
                 })
             }
             // LEA r64, m
@@ -306,7 +306,7 @@ impl<'a> Disassembler<'a> {
                     0x4 => {
                         let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
                         Ok(Instruction::SHL {
-                            dst: modrm.rm64_rm_operand(rex),
+                            dst: modrm.rm64_rm_operand(rex, true),
                             src: Operand::ImmediateValue(imm),
                         })
                     }
@@ -314,7 +314,7 @@ impl<'a> Disassembler<'a> {
                     0x5 => {
                         let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
                         Ok(Instruction::SHR {
-                            dst: modrm.rm64_rm_operand(rex),
+                            dst: modrm.rm64_rm_operand(rex, true),
                             src: Operand::ImmediateValue(imm),
                         })
                     }
@@ -322,7 +322,7 @@ impl<'a> Disassembler<'a> {
                     0x7 => {
                         let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
                         Ok(Instruction::SAR {
-                            dst: modrm.rm64_rm_operand(rex),
+                            dst: modrm.rm64_rm_operand(rex, true),
                             src: Operand::ImmediateValue(imm),
                         })
                     }
@@ -338,7 +338,7 @@ impl<'a> Disassembler<'a> {
                     0x4 => {
                         let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
                         Ok(Instruction::SHL {
-                            dst: modrm.rm64_rm_operand(rex),
+                            dst: modrm.rm64_rm_operand(rex, true),
                             src: Operand::ImmediateValue(imm),
                         })
                     }
@@ -346,7 +346,7 @@ impl<'a> Disassembler<'a> {
                     0x5 => {
                         let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
                         Ok(Instruction::SHR {
-                            dst: modrm.rm64_rm_operand(rex),
+                            dst: modrm.rm64_rm_operand(rex, true),
                             src: Operand::ImmediateValue(imm),
                         })
                     }
@@ -354,7 +354,7 @@ impl<'a> Disassembler<'a> {
                     0x7 => {
                         let imm = ImmediateValue::I8(i8::from_le_bytes([self.advance()?]));
                         Ok(Instruction::SAR {
-                            dst: modrm.rm64_rm_operand(rex),
+                            dst: modrm.rm64_rm_operand(rex, true),
                             src: Operand::ImmediateValue(imm),
                         })
                     }
@@ -485,19 +485,19 @@ impl<'a> Disassembler<'a> {
                 match modrm.reg {
                     // INC r/m64 @ ModRM:r/m (r, w)
                     0x0 => Ok(Instruction::INC {
-                        operand: modrm.rm64_rm_operand(rex),
+                        operand: modrm.rm64_rm_operand(rex, true),
                     }),
                     // CALL m16:64 @ ModRM:r/m (r)
                     0x2 => Ok(Instruction::CALL {
-                        operand: modrm.rm64_rm_operand(rex),
+                        operand: modrm.rm64_rm_operand(rex, false),
                     }),
                     // JMP r/m64 @ ModRM:r/m (r)
                     0x4 => Ok(Instruction::JMP {
-                        operand: modrm.rm64_rm_operand(rex),
+                        operand: modrm.rm64_rm_operand(rex, false),
                     }),
                     // JMP m16:64 @ ModRM:r/m (r)
                     0x5 => Ok(Instruction::JMP {
-                        operand: modrm.rm64_rm_operand(rex),
+                        operand: modrm.rm64_rm_operand(rex, false),
                     }),
 
                     _ => Err(DisassemblyError::InvalidByte),
@@ -567,8 +567,8 @@ impl<'a> Disassembler<'a> {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::CMOVCC {
                     cc,
-                    dst: modrm.r64_reg_operand(rex),
-                    src: modrm.rm64_rm_operand(rex),
+                    dst: modrm.r64_reg_operand(rex, false),
+                    src: modrm.rm64_rm_operand(rex, false),
                 })
             }
             // SETcc r/m8
@@ -577,7 +577,7 @@ impl<'a> Disassembler<'a> {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::SETCC {
                     cc,
-                    byte: modrm.rm64_rm_operand(rex),
+                    byte: modrm.rm64_rm_operand(rex, false),
                 })
             }
             // CPUID
@@ -586,32 +586,32 @@ impl<'a> Disassembler<'a> {
             0xBC if f3_prefix => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::TZCNT {
-                    dst: modrm.r64_reg_operand(rex),
-                    src: modrm.rm64_rm_operand(rex),
+                    dst: modrm.r64_reg_operand(rex, false),
+                    src: modrm.rm64_rm_operand(rex, false),
                 })
             }
             // BSF r64, r/m64
             0xBC => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::BSF {
-                    dst: modrm.r64_reg_operand(rex),
-                    src: modrm.rm64_rm_operand(rex),
+                    dst: modrm.r64_reg_operand(rex, false),
+                    src: modrm.rm64_rm_operand(rex, false),
                 })
             }
             // LZCNT r64, r/m64
             0xBD if f3_prefix => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::LZCNT {
-                    dst: modrm.r64_reg_operand(rex),
-                    src: modrm.rm64_rm_operand(rex),
+                    dst: modrm.r64_reg_operand(rex, false),
+                    src: modrm.rm64_rm_operand(rex, false),
                 })
             }
             // BSR r64, r/m64
             0xBD => {
                 let modrm = ModRm::new(self.advance()?);
                 Ok(Instruction::BSR {
-                    dst: modrm.r64_reg_operand(rex),
-                    src: modrm.rm64_rm_operand(rex),
+                    dst: modrm.r64_reg_operand(rex, false),
+                    src: modrm.rm64_rm_operand(rex, false),
                 })
             }
 
@@ -914,20 +914,30 @@ impl ModRm {
     }
 
     /// Parse the `reg` field as an `r64` operand.
-    pub const fn r64_reg_operand(&self, rex: Option<Rex>) -> Operand {
-        let rex_b = match rex {
-            Some(rex) => rex.b(),
+    pub const fn r64_reg_operand(&self, rex: Option<Rex>, use_rex_r: bool) -> Operand {
+        let rex = match rex {
+            Some(rex) => {
+                if use_rex_r {
+                    rex.r()
+                } else {
+                    rex.b()
+                }
+            }
             None => false,
         };
-        Operand::Register(
-            parse_register(self.reg, rex_b).expect("ModR/M:reg should be less than 8"),
-        )
+        Operand::Register(parse_register(self.reg, rex).expect("ModR/M:reg should be less than 8"))
     }
 
     /// Parse the `rm` field as an `r/m64` operand.
-    pub const fn rm64_rm_operand(&self, rex: Option<Rex>) -> Operand {
-        let rex_b = match rex {
-            Some(rex) => rex.b(),
+    pub const fn rm64_rm_operand(&self, rex: Option<Rex>, use_rex_r: bool) -> Operand {
+        let rex = match rex {
+            Some(rex) => {
+                if use_rex_r {
+                    rex.r()
+                } else {
+                    rex.b()
+                }
+            }
             None => false,
         };
         if self.is_memory() {
@@ -937,12 +947,12 @@ impl ModRm {
                 } else if self.is_rip_relative() {
                     Some(Register::RIP)
                 } else {
-                    parse_register(self.rm, rex_b)
+                    parse_register(self.rm, rex)
                 },
                 disp: 0,
             }
         } else {
-            Operand::Register(self.rm_register(rex_b))
+            Operand::Register(self.rm_register(rex))
         }
     }
 }
