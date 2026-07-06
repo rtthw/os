@@ -1,5 +1,7 @@
 //! # x86 Assembly
 
+
+
 pub struct Disassembler<'a> {
     pub input: &'a [u8],
     pub offset: usize,
@@ -16,7 +18,8 @@ impl<'a> Disassembler<'a> {
         }
 
         let opcode: u8;
-        let mut lock_prefix = false;
+        // let mut lock_prefix = false;
+        let mut size_prefix = false;
         let mut f2_prefix = false;
         let mut f3_prefix = false;
         let mut rex: Option<Rex> = None;
@@ -24,8 +27,15 @@ impl<'a> Disassembler<'a> {
         loop {
             let byte = self.advance()?;
             match byte {
+                // VEX
+                0xC4 | 0xC5 => {
+                    return Err(DisassemblyError::UnsupportedOpcode { opcode: byte });
+                }
+                0x66 => {
+                    size_prefix = true;
+                }
                 0xF0 => {
-                    lock_prefix = true;
+                    return Err(DisassemblyError::UnsupportedOpcode { opcode: byte });
                 }
                 0xF2 => {
                     f2_prefix = true;
@@ -45,10 +55,6 @@ impl<'a> Disassembler<'a> {
                     break;
                 }
             }
-        }
-
-        if lock_prefix {
-            todo!("Handle LOCK prefix");
         }
 
         match opcode {
@@ -284,6 +290,10 @@ impl<'a> Disassembler<'a> {
             0x98 => {
                 todo!("CBW/CWDE/CDQE")
             }
+            // CWD/CDQ/CQO
+            0x99 => {
+                todo!("CWD/CDQ/CQO")
+            }
             // MOV r64, imm
             0xB8..=0xBF => {
                 let dst = Operand::Register(
@@ -298,55 +308,24 @@ impl<'a> Disassembler<'a> {
                 Ok(Instruction::MOV { src, dst })
             }
             // Group 2
-            0xC0 => {
+            0xC0 | 0xC1 => {
                 let modrm = ModRm::new(self.advance()?);
+                let dst = self.parse_rm64_operand(modrm, rex, true)?;
+                let src = Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?));
                 match modrm.reg {
                     // SHL r/m8, imm8
-                    0x4 => Ok(Instruction::SHL {
-                        dst: self.parse_rm64_operand(modrm, rex, true)?,
-                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
-                    }),
+                    0x4 => Ok(Instruction::SHL { dst, src }),
                     // SHR r/m8, imm8
-                    0x5 => Ok(Instruction::SHR {
-                        dst: self.parse_rm64_operand(modrm, rex, true)?,
-                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
-                    }),
+                    0x5 => Ok(Instruction::SHR { dst, src }),
                     // SAR r/m8, imm8
-                    0x7 => Ok(Instruction::SAR {
-                        dst: self.parse_rm64_operand(modrm, rex, true)?,
-                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
-                    }),
+                    0x7 => Ok(Instruction::SAR { dst, src }),
 
                     _ => Err(DisassemblyError::InvalidByte),
                 }
             }
-            // Group 2
-            0xC1 => {
-                let modrm = ModRm::new(self.advance()?);
-                match modrm.reg {
-                    // SHL r/m64, imm8
-                    0x4 => Ok(Instruction::SHL {
-                        dst: self.parse_rm64_operand(modrm, rex, true)?,
-                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
-                    }),
-                    // SHR r/m64, imm8
-                    0x5 => Ok(Instruction::SHR {
-                        dst: self.parse_rm64_operand(modrm, rex, true)?,
-                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
-                    }),
-                    // SAR r/m64, imm8
-                    0x7 => Ok(Instruction::SAR {
-                        dst: self.parse_rm64_operand(modrm, rex, true)?,
-                        src: Operand::ImmediateValue(ImmediateValue::I8(self.advance_i8()?)),
-                    }),
-
-                    _ => Err(DisassemblyError::InvalidByte),
-                }
-            }
-            // RET
+            // RET imm16
             0xC2 | 0xCA => {
-                let _ = self.advance()?;
-                let _ = self.advance()?;
+                self.offset += 2;
                 Ok(Instruction::RET)
             }
             // RET
@@ -403,33 +382,33 @@ impl<'a> Disassembler<'a> {
             // CMC
             0xF5 => Ok(Instruction::CMC),
             // Group 3
-            0xF6 => {
+            0xF6 | 0xF7 => {
                 let modrm = ModRm::new(self.advance()?);
+                let operand = self.parse_rm64_operand(modrm, rex, true)?;
                 match modrm.reg {
-                    // NOT r/m8
-                    0x2 => todo!("NOT r/m8 (F6 /2)"),
-                    // NEG r/m8
-                    0x3 => todo!("NEG r/m8 (F6 /3)"),
-                    // IMUL r/m8
-                    0x5 => todo!("IMUL r/m8 (F6 /5)"),
-                    // IDIV r/m8
-                    0x7 => todo!("IDIV r/m8 (F6 /7)"),
-
-                    _ => Err(DisassemblyError::InvalidByte),
-                }
-            }
-            // Group 3
-            0xF7 => {
-                let modrm = ModRm::new(self.advance()?);
-                match modrm.reg {
-                    // NOT r/m64
-                    0x2 => todo!("NOT r/m64 (F7 /2)"),
-                    // NEG r/m64
-                    0x3 => todo!("NEG r/m64 (F7 /3)"),
-                    // IMUL r/m64
-                    0x5 => todo!("IMUL r/m64 (F7 /5)"),
-                    // IDIV r/m64
-                    0x7 => todo!("IDIV r/m64 (F7 /7)"),
+                    // TEST r/m
+                    0x0 => Ok(Instruction::TEST {
+                        src_1: operand,
+                        src_2: Operand::ImmediateValue(if opcode == 0xF6 {
+                            ImmediateValue::I8(self.advance_i8()?)
+                        } else if rex.is_some_and(|rex| rex.w()) {
+                            ImmediateValue::I64(self.advance_i64()?)
+                        } else if size_prefix {
+                            ImmediateValue::I16(self.advance_i16()?)
+                        } else {
+                            ImmediateValue::I32(self.advance_i32()?)
+                        }),
+                    }),
+                    // NOT r/m
+                    0x2 => Ok(Instruction::NOT { operand }),
+                    // NEG r/m
+                    0x3 => Ok(Instruction::NEG { operand }),
+                    // MUL r/m
+                    0x4 => Ok(Instruction::MUL { operand }),
+                    // IMUL r/m
+                    0x5 => Ok(Instruction::IMUL { operand }),
+                    // IDIV r/m
+                    0x7 => Ok(Instruction::IDIV { operand }),
 
                     _ => Err(DisassemblyError::InvalidByte),
                 }
@@ -448,29 +427,37 @@ impl<'a> Disassembler<'a> {
             0xFD => Ok(Instruction::STD),
             // Group 4
             0xFE => {
-                todo!("INC/DEC")
+                let modrm = ModRm::new(self.advance()?);
+                let operand = self.parse_rm64_operand(modrm, rex, true)?;
+                match modrm.reg {
+                    // INC r/m8 @ ModRM:r/m (r, w)
+                    0x0 => Ok(Instruction::INC { operand }),
+                    // DEC r/m8 @ ModRM:r/m (r, w)
+                    0x1 => Ok(Instruction::DEC { operand }),
+
+                    _ => Err(DisassemblyError::InvalidByte),
+                }
             }
             // Group 5
             // FIXME: This should differentiate between JMP near and JMP far (FF /4 and FF /5).
             0xFF => {
                 let modrm = ModRm::new(self.advance()?);
+                let operand = self.parse_rm64_operand(modrm, rex, true)?;
                 match modrm.reg {
                     // INC r/m64 @ ModRM:r/m (r, w)
-                    0x0 => Ok(Instruction::INC {
-                        operand: self.parse_rm64_operand(modrm, rex, true)?,
-                    }),
+                    0x0 => Ok(Instruction::INC { operand }),
+                    // DEC r/m64 @ ModRM:r/m (r, w)
+                    0x1 => Ok(Instruction::DEC { operand }),
+                    // CALL r/m64 @ ModRM:r/m (r)
+                    0x2 => Ok(Instruction::CALL { operand }),
                     // CALL m16:64 @ ModRM:r/m (r)
-                    0x2 => Ok(Instruction::CALL {
-                        operand: self.parse_rm64_operand(modrm, rex, false)?,
-                    }),
+                    0x3 => Ok(Instruction::CALL { operand }),
                     // JMP r/m64 @ ModRM:r/m (r)
-                    0x4 => Ok(Instruction::JMP {
-                        operand: self.parse_rm64_operand(modrm, rex, false)?,
-                    }),
+                    0x4 => Ok(Instruction::JMP { operand }),
                     // JMP m16:64 @ ModRM:r/m (r)
-                    0x5 => Ok(Instruction::JMP {
-                        operand: self.parse_rm64_operand(modrm, rex, false)?,
-                    }),
+                    0x5 => Ok(Instruction::JMP { operand }),
+                    // PUSH r/m64 @ ModRM:r/m (r)
+                    0x6 => Ok(Instruction::PUSH { operand }),
 
                     _ => Err(DisassemblyError::InvalidByte),
                 }
@@ -493,6 +480,10 @@ impl<'a> Disassembler<'a> {
 
     fn advance_i8(&mut self) -> Result<i8, DisassemblyError> {
         Ok(i8::from_le_bytes([self.advance()?]))
+    }
+
+    fn advance_i16(&mut self) -> Result<i16, DisassemblyError> {
+        Ok(i16::from_le_bytes([self.advance()?, self.advance()?]))
     }
 
     fn advance_i32(&mut self) -> Result<i32, DisassemblyError> {
@@ -525,6 +516,11 @@ impl<'a> Disassembler<'a> {
     ) -> Result<Instruction, DisassemblyError> {
         let opcode = self.advance()?;
         match opcode {
+            // Group 6
+            0x00 => {
+                todo!("0F 00 {opcode:x}")
+            }
+            // Group 7
             0x01 => {
                 let next_byte = self.advance()?;
                 match next_byte {
@@ -742,7 +738,16 @@ pub enum Instruction {
         src_2: Operand,
     },
     CPUID,
+    DEC {
+        operand: Operand,
+    },
     HLT,
+    IDIV {
+        operand: Operand,
+    },
+    IMUL {
+        operand: Operand,
+    },
     IN {
         dst: Register,
         port: Operand,
@@ -787,6 +792,9 @@ pub enum Instruction {
         operand: Operand,
     },
     NOP,
+    NOT {
+        operand: Operand,
+    },
     OR {
         dst: Operand,
         src: Operand,
