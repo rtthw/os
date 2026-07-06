@@ -8,7 +8,7 @@ use {
     heap::{Allocator, alloc::alloc::alloc_zeroed, string::ToString as _},
     input::{GLOBAL_INPUT_QUEUE, InputEvent},
     math::{Area, Point, Size},
-    process::{ShellRequest, ShellResponse},
+    process::{ShellInput, ShellOutput},
     spin_mutex::Mutex,
 };
 
@@ -42,7 +42,7 @@ static ALLOCATOR: Allocator = Allocator::new();
 
 static SERIAL2: Mutex<uart_16550::Device> = Mutex::new(uart_16550::Device::COM2);
 
-pub static INPUT: process::ShellInput = process::ShellInput::new();
+pub static QUEUE: process::ShellQueue = process::ShellQueue::new();
 
 pub extern "C" fn main() -> ! {
     unsafe {
@@ -204,20 +204,20 @@ pub extern "C" fn main() -> ! {
 
         process::defer();
 
-        while let Some(request) = INPUT.requests.lock().pop() {
+        while let Some(input) = QUEUE.input.lock().pop() {
             // log::info!("Servicing request {request:x?}");
-            match request {
-                ShellRequest::AccessModule {
+            match input {
+                ShellInput::AccessModuleRequest {
                     addr,
                     process_id,
                     process_name: _,
                     module_name: _,
                     section_name: _,
                 } => {
-                    INPUT
-                        .responses
+                    QUEUE
+                        .output
                         .lock()
-                        .push(ShellResponse::AllowModuleAccess { addr, process_id });
+                        .push(ShellOutput::AllowModuleAccess { addr, process_id });
                 }
             }
         }

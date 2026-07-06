@@ -365,15 +365,12 @@ extern "C" fn __page_fault_handler(context: PageFaultContext) -> ! {
                 }
             }
             AccessPolicy::Normal => {
-                let process_id = process.id;
-                let process_name = process::SizedString::new_truncate(&process.name);
-
-                scheduler.block_current(process::ShellRequest::AccessModule {
+                scheduler.block_current(process::ShellInput::AccessModuleRequest {
                     addr: addr.to_raw(),
                     // pages: mapping.pages,
                     // flags: mapping.flags,
-                    process_id,
-                    process_name,
+                    process_id: process.id,
+                    process_name: process::SizedString::new_truncate(&process.name),
                     module_name: process::SizedString::new_truncate(
                         &section.owner.upgrade().unwrap().lock().name,
                     ),

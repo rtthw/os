@@ -20,7 +20,7 @@ use {
     },
     log::{debug, info},
     memory_types::{Address, AddressDomain, PAGE_SIZE, PageRange, PageTableFlags},
-    process::{AccessPolicy, Priority, ShellInput, ShellRequest, ShellResponse},
+    process::{AccessPolicy, Priority, ShellInput, ShellOutput, ShellQueue},
     spin_mutex::Mutex,
     x86_64::{
         instructions::interrupts::without_interrupts, registers::rflags::RFlags,
@@ -104,7 +104,7 @@ pub struct Scheduler {
     current: Option<Process>,
     queue: BTreeMap<Priority, VecDeque<Process>>,
     blocked: VecDeque<Process>,
-    shell_input: Option<(Arc<Mutex<KernelMapping>>, usize)>,
+    shell_queue: Option<(Arc<Mutex<KernelMapping>>, usize)>,
 }
 
 impl Scheduler {
@@ -113,7 +113,7 @@ impl Scheduler {
             current: None,
             queue: BTreeMap::new(),
             blocked: VecDeque::new(),
-            shell_input: None,
+            shell_queue: None,
         }
     }
 
@@ -147,11 +147,11 @@ impl Scheduler {
         });
 
         let shell_input_section = global_loader()
-            .get_section("shell::INPUT")
-            .expect("shell::INPUT should be loaded at this point")
+            .get_section("shell::QUEUE")
+            .expect("shell::QUEUE should be loaded at this point")
             .upgrade()
-            .expect("shell::INPUT dropped before scheduler could access it");
-        self.shell_input = Some((
+            .expect("shell::QUEUE dropped before scheduler could access it");
+        self.shell_queue = Some((
             shell_input_section.mapping.clone(),
             shell_input_section.mapping_offset,
         ));
@@ -175,70 +175,65 @@ impl Scheduler {
     }
 
     fn schedule_next(&mut self) -> ExecutionContext {
-        if !self.blocked.is_empty() {
-            kernel_address_space().enter();
-            if let Some(response) = self
-                .shell_input
-                .as_mut()
-                .and_then(|(mapping, offset)| unsafe {
-                    mapping
-                        .try_lock()
-                        .unwrap()
-                        .as_mut::<ShellInput>(*offset)
-                        .responses
-                        .lock()
-                        .pop()
-                })
-            {
-                match response {
-                    ShellResponse::ExitProcess { code } => {
-                        let process = self
-                            .blocked
-                            .pop_front()
-                            .expect("shell response should correspond to a blocked process");
-                        log::trace!("Exiting `{}` with code {code}...", process.name);
-                    }
-                    ShellResponse::AllowModuleAccess { addr, process_id } => {
-                        let process = self
-                            .blocked
-                            .pop_front()
-                            .expect("shell response should correspond to a blocked process");
-                        assert_eq!(process_id, process.id);
-                        if let Some(section) = global_loader()
-                            .get_section_for_addr(Address::new(addr))
-                            .and_then(|weak| weak.upgrade())
+        // Handle the next queued message from the shell.
+        kernel_address_space().enter();
+        if let Some(output) = self
+            .shell_queue
+            .as_mut()
+            .and_then(|(mapping, offset)| unsafe {
+                mapping
+                    .try_lock()
+                    .unwrap()
+                    .as_mut::<ShellQueue>(*offset)
+                    .output
+                    .lock()
+                    .pop()
+            })
+        {
+            match output {
+                ShellOutput::ExitProcess { code } => {
+                    let process = self
+                        .blocked
+                        .pop_front()
+                        .expect("shell output should correspond to a blocked process");
+                    log::trace!("Exiting `{}` with code {code}...", process.name);
+                }
+                ShellOutput::AllowModuleAccess { addr, process_id } => {
+                    let process = self
+                        .blocked
+                        .pop_front()
+                        .expect("shell output should correspond to a blocked process");
+                    assert_eq!(process_id, process.id);
+                    if let Some(section) = global_loader()
+                        .get_section_for_addr(Address::new(addr))
+                        .and_then(|weak| weak.upgrade())
+                    {
+                        let mapping = section.mapping.lock();
+                        if let Err(error) =
+                            mapping.map_into(&process.address_space, mapping.pages, mapping.flags)
                         {
-                            let mapping = section.mapping.lock();
-                            if let Err(error) = mapping.map_into(
-                                &process.address_space,
-                                mapping.pages,
-                                mapping.flags,
-                            ) {
-                                log::error!(
-                                    "Failed to map `{}` into `{}` at {addr:x}: {error}",
-                                    section.name,
-                                    process.address_space.name(),
-                                );
-                            } else {
-                                self.queue
-                                    .entry(process.priority)
-                                    .or_default()
-                                    .push_back(process);
-                            }
-                        } else {
                             log::error!(
-                                "Got invalid module access response for {process} at {addr:x}",
+                                "Failed to map `{}` into `{}` at {addr:x}: {error}",
+                                section.name,
+                                process.address_space.name(),
                             );
+                        } else {
+                            self.queue
+                                .entry(process.priority)
+                                .or_default()
+                                .push_back(process);
                         }
+                    } else {
+                        log::error!("Got invalid module access output for {process} at {addr:x}",);
                     }
                 }
             }
-            if let Some(current) = &self.current {
-                current.address_space.enter();
-            }
         }
 
-        if self.current.is_none() {
+        // Make sure to (re-)enter the current address space after polling the shell above.
+        if let Some(process) = &self.current {
+            process.address_space.enter();
+        } else {
             let process = self
                 .queue
                 .values_mut()
@@ -281,24 +276,24 @@ impl Scheduler {
         self.add_to_queue(process);
     }
 
-    /// Block the currently running process, and force it to wait on a [`ShellResponse`]
-    /// for the given [`ShellRequest`].
-    pub fn block_current(&mut self, request: ShellRequest) {
+    /// Block the currently running process, and force it to wait on a [`ShellOutput`]
+    /// for the given [`ShellInput`].
+    pub fn block_current(&mut self, request: ShellInput) {
         let process = self
             .current
             .take()
             .expect("current process should be available to be blocked");
-        // log::trace!("Blocking {process} with request {request:x?}...");
+        // log::trace!("Blocking {process} with request {input:x?}...");
         kernel_address_space().enter();
         self.blocked.push_back(process);
-        self.shell_input
+        self.shell_queue
             .as_mut()
             .map(|(mapping, offset)| unsafe {
                 mapping
                     .try_lock()
                     .unwrap()
-                    .as_mut::<ShellInput>(*offset)
-                    .requests
+                    .as_mut::<ShellQueue>(*offset)
+                    .input
                     .lock()
                     .push(request);
             })

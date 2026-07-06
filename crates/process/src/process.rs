@@ -98,30 +98,32 @@ pub enum Priority {
     Idle = 255,
 }
 
+/// The maximum number of requests that can be sent to the shell in between calls to its
+/// request handler. This is not the maximum number of requests that can be pending at a
+/// time.
+const SHELL_INPUT_QUEUE_SIZE: usize = 8;
+
 #[repr(C, align(4096))]
-pub struct ShellInput {
-    pub requests: Mutex<SizedQueue<ShellRequest, 8>>,
-    pub responses: Mutex<SizedQueue<ShellResponse, 8>>,
+pub struct ShellQueue {
+    pub input: Mutex<SizedQueue<ShellInput, SHELL_INPUT_QUEUE_SIZE>>,
+    pub output: Mutex<SizedQueue<ShellOutput, SHELL_INPUT_QUEUE_SIZE>>,
 }
 
-impl ShellInput {
+impl ShellQueue {
     pub const fn new() -> Self {
         Self {
-            requests: Mutex::new(SizedQueue::new()),
-            responses: Mutex::new(SizedQueue::new()),
+            input: Mutex::new(SizedQueue::new()),
+            output: Mutex::new(SizedQueue::new()),
         }
     }
 }
 
-unsafe impl Sync for ShellInput {}
-unsafe impl Send for ShellInput {}
-
 /// A message sent from the kernel to the shell.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
-pub enum ShellRequest {
+pub enum ShellInput {
     /// A process wants to access some module section.
-    AccessModule {
+    AccessModuleRequest {
         addr: usize,
         // pages: PageRange,
         // flags: PageTableFlags,
@@ -135,9 +137,18 @@ pub enum ShellRequest {
 /// A message sent from the shell to the kernel.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
-pub enum ShellResponse {
+pub enum ShellOutput {
     ExitProcess { code: u64 },
     AllowModuleAccess { addr: usize, process_id: u64 },
+}
+
+impl ShellOutput {
+    pub const fn unblocks_process(&self) -> bool {
+        matches!(
+            self,
+            Self::ExitProcess { .. } | Self::AllowModuleAccess { .. }
+        )
+    }
 }
 
 pub struct SizedQueue<T: Sized, const SIZE: usize> {
