@@ -263,7 +263,11 @@ impl<'a> Disassembler<'a> {
             }
             // LEA r64, m
             0x8D => {
-                todo!()
+                let modrm = ModRm::new(self.advance()?);
+                Ok(Instruction::LEA {
+                    dst: modrm.r64_reg_operand(rex, true),
+                    src: self.parse_rm64_operand(modrm, rex, false)?,
+                })
             }
             // PAUSE
             0x90 if f3_prefix => Ok(Instruction::PAUSE),
@@ -1215,6 +1219,10 @@ mod tests {
             0x8b, 0x3c, 0x81,                               // mov  (%rcx,%rax,4),%edi
             0x89, 0x8c, 0x85, 0x18, 0xff, 0xff, 0xff,       // mov  %ecx,-0xe8(%rbp,%rax,4)
             0x48, 0x8b, 0x75, 0xc8,                         // mov  -0x38(%rbp),%rsi
+            0x4c, 0x8d, 0x61, 0xff,                         // lea  -0x1(%rcx),%r12
+            0x4d, 0x8d, 0x6c, 0x24, 0xff,                   // lea  -0x1(%r12),%r13
+            0x4c, 0x8d, 0x2c, 0xd5, 0xd0, 0xfd, 0xff, 0xff, // lea  -0x230(,%rdx,8),%r13
+            0x8d, 0x91, 0x00, 0x00, 0x80, 0x3f,             // lea  0x3f800000(%rcx),%edx
         ];
         let expected = [
             Instruction::MOV {
@@ -1287,6 +1295,42 @@ mod tests {
                     index: None,
                     scale: 1,
                     disp: -0x38,
+                },
+            },
+            Instruction::LEA {
+                dst: Register(R12),
+                src: Memory {
+                    base: Some(RCX),
+                    index: None,
+                    scale: 1,
+                    disp: -0x1,
+                },
+            },
+            Instruction::LEA {
+                dst: Register(R13),
+                src: Memory {
+                    base: Some(R12),
+                    index: None,
+                    scale: 1,
+                    disp: -0x1,
+                },
+            },
+            Instruction::LEA {
+                dst: Register(R13),
+                src: Memory {
+                    base: None,
+                    index: Some(RDX),
+                    scale: 8,
+                    disp: -0x230,
+                },
+            },
+            Instruction::LEA {
+                dst: Register(RDX),
+                src: Memory {
+                    base: Some(RCX),
+                    index: None,
+                    scale: 1,
+                    disp: 0x3f800000,
                 },
             },
         ];
