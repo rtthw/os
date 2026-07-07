@@ -242,6 +242,8 @@ fn run_qemu() -> Result<ExitStatus> {
 
     Ok(Command::new(qemu_program)
         .args([
+            "-cpu",
+            "host,invtsc=on,fma=on,popcnt=on",
             "-accel",
             "kvm",
             "-m",
