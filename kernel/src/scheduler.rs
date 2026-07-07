@@ -198,6 +198,10 @@ impl Scheduler {
                         .expect("shell output should correspond to a blocked process");
                     log::trace!("Exiting `{}` with code {code}...", process.name);
                 }
+                ShellOutput::StartProcess { name } => {
+                    // TODO: Disallow I/O access by default.
+                    self.run_user_process(name.as_str(), None, true, AccessPolicy::Normal);
+                }
                 ShellOutput::AllowModuleAccess { addr, process_id } => {
                     let process = self
                         .blocked

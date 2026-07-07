@@ -8,7 +8,7 @@ use {
     heap::{Allocator, alloc::alloc::alloc_zeroed, string::ToString as _},
     input::{GLOBAL_INPUT_QUEUE, InputEvent},
     math::{Area, Point, Size},
-    process::{ShellInput, ShellOutput},
+    process::{ShellInput, ShellOutput, SizedString},
     spin_mutex::Mutex,
 };
 
@@ -153,6 +153,11 @@ pub extern "C" fn main() -> ! {
         ],
         &mut framebuffer,
     );
+
+    log::info!("Starting input driver...");
+    QUEUE.output.lock().push(ShellOutput::StartProcess {
+        name: SizedString::new_truncate("input_driver"),
+    });
 
     // FIXME: Too many deadlocks here.
     'main_loop: loop {

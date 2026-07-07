@@ -139,6 +139,7 @@ pub enum ShellInput {
 #[repr(C)]
 pub enum ShellOutput {
     ExitProcess { code: u64 },
+    StartProcess { name: SizedString<32> },
     AllowModuleAccess { addr: usize, process_id: u64 },
 }
 

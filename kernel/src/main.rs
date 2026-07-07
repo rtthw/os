@@ -84,9 +84,6 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
     scheduler::with_scheduler(|scheduler| {
         scheduler.run_user_process("shell", None, true, process::AccessPolicy::All);
     });
-    scheduler::with_scheduler(|scheduler| {
-        scheduler.run_user_process("input_driver", None, true, process::AccessPolicy::Normal);
-    });
 
     memory::TRACKER.lock().dump_info();
 
