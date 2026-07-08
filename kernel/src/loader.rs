@@ -17,7 +17,7 @@ use {
     boot_info::BootInfo,
     core::{
         ops::Range,
-        sync::atomic::{AtomicU64, AtomicUsize, Ordering},
+        sync::atomic::{AtomicUsize, Ordering},
     },
     elf::{
         ElfFile, ObjectFileType, SHF_ALLOC, SHF_EXECINSTR, SHF_TLS, SHF_WRITE, SectionData,
@@ -130,13 +130,16 @@ pub fn init(boot_info: &'static BootInfo) {
         .unwrap();
 
     with_symbol_value(
-        "time::MONOTONIC_PERIOD",
-        |mono_period: &mut AtomicU64| unsafe {
-            assert_eq!(mono_period.load(Ordering::SeqCst), 1);
-            mono_period.store(crate::tsc::TSC_PERIOD, Ordering::SeqCst);
-            assert_eq!(mono_period.load(Ordering::SeqCst), crate::tsc::TSC_PERIOD);
+        "hardware::TSC_FREQUENCY_KHZ",
+        |tsc_frequency: &mut u64| unsafe {
+            assert_eq!(*tsc_frequency, 0);
+            *tsc_frequency = hardware::TSC_FREQUENCY_KHZ;
         },
     );
+    with_symbol_value("hardware::TSC_PERIOD_FS", |tsc_period: &mut u64| unsafe {
+        assert_eq!(*tsc_period, 0);
+        *tsc_period = hardware::TSC_PERIOD_FS;
+    });
     with_symbol_value(
         "framebuffer::FRAMEBUFFER_ADDR",
         |fb_addr: &mut AtomicUsize| {
@@ -184,6 +187,14 @@ where
 }
 
 fn init_fundamental_symbols() {
+    global_loader()
+        .load_object(
+            "hardware",
+            &AddressSpace::new("load_hardware", None),
+            // The actual value of this address doesn't matter.
+            Address::from_table_indices(USER_HEAP_L4_INDEX, 0, 0, 0).page(),
+        )
+        .unwrap();
     global_loader()
         .load_object(
             "panic",

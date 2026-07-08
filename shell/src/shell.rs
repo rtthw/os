@@ -45,6 +45,7 @@ static SERIAL2: Mutex<uart_16550::Device> = Mutex::new(uart_16550::Device::COM2)
 pub static QUEUE: process::ShellQueue = process::ShellQueue::new();
 
 pub extern "C" fn main() -> ! {
+    let start_time = time::now();
     unsafe {
         ALLOCATOR.init(heap::BASE_ADDR + 0x1000, heap::DEFAULT_SIZE);
     }
@@ -62,10 +63,6 @@ pub extern "C" fn main() -> ! {
 
         let phys_addr = process::translate_address(string.as_ptr().addr()).unwrap();
         assert_ne!(string.as_ptr().addr(), phys_addr);
-    }
-
-    if !time::monotonic_clock_ready() {
-        panic!("CLOCK NOT READY");
     }
 
     let mut framebuffer = framebuffer::Framebuffer::global().unwrap();
@@ -152,6 +149,13 @@ pub extern "C" fn main() -> ! {
             (&mut mouse_fb, input_state.mouse_pos),
         ],
         &mut framebuffer,
+    );
+
+    log::info!(
+        "Startup took {:?}... TSC=({} KHz @ {} fs)",
+        time::now().duration_since(start_time),
+        unsafe { hardware::TSC_FREQUENCY_KHZ },
+        unsafe { hardware::TSC_PERIOD_FS },
     );
 
     log::info!("Starting input driver...");

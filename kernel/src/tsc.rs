@@ -2,7 +2,6 @@
 
 use {log::info, time::FEMTOS_PER_MILLI};
 
-pub static mut TSC_PERIOD: u64 = 0;
 
 
 pub fn init() {
@@ -53,8 +52,8 @@ pub fn init() {
     info!("TSC period: {period_fs} fs");
 
     unsafe {
-        TSC_PERIOD = period_fs;
-        time::set_monotonic_clock_period(period_fs);
+        hardware::TSC_FREQUENCY_KHZ = frequency_khz;
+        hardware::TSC_PERIOD_FS = period_fs;
     }
 
     let tsc_interval = time::now().elapsed();

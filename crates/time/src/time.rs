@@ -2,10 +2,7 @@
 
 #![no_std]
 
-use core::{
-    ops::{Add, Sub},
-    sync::atomic::{AtomicU64, Ordering},
-};
+use core::ops::{Add, Sub};
 
 pub use core::time::*;
 
@@ -45,18 +42,6 @@ pub const FEMTOS_PER_NANO: u64 = 1_000_000;
 /// The amount of femtoseconds in a picosecond.
 pub const FEMTOS_PER_PICO: u64 = 1_000;
 
-const INVALID_MONOTONIC_PERIOD: u64 = 1;
-pub static MONOTONIC_PERIOD: AtomicU64 = AtomicU64::new(INVALID_MONOTONIC_PERIOD);
-
-/// Set the period (in femotoseconds) of the global monotonic clock.
-pub unsafe fn set_monotonic_clock_period(period_femtos: u64) {
-    MONOTONIC_PERIOD.store(period_femtos, Ordering::SeqCst);
-}
-
-/// Returns `true` if the global monotonic clock has been set.
-pub fn monotonic_clock_ready() -> bool {
-    MONOTONIC_PERIOD.load(Ordering::SeqCst) != INVALID_MONOTONIC_PERIOD
-}
 
 /// An alias for [`Instant::now`].
 #[inline(always)]
@@ -128,7 +113,7 @@ impl Instant {
     /// Returns [`None`] if `earlier` is later than `self`.
     pub fn checked_duration_since(&self, earlier: Self) -> Option<Duration> {
         let delta = self.value.checked_sub(earlier.value)? as u128;
-        let femtos = delta * MONOTONIC_PERIOD.load(Ordering::SeqCst) as u128;
+        let femtos = delta * unsafe { hardware::TSC_PERIOD_FS } as u128;
 
         Some(Duration::from_nanos_u128(femtos / FEMTOS_PER_NANO as u128))
     }
@@ -139,7 +124,7 @@ impl Instant {
 
     pub fn checked_add_duration(&self, duration: Duration) -> Option<Self> {
         let femtos = duration.as_nanos() * FEMTOS_PER_NANO as u128;
-        let delta = femtos / MONOTONIC_PERIOD.load(Ordering::SeqCst) as u128;
+        let delta = femtos / unsafe { hardware::TSC_PERIOD_FS } as u128;
 
         Some(Self::from_raw(self.value.checked_add(delta as u64)?))
     }

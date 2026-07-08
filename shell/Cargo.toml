@@ -8,6 +8,7 @@ path = "src/shell.rs"
 
 [dependencies]
 framebuffer = { path = "../crates/framebuffer" }
+hardware = { path = "../crates/hardware" }
 hashbrown = { version = "0.17", default-features = false, features = ["nightly"] }
 heap = { path = "../crates/heap" }
 input = { path = "../crates/input" }

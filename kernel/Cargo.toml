@@ -10,6 +10,7 @@ boot-info = { path = "../crates/boot-info" }
 elf = { path = "../crates/elf" }
 framebuffer = { path = "../crates/framebuffer" }
 fs = { path = "../crates/fs" }
+hardware = { path = "../crates/hardware" }
 hashbrown = { version = "0.17", default-features = false }
 input = { path = "../crates/input" }
 io = { path = "../crates/io" }

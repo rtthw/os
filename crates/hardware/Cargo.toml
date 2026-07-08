@@ -1,10 +1,9 @@
 [package]
-name = "time"
+name = "hardware"
 version.workspace = true
 edition.workspace = true
 
 [lib]
-path = "src/time.rs"
+path = "src/hardware.rs"
 
 [dependencies]
-hardware = { path = "../hardware" }
