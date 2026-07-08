@@ -288,11 +288,13 @@ impl<'a> Disassembler<'a> {
             }),
             // CBW/CWDE/CDQE
             0x98 => {
-                todo!("CBW/CWDE/CDQE")
+                // TODO
+                Err(DisassemblyError::UnsupportedOpcode { opcode })
             }
             // CWD/CDQ/CQO
             0x99 => {
-                todo!("CWD/CDQ/CQO")
+                // TODO
+                Err(DisassemblyError::UnsupportedOpcode { opcode })
             }
             // MOV r64, imm
             0xB8..=0xBF => {
@@ -518,7 +520,8 @@ impl<'a> Disassembler<'a> {
         match opcode {
             // Group 6
             0x00 => {
-                todo!("0F 00 {opcode:x}")
+                // TODO
+                Err(DisassemblyError::UnsupportedOpcode { opcode })
             }
             // Group 7
             0x01 => {
@@ -534,7 +537,8 @@ impl<'a> Disassembler<'a> {
                     other => {
                         let modrm = ModRm::new(other);
                         if modrm.is_memory() {
-                            todo!()
+                            // TODO
+                            Err(DisassemblyError::UnsupportedOpcode { opcode: other })
                         } else {
                             Err(DisassemblyError::InvalidByte)
                         }
