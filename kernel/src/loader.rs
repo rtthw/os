@@ -773,8 +773,8 @@ impl Loader {
             globals
         };
 
-        let mut rodata_offset = 0;
-        let mut data_offset = 0;
+        let mut rodata_offset: usize = 0;
+        let mut data_offset: usize = 0;
 
         for (section_index, section) in elf_file.section_iter().enumerate() {
             let section_flags = section.flags();
@@ -888,6 +888,8 @@ impl Loader {
                     symbol_name_after_prefix!(section_name, ".tdata.")
                 };
 
+                rodata_offset = rodata_offset.next_multiple_of(section_align);
+
                 let (mapping_offset, kind) = if is_bss {
                     // Offset is irrelevant here.
                     (usize::MAX, SectionKind::TlsBss)
@@ -922,7 +924,7 @@ impl Loader {
                 loaded_sections.insert(section_index, tls_section);
                 tls_sections.insert(section_index);
 
-                rodata_offset += section_size.next_multiple_of(section_align);
+                rodata_offset += section_size;
             }
             // .data/.bss
             else if is_write {
@@ -940,6 +942,8 @@ impl Loader {
                 if name.starts_with(".") {
                     name = name.strip_prefix(".").unwrap();
                 }
+
+                data_offset = data_offset.next_multiple_of(section_align);
 
                 assert!(data_offset < read_write_map_lock.size());
                 let section_addr = read_write_map_lock.addr() + data_offset;
@@ -972,7 +976,7 @@ impl Loader {
                 );
                 data_sections.insert(section_index);
 
-                data_offset += section_size.next_multiple_of(section_align);
+                data_offset += section_size;
             }
             // .rodata
             else if section_name.starts_with(".rodata") {
@@ -982,6 +986,8 @@ impl Loader {
                 let mut read_only_map_lock = read_only_mapping.lock();
 
                 let name = symbol_name_after_prefix!(section_name, ".rodata.");
+
+                rodata_offset = rodata_offset.next_multiple_of(section_align);
 
                 assert!(rodata_offset < read_only_map_lock.size());
                 let section_addr = read_only_map_lock.addr() + rodata_offset;
@@ -1009,7 +1015,7 @@ impl Loader {
                     }),
                 );
 
-                rodata_offset += section_size.next_multiple_of(section_align);
+                rodata_offset += section_size;
             }
             // .lrodata
             else if section_name.starts_with(".lrodata") {
@@ -1022,6 +1028,8 @@ impl Loader {
                 if name.starts_with(".") {
                     name = name.strip_prefix(".").unwrap();
                 }
+
+                rodata_offset = rodata_offset.next_multiple_of(section_align);
 
                 assert!(rodata_offset < read_only_map_lock.size());
                 let section_addr = read_only_map_lock.addr() + rodata_offset;
@@ -1049,7 +1057,7 @@ impl Loader {
                     }),
                 );
 
-                rodata_offset += section_size.next_multiple_of(section_align);
+                rodata_offset += section_size;
             }
             // .gcc_except_table
             else if section_name.starts_with(".gcc_except_table") {
@@ -1057,6 +1065,8 @@ impl Loader {
                     continue;
                 };
                 let mut read_only_map_lock = read_only_mapping.lock();
+
+                rodata_offset = rodata_offset.next_multiple_of(section_align);
 
                 assert!(rodata_offset < read_only_map_lock.size());
                 let section_addr = read_only_map_lock.addr() + rodata_offset;
@@ -1085,7 +1095,7 @@ impl Loader {
                     }),
                 );
 
-                rodata_offset += section_size.next_multiple_of(section_align);
+                rodata_offset += section_size;
             }
             // .eh_frame
             else if section_name == ".eh_frame" {
@@ -1093,6 +1103,8 @@ impl Loader {
                     continue;
                 };
                 let mut read_only_map_lock = read_only_mapping.lock();
+
+                rodata_offset = rodata_offset.next_multiple_of(section_align);
 
                 assert!(rodata_offset < read_only_map_lock.size());
                 let section_addr = read_only_map_lock.addr() + rodata_offset;
@@ -1121,7 +1133,7 @@ impl Loader {
                     }),
                 );
 
-                rodata_offset += section_size.next_multiple_of(section_align);
+                rodata_offset += section_size;
             }
             // Unhandled section.
             else {
@@ -1370,9 +1382,9 @@ fn allocate_section_mappings(
     elf_file: &ElfFile,
 ) -> Result<SectionMappings, &'static str> {
     let (executable_len, read_only_len, read_write_len): (usize, usize, usize) = {
-        let mut executable_len = 0;
-        let mut read_only_len = 0;
-        let mut read_write_len = 0;
+        let mut executable_len: usize = 0;
+        let mut read_only_len: usize = 0;
+        let mut read_write_len: usize = 0;
 
         for (section_index, section) in elf_file.section_iter().enumerate() {
             let section_flags = section.flags();
@@ -1403,7 +1415,6 @@ fn allocate_section_mappings(
             let size = section.size() as usize;
             let align = section.align() as usize;
             let offset = section.offset() as usize;
-            let addend = size.next_multiple_of(align);
 
             let is_write = section_flags & SHF_WRITE == SHF_WRITE;
             let is_exec = section_flags & SHF_EXECINSTR == SHF_EXECINSTR;
@@ -1411,21 +1422,24 @@ fn allocate_section_mappings(
 
             // .text
             if is_exec {
-                executable_len = executable_len.max(offset + addend);
+                executable_len = executable_len.max(offset + size.next_multiple_of(align));
             }
             // .tdata (.tbss sections are ignored)
             else if is_tls {
                 if section.get_type() == Ok(SectionHeaderType::ProgBits) {
-                    read_only_len += addend;
+                    read_only_len = read_only_len.next_multiple_of(align);
+                    read_only_len += size;
                 }
             }
             // .bss and .data
             else if is_write {
-                read_write_len += addend;
+                read_write_len = read_write_len.next_multiple_of(align);
+                read_write_len += size;
             }
             // .rodata, .eh_frame, and .gcc_except_table
             else {
-                read_only_len += addend;
+                read_only_len = read_only_len.next_multiple_of(align);
+                read_only_len += size;
             }
         }
 
