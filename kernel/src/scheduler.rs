@@ -137,7 +137,7 @@ impl Scheduler {
                     gdt::selectors().kernel_code,
                     RFlags::INTERRUPT_FLAG,
                     x86_64::VirtAddr::from_ptr(unsafe {
-                        KERNEL_STACK.as_ptr().add(KERNEL_STACK_SIZE)
+                        KERNEL_STACK.as_ptr().add(KERNEL_STACK_SIZE).sub(8)
                     }),
                     gdt::selectors().kernel_code,
                 ),
@@ -341,7 +341,7 @@ impl Scheduler {
                 x86_64::VirtAddr::from_ptr(entry_point),
                 gdt::selectors().kernel_code,
                 RFlags::INTERRUPT_FLAG,
-                x86_64::VirtAddr::new(stack_top_addr.to_raw() as u64),
+                x86_64::VirtAddr::new(stack_top_addr.to_raw() as u64 - 8),
                 gdt::selectors().kernel_data,
             ),
         };
@@ -396,6 +396,7 @@ impl Scheduler {
 
         let stack_size = stack_size.unwrap_or(DEFAULT_USER_STACK_SIZE);
         let stack_top_addr = AddressDomain::UserCode.base_addr();
+        assert!(stack_top_addr.to_raw() % 16 == 0);
         address_space
             .map_pages(
                 format!("user_stack.{id}"),
@@ -413,7 +414,7 @@ impl Scheduler {
                 x86_64::VirtAddr::new(entry_point.to_raw() as u64),
                 gdt::selectors().user_code,
                 RFlags::INTERRUPT_FLAG,
-                x86_64::VirtAddr::new(stack_top_addr.to_raw() as u64),
+                x86_64::VirtAddr::new(stack_top_addr.to_raw() as u64 - 8),
                 gdt::selectors().user_data,
             ),
         };
