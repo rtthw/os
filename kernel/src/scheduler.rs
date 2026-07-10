@@ -23,7 +23,11 @@ use {
     process::{AccessPolicy, Priority, ShellInput, ShellOutput, ShellQueue},
     spin_mutex::Mutex,
     x86_64::{
-        instructions::interrupts::without_interrupts, registers::rflags::RFlags,
+        instructions::interrupts::without_interrupts,
+        registers::{
+            control::{Cr0, Cr0Flags, Cr4, Cr4Flags},
+            rflags::RFlags,
+        },
         structures::idt::InterruptStackFrameValue,
     },
 };
@@ -35,6 +39,30 @@ pub const DEFAULT_KERNEL_STACK_SIZE: usize = PAGE_SIZE * 8;
 pub const DEFAULT_USER_STACK_SIZE: usize = PAGE_SIZE * 16;
 
 static PROCESS_ID: AtomicU64 = AtomicU64::new(IDLE_PROCESS_ID + 1);
+
+pub fn init() {
+    unsafe {
+        let cr0 = Cr0::read();
+        if cr0.contains(Cr0Flags::EMULATE_COPROCESSOR) {
+            Cr0::write(cr0 & !Cr0Flags::EMULATE_COPROCESSOR);
+            info!("Cleared CR0.EM");
+        }
+        let cr4 = Cr4::read();
+        if !cr4.contains(Cr4Flags::OSFXSR | Cr4Flags::OSXMMEXCPT_ENABLE) {
+            Cr4::write(cr4);
+            info!("Set CR4.OSFXSR and CR4.OSXMMEXCPT");
+        }
+
+        const MSCSR_OFFSET: usize = 0x18;
+
+        asm!("fninit", options(nostack, preserves_flags));
+
+        fxsave(&mut INIT_FXSAVE_AREA);
+        INIT_FXSAVE_AREA.bytes[MSCSR_OFFSET] = 0x80;
+        INIT_FXSAVE_AREA.bytes[MSCSR_OFFSET + 1] = 0x1F;
+        fxrstor(&INIT_FXSAVE_AREA);
+    }
+}
 
 /// Start preemptive multitasking.
 pub fn run() -> ! {
@@ -144,6 +172,7 @@ impl Scheduler {
             }),
             heap_mapping: None,
             allow_io: true,
+            fxsave_area: unsafe { INIT_FXSAVE_AREA },
         });
 
         let shell_input_section = global_loader()
@@ -247,6 +276,9 @@ impl Scheduler {
                 .unwrap();
             process.address_space.enter();
             crate::gdt::set_user_io_allowed(process.allow_io);
+            unsafe {
+                fxrstor(process.fxsave_area.bytes.as_ptr() as _);
+            }
             self.current = Some(process);
         }
 
@@ -258,16 +290,20 @@ impl Scheduler {
             .expect("current process should have a context")
     }
 
-    /// Set the current process's [`ExecutionContext`].
+    /// Set the current process's [`ExecutionContext`] and save the current
+    /// [`FxSaveArea`].
     pub fn set_current_context(&mut self, context: ExecutionContext) {
-        let prev_context = self
+        let process = self
             .current
             .as_mut()
-            .expect("a process should be running at this point")
-            .context
-            .replace(context);
+            .expect("a process should be running at this point");
 
+        let prev_context = process.context.replace(context);
         assert!(prev_context.is_none());
+
+        unsafe {
+            fxsave(process.fxsave_area.bytes.as_mut_ptr() as _);
+        }
     }
 
     /// Preempt the currently running process, and place it at the end of the
@@ -355,6 +391,7 @@ impl Scheduler {
             context: Some(context),
             heap_mapping: None,
             allow_io: true,
+            fxsave_area: unsafe { INIT_FXSAVE_AREA },
         };
 
         info!("Running {process}");
@@ -428,6 +465,7 @@ impl Scheduler {
             context: Some(context),
             heap_mapping: None,
             allow_io,
+            fxsave_area: unsafe { INIT_FXSAVE_AREA },
         };
 
         info!("Running {process}");
@@ -557,11 +595,12 @@ pub struct Process {
     pub address_space: AddressSpace,
     /// The [`ExecutionContext`] of the process. If this is `None`, the process
     /// is currently running.
-    context: Option<ExecutionContext>,
+    pub context: Option<ExecutionContext>,
     /// The [`KernelMapping`] corresponding to the process's heap.
     pub heap_mapping: Option<KernelMapping>,
     /// Whether the process is allowed to perform I/O instructions.
     allow_io: bool,
+    pub fxsave_area: FxSaveArea,
 }
 
 impl fmt::Display for Process {
@@ -616,4 +655,28 @@ impl CpuRegisters {
         rbx: 0,
         rax: 0,
     };
+}
+
+
+
+#[repr(C, align(64))]
+#[derive(Clone, Copy, Debug)]
+pub struct FxSaveArea {
+    bytes: [u8; 512],
+}
+
+static mut INIT_FXSAVE_AREA: FxSaveArea = FxSaveArea { bytes: [0; 512] };
+
+#[inline]
+unsafe fn fxsave(area: *mut FxSaveArea) {
+    unsafe {
+        asm!("fxsave64 [{0}]", in(reg) area, options(nostack, preserves_flags));
+    }
+}
+
+#[inline]
+unsafe fn fxrstor(area: *const FxSaveArea) {
+    unsafe {
+        asm!("fxrstor64 [{0}]", in(reg) area, options(nostack, preserves_flags));
+    }
 }

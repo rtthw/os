@@ -1220,6 +1220,11 @@ impl Loader {
                                         "Couldn't get relocation section for `{}` <- `{}`: {error}",
                                         target_section.name, demangled_name,
                                     );
+                                    // HACK: Symbols for f16 are not working yet.
+                                    if target_section.name.contains("f16") {
+                                        log::warn!("Ignoring missing symbol for f16");
+                                        continue;
+                                    }
                                     return Err(error);
                                 }
                             }?;

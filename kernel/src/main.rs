@@ -77,6 +77,7 @@ pub extern "sysv64" fn main(boot_info: &'static BootInfo) -> ! {
     memory::init(boot_info);
     acpi::init(boot_info);
     loader::init(boot_info);
+    scheduler::init();
 
     info!("STARTUP SUCCESSFUL");
 
